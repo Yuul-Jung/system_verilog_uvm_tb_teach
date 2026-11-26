@@ -34,7 +34,7 @@ Pages는 `main` 루트의 정적 HTML을 제공합니다. `.nojekyll`로 원본 
 - [제12장 · 기능 커버리지](ch12_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch12_v01.md)
 - [제13장 · UART 스트림 검증](ch13_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch13_v01.md)
 - [제14장 · FIFO 및 흐름 제어](ch14_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch14_v01.md)
-- [제15장 · AXI4-Lite 레지스터 검증](ch15_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch15_v01.md)
+- [제15장 · AXI4-Lite 레지스터 검증](ch15_teacher_v02.html) · [검증 기록](docs/VALIDATION_ch15_v02.md)
 - [제16장 · MAC·NPU 정수 연산 검증](ch16_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch16_v01.md)
 - [제17장 · 최소 UVM 환경](ch17_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch17_v01.md)
 - [제18장 · Sequence에서 Driver까지](ch18_teacher_v02.html) · [검증 기록](docs/VALIDATION_ch18_v02.md)
@@ -55,3 +55,5 @@ Pages는 `main` 루트의 정적 HTML을 제공합니다. `.nojekyll`로 원본 
 교수용 해설 보강 v29: 제19장 v02에서 요청/관찰 객체, 분석 port/imp, 독립 모델의 시각별 상태, 4상태 비교, Agent의 생성/연결 및 완료 조건을 보강했다. [제19장 v02 검증](docs/VALIDATION_ch19_v02.md). 신규 브라우저·공개 Pages 검사는 별도 수행 대상이다.
 
 교수용 해설 보강 v30: 제18장 v02에서 Item/Sequence/Sequencer/Driver의 책임, 실제 요청·완료 호출, 직접 대입과 constraint, PWM 적용 시각 및 8위상 비교를 보강했다. [제18장 v02 검증](docs/VALIDATION_ch18_v02.md). 신규 브라우저·공개 Pages 검사는 별도 수행 대상이다.
+
+교수용 해설 보강 v31: 제15장 v02에서 AXI 5채널, AW/W 독립 수락과 commit, WSTRB 바이트 갱신, 응답 대기·리셋 취소 및 T1~T5 계수를 보강했다. [제15장 v02 검증](docs/VALIDATION_ch15_v02.md). 신규 브라우저·공개 Pages 검사는 별도 수행 대상이다.
