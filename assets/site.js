@@ -148,7 +148,7 @@
       "id": "ch21",
       "number": 21,
       "title": "UVM 레지스터 추상화",
-      "file": "ch21_teacher_v01.html"
+      "file": "ch21_teacher_v02.html"
     },
     {
       "id": "ch22",
