@@ -107,6 +107,12 @@
       "number": 14,
       "title": "FIFO 및 흐름 제어",
       "file": "ch14_teacher_v01.html"
+    },
+    {
+      "id": "ch15",
+      "number": 15,
+      "title": "AXI4-Lite 레지스터 검증",
+      "file": "ch15_teacher_v01.html"
     }
   ]
 };
