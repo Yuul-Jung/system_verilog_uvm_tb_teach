@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v28",
+  "version": "v29",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -280,7 +280,7 @@
       "number": 19,
       "title": "Monitor·Agent·Scoreboard",
       "slug": "ch19_teacher",
-      "version": "v01",
+      "version": "v02",
       "source_html": "ch19_monitor_agent_scoreboard_v05.html",
       "source_version": "v05",
       "source_blob": "56bcf0db00b89dbf32524c81d39f5c4aff001c6d",
