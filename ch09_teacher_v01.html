@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="PWM 원본과 참조 모델의 공개 출력을 매 클록 비교"><title>교수용 해설서 · 제09장 · 참조 모델·스코어보드 · RTL 검증 학습안내서</title><link rel="stylesheet" href="assets/site.css"><style>.teach-note{margin:18px 0 4px;padding:15px 18px;background:#f8f7fc;border:1px solid #dddaee;border-left:4px solid #4635b1;border-radius:6px;overflow-wrap:anywhere}.teach-note h3{margin:0 0 10px;color:#4635b1}.teach-note h4{margin:14px 0 6px}.teach-note p{margin:8px 0}.teach-note summary{cursor:pointer;font-weight:600;margin:10px 0}.teach-fragment{white-space:pre-wrap;overflow-wrap:anywhere;display:block;min-width:140px}.teach-note table{margin:10px 0}.teach-note td{vertical-align:top}@media(max-width:860px){.teach-note{padding:12px}.teach-note td{min-width:68px}}.teach-note details table{min-width:680px}.teach-note details th:first-child,.teach-note details td:first-child{min-width:60px;white-space:nowrap}.teach-note details .teach-fragment{min-width:250px}</style></head>
+<body data-chapter="ch09"><a class="access-skip" href="#main-content" style="position:absolute;left:-9999px;top:0">본문 바로가기</a><button type="button" class="mobile-menu" id="mobile-menu" aria-controls="course-nav" aria-expanded="false">☰ 장·목차</button><div class="shade" id="shade"></div>
+<header class="hero"><div class="hero-inner"><p class="kicker">교수용 해설서 · 제3부 · 자동 검증·속성·커버리지</p><h1>제09장 · 참조 모델·스코어보드</h1><p>기존 PWM RTL에 독립 참조 모델과 스코어보드를 연결하고 매 클록 6개 출력을 자동 검증합니다.</p><div class="chips"><span class="chip">제3부 · 제09장</span><span class="chip">사이클 단위 자동 검증</span><span class="chip">기존 RTL 변경 없음</span></div></div></header>
+<div class="wrap"><nav class="toc" id="course-nav" aria-label="부·장·절 탐색"></nav><main class="content" id="main-content"><p>원본 제09장 · v04의 절·그림·전체 코드·실습을 보존한 교수용 해설서입니다.</p>
+<section class="section" id="s00"><h2><span class="num">00</span>개요 · 독립 기대값으로 매 클록 검증</h2><p>제04장에서는 PWM(Pulse Width Modulation, 펄스폭 변조)의 한 주기 HIGH 개수를 비교했습니다. 개수가 같더라도 출력 위상이나 설정 반영 시점이 다를 수 있습니다. 이번 장에서는 DUT와 같은 입력을 참조 모델에 전달하고, 매 상승 에지 이후 두 출력의 상태를 비교합니다.</p><p><strong>선행 설계 학습안내서:</strong> 제2부 사용자 AXI IP와 주변장치(<code>amd_soc_p2</code>), 04.2장 「RTL · AXI 풀이」 02절 「설정 Shadow와 출력 Active를 분리」 및 06절 「독립 PWM Core 전체」. 파일은 <code>pwm_core.v</code>입니다. AXI 래퍼 및 보드는 검증 대상이 아닙니다.</p><p>실습 폴더를 먼저 만들고 01절·04절·05절의 전체 코드를 해당 파일에 저장합니다.</p><div class="codeblock"><div class="codebar"><span>Ubuntu · 폴더 준비</span></div><pre tabindex="0"><code>mkdir -p ch09_lab/reference_rtl ch09_lab/tb/ch09
+cd ch09_lab</code></pre></div><table><thead><tr><th>파일</th><th>역할</th></tr></thead><tbody><tr><td>reference_rtl/pwm_core.v</td><td>원본 RTL</td></tr><tr><td>tb/ch09/pwm_reference_model.sv</td><td>독립 상태를 유지하는 정답 모델</td></tr><tr><td>tb/ch09/tb_pwm_scoreboard.sv</td><td>공통 자극·출력 비교·실패 처리</td></tr></tbody></table>
+<div class="teach-note"><h3>교수용 이론 · 개수만 같고 시간이 틀린 파형</h3><p>제04장의 HIGH 개수 검사는 11000000과 00110000을 구별하지 못합니다. 둘 다 HIGH가 두 번이기 때문입니다. 매 클록의 출력 위치와 설정 적용 시점을 확인하려면 같은 입력으로 별도 상태를 진행시키는 참조 모델이 필요합니다. 스코어보드는 그 기대값과 실제값을 정해진 관찰 시각에 비교하는 역할입니다.</p><p>이번 모델은 하드웨어에 추가하는 회로가 아니라 검증용 코드입니다. Golden(골든, 정답 기준)이라는 이름만으로 옳음을 보장하지 않습니다. 입력 계약과 별도 시간 계산을 근거로 모델 자체도 확인해야 합니다.</p></div>
+</section>
+<section class="section" id="s01"><h2><span class="num">01</span>원본 RTL · PWM의 기능 계약</h2><p>원본은 설정을 Shadow(섀도, 대기 설정)에 저장하고 주기 경계에서 Active(액티브, 활성 설정)로 반영합니다. 이 장의 실습은 8클록 주기, 10ns 클록, 듀티 0~8에 한정합니다.</p><div class="codeblock"><div class="codebar"><span>reference_rtl/pwm_core.v · Verilog</span></div><pre tabindex="0"><code>`timescale 1ns/1ps
+// P2-04: 보드와 무관한 단일 채널 범용 PWM 코어.
+// (추가) period와 duty는 클록 횟수 단위. 0%/100%는 지속 LOW/HIGH.
+// (추가) 설정은 주기 마지막 경계에서만 활성값으로 반영.
+module pwm_core #(
+    parameter [31:0] RESET_PERIOD = 32'd100000
+)(
+    input  wire        clk,
+    input  wire        resetn,
+    input  wire        cfg_apply,
+    input  wire [31:0] cfg_period,
+    input  wire [31:0] cfg_duty,
+    input  wire        cfg_enable,
+    input  wire        cfg_polarity,
+    output wire        pwm_out,
+    output reg         pending,
+    output reg [31:0] active_period,
+    output reg [31:0] active_duty,
+    output reg         active_enable,
+    output reg         active_polarity
+);
+    reg [31:0] counter;
+    reg [31:0] shadow_period;
+    reg [31:0] shadow_duty;
+    reg        shadow_enable;
+    reg        shadow_polarity;
+
+    wire boundary = (counter &gt;= active_period - 32'd1);
+    wire duty_high = (counter &lt; active_duty);
+
+    // (주의) enable=0이면 polarity와 관계없이 LOW로 차단.
+    // (설명) 기본 polarity에서 active_duty=0이면 항상 LOW,
+    //         active_duty=active_period이면 항상 HIGH.
+    assign pwm_out = resetn &amp;&amp; active_enable &amp;&amp;
+                     (active_polarity ? !duty_high : duty_high);
+
+    always @(posedge clk) begin
+        if (!resetn) begin
+            counter         &lt;= 32'd0;
+            active_period   &lt;= RESET_PERIOD;
+            active_duty     &lt;= 32'd0;
+            active_enable   &lt;= 1'b0;
+            active_polarity &lt;= 1'b0;
+            shadow_period   &lt;= RESET_PERIOD;
+            shadow_duty     &lt;= 32'd0;
+            shadow_enable   &lt;= 1'b0;
+            shadow_polarity &lt;= 1'b0;
+            pending         &lt;= 1'b0;
+        end else begin
+            if (boundary) begin
+                counter &lt;= 32'd0;
+                if (pending) begin
+                    active_period   &lt;= shadow_period;
+                    active_duty     &lt;= shadow_duty;
+                    active_enable   &lt;= shadow_enable;
+                    active_polarity &lt;= shadow_polarity;
+                    pending         &lt;= 1'b0;
+                end
+            end else begin
+                counter &lt;= counter + 32'd1;
+            end
+            // (추가) 경계와 APPLY가 겹치면 새 값은 다음 경계에 적용.
+            // 여러 APPLY가 겹치면 최종 요청값을 우선하는 단일 Shadow 구조.
+            if (cfg_apply) begin
+                shadow_period   &lt;= cfg_period;
+                shadow_duty     &lt;= cfg_duty;
+                shadow_enable   &lt;= cfg_enable;
+                shadow_polarity &lt;= cfg_polarity;
+                pending         &lt;= 1'b1;
+            end
+        end
+    end
+endmodule
+</code></pre></div><p>내부 상태는 상승 에지의 동기 리셋으로 초기화되지만 출력 <code>pwm_out</code>은 resetn에 의해 조합적으로 차단됩니다. 따라서 두 리셋 효과의 발생 시점을 구분해야 합니다.</p>
+<div class="teach-note"><h3>DUT의 공개 출력과 내부 상태 구분</h3><p>검사는 공개 출력 pwm_out·pending·active_*를 사용합니다. RTL에 counter가 보인다고 참조 모델이 dut.counter를 읽어 정답을 만들지는 않습니다. counter나 Shadow에 오류가 나도 외부 계약에 영향이 있으면 별도 모델과 달라지도록 비교 경계를 둔 것입니다.</p><p>현재 주기 8은 고정이고 정상 범위 듀티와 극성·허용을 바꿉니다. 범용 32비트 period 전체를 검증하는 시험은 아니며, RTL에 입력 포트가 있다는 것과 현재 시험이 그 모든 값을 다룬다는 것은 다릅니다.</p><h4>reference_rtl/pwm_core.v · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-4</td><td><code class="teach-fragment">`timescale 1ns/1ps
+// P2-04: 보드와 무관한 단일 채널 범용 PWM 코어.
+// (추가) period와 duty는 클록 횟수 단위. 0%/100%는 지속 LOW/HIGH.
+// (추가) 설정은 주기 마지막 경계에서만 활성값으로 반영.</code></td><td>시간 단위는 ns, 정밀도는 ps입니다. period와 duty는 시간값이 아니라 클록 횟수이며, 새 설정은 주기 끝에서 적용한다는 계약을 주석이 정리합니다.</td></tr><tr><td>5-7</td><td><code class="teach-fragment">module pwm_core #(
+    parameter [31:0] RESET_PERIOD = 32&#x27;d100000
+)(</code></td><td>pwm_core의 모듈·파라미터를 선언합니다. RESET_PERIOD의 기본값 100,000을 TB 인스턴스에서 8로 바꿉니다. 원본 RTL의 기본값을 수정하는 것과 다릅니다.</td></tr><tr><td>8-10</td><td><code class="teach-fragment">    input  wire        clk,
+    input  wire        resetn,
+    input  wire        cfg_apply,</code></td><td>상승 에지 기준 clk, 0일 때 리셋하는 resetn, 설정 요청 cfg_apply입니다. 입력 이름만으로 리셋의 동기·비동기 여부를 판단하지 않고 always의 이벤트 조건을 확인해야 합니다.</td></tr><tr><td>11-14</td><td><code class="teach-fragment">    input  wire [31:0] cfg_period,
+    input  wire [31:0] cfg_duty,
+    input  wire        cfg_enable,
+    input  wire        cfg_polarity,</code></td><td>주기·듀티는 32비트 무부호 값, enable·polarity는 1비트 제어값입니다. 입력을 바꾸는 것과 Active에 적용되는 것은 별개입니다.</td></tr><tr><td>15-21</td><td><code class="teach-fragment">    output wire        pwm_out,
+    output reg         pending,
+    output reg [31:0] active_period,
+    output reg [31:0] active_duty,
+    output reg         active_enable,
+    output reg         active_polarity
+);</code></td><td>pwm_out은 조합 출력입니다. pending과 active_*는 아래 순차 블록에서 갱신하는 상태입니다. 이 reg들은 실제 에지 기반 저장 동작과 연결됩니다.</td></tr><tr><td>22</td><td><code class="teach-fragment">    reg [31:0] counter;</code></td><td>현재 주기의 위치 counter를 32비트로 보존합니다. 8클록 주기라면 0~7을 순환합니다.</td></tr><tr><td>23-26</td><td><code class="teach-fragment">    reg [31:0] shadow_period;
+    reg [31:0] shadow_duty;
+    reg        shadow_enable;
+    reg        shadow_polarity;</code></td><td>Shadow는 다음에 반영할 설정 한 묶음입니다. 여러 요청을 큐처럼 모두 저장하지 않으며 새 요청이 이전 미반영 값을 덮어쓸 수 있습니다.</td></tr><tr><td>28</td><td><code class="teach-fragment">    wire boundary = (counter &gt;= active_period - 32&#x27;d1);</code></td><td>현재 카운터가 active_period-1 이상이면 경계입니다. 8이면 7 이상입니다. 상승 에지에서 읽는 것은 에지 직전 상태이고 NBA 갱신 뒤 counter는 0이 됩니다.</td></tr><tr><td>29</td><td><code class="teach-fragment">    wire duty_high = (counter &lt; active_duty);</code></td><td>counter가 duty보다 작은 동안 duty_high가 1입니다. duty=3일 때 0·1·2 세 위치가 해당됩니다.</td></tr><tr><td>31-35</td><td><code class="teach-fragment">    // (주의) enable=0이면 polarity와 관계없이 LOW로 차단.
+    // (설명) 기본 polarity에서 active_duty=0이면 항상 LOW,
+    //         active_duty=active_period이면 항상 HIGH.
+    assign pwm_out = resetn &amp;&amp; active_enable &amp;&amp;
+                     (active_polarity ? !duty_high : duty_high);</code></td><td>정상 극성은 duty_high, 반전 극성은 그 논리 부정입니다. resetn과 enable의 AND가 바깥에 있어 둘 중 하나가 0이면 polarity와 관계없이 출력 0입니다. resetn 변화는 클록을 기다리지 않고 이 조합 출력에 반영됩니다.</td></tr><tr><td>37-38</td><td><code class="teach-fragment">    always @(posedge clk) begin
+        if (!resetn) begin</code></td><td>순차 블록은 clk 상승 에지에서만 실행합니다. 감지 조건에 negedge resetn이 없으므로 레지스터 리셋은 동기식입니다.</td></tr><tr><td>39-43</td><td><code class="teach-fragment">            counter         &lt;= 32&#x27;d0;
+            active_period   &lt;= RESET_PERIOD;
+            active_duty     &lt;= 32&#x27;d0;
+            active_enable   &lt;= 1&#x27;b0;
+            active_polarity &lt;= 1&#x27;b0;</code></td><td>리셋 에지에서 counter=0, period=RESET_PERIOD, duty=0, enable=0, polarity=0을 예약합니다. 비차단 대입은 우변을 읽고 그 시간 슬롯의 NBA 단계에서 저장값을 갱신합니다.</td></tr><tr><td>44-49</td><td><code class="teach-fragment">            shadow_period   &lt;= RESET_PERIOD;
+            shadow_duty     &lt;= 32&#x27;d0;
+            shadow_enable   &lt;= 1&#x27;b0;
+            shadow_polarity &lt;= 1&#x27;b0;
+            pending         &lt;= 1&#x27;b0;
+        end else begin</code></td><td>대기 설정도 기본값으로 초기화하고 pending을 0으로 지웁니다. 리셋을 풀어도 이전 요청을 자동 복원하지 않습니다.</td></tr><tr><td>50-51</td><td><code class="teach-fragment">            if (boundary) begin
+                counter &lt;= 32&#x27;d0;</code></td><td>주기 끝이면 counter를 0으로 되돌립니다. 경계를 계산하는 기준은 새 요청의 period가 아니라 현재 Active 주기입니다.</td></tr><tr><td>52-58</td><td><code class="teach-fragment">                if (pending) begin
+                    active_period   &lt;= shadow_period;
+                    active_duty     &lt;= shadow_duty;
+                    active_enable   &lt;= shadow_enable;
+                    active_polarity &lt;= shadow_polarity;
+                    pending         &lt;= 1&#x27;b0;
+                end</code></td><td>경계 직전에 pending=1이면 기존 Shadow 네 값을 Active로 복사하고 pending을 0으로 예약합니다. 같은 에지에서 새 Shadow에 쓴 값을 즉시 사용하는 블록이 아닙니다.</td></tr><tr><td>59-61</td><td><code class="teach-fragment">            end else begin
+                counter &lt;= counter + 32&#x27;d1;
+            end</code></td><td>경계가 아니면 counter를 1 증가시킵니다. 설정 요청 여부와 별개로 현재 주기는 진행됩니다.</td></tr><tr><td>62-64</td><td><code class="teach-fragment">            // (추가) 경계와 APPLY가 겹치면 새 값은 다음 경계에 적용.
+            // 여러 APPLY가 겹치면 최종 요청값을 우선하는 단일 Shadow 구조.
+            if (cfg_apply) begin</code></td><td>cfg_apply 검사는 경계 검사와 독립적입니다. 두 조건이 같은 에지에서 모두 참일 수 있습니다. 이 주석은 그때 이전 설정 적용과 새 요청 저장을 구분합니다.</td></tr><tr><td>65-69</td><td><code class="teach-fragment">                shadow_period   &lt;= cfg_period;
+                shadow_duty     &lt;= cfg_duty;
+                shadow_enable   &lt;= cfg_enable;
+                shadow_polarity &lt;= cfg_polarity;
+                pending         &lt;= 1&#x27;b1;</code></td><td>cfg_* 네 값을 Shadow로 저장하고 pending=1을 예약합니다. 같은 always에서 pending에 0과 1을 모두 예약하면 뒤에 실행된 1 대입이 최종 갱신값입니다. 이 장 TB가 동시 요청까지 검증한 것은 아닙니다.</td></tr><tr><td>70-73</td><td><code class="teach-fragment">            end
+        end
+    end
+endmodule</code></td><td>요청 조건, 비리셋 분기, always, module을 차례로 닫습니다. 소스의 들여쓰기 순서와 회로가 매 클록 병렬 갱신되는 의미를 구분합니다.</td></tr></tbody></table></details></div>
+</section>
+<section class="section" id="s02"><h2><span class="num">02</span>DUT·Reference Model·Scoreboard</h2><p>Reference Model(레퍼런스 모델, 정답 동작 모델)은 입력과 자신의 상태로 기대값을 계산합니다. Scoreboard(스코어보드, 실제값과 기대값 비교기)는 두 출력의 차이를 판정합니다. 이 스코어보드는 별도 RTL 모듈이 아니라 TB 내부 always 블록입니다.</p><figure style="overflow-x:auto;margin:16px 0"><div style="min-width:650px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 350" role="img" aria-labelledby="ch09title ch09desc">
+<title id="ch09title">PWM 참조 모델과 스코어보드</title><desc id="ch09desc">동일한 입력 7개를 DUT와 참조 모델에 전달하고 상승 에지 1ns 후 공개 출력 6개를 비교한다.</desc>
+<defs><marker id="ch09arr" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="10" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L10 4L0 8Z" fill="#5A1E1E"/></marker></defs>
+<rect width="940" height="350" fill="white"/>
+<g font-family="Noto Sans CJK KR,sans-serif" fill="#172439" text-anchor="middle">
+<text x="470" y="30" font-size="20" font-weight="bold">같은 입력 · 독립 상태 · 공개 출력 비교</text>
+<g fill="#F7F9FC" stroke="#1F3A5F" stroke-width="2"><rect x="24" y="122" width="230" height="100" rx="4"/><rect x="345" y="55" width="250" height="94" rx="4"/><rect x="345" y="195" width="250" height="94" rx="4"/><rect x="686" y="122" width="224" height="100" rx="4"/></g>
+<g font-size="16" font-weight="bold"><text x="139" y="146">request_config()</text><text x="470" y="80">pwm_core · dut</text><text x="470" y="220">pwm_reference_model</text><text x="798" y="146">Scoreboard</text></g>
+<g font-size="13"><text x="139" y="166">cfg_apply · cfg_period</text><text x="139" y="185">cfg_duty · cfg_enable</text><text x="139" y="204">cfg_polarity · clk · resetn</text><text x="470" y="103">counter · shadow_*</text><text x="470" y="123">실제 출력 6개</text><text x="470" y="243">golden · phase · queued_*</text><text x="470" y="263">기대 출력 ref_* 6개</text><text x="798" y="166">posedge clk → #1</text><text x="798" y="185">!== · score_cycles</text><text x="798" y="204">불일치 → $fatal</text></g>
+<g stroke="#5A1E1E" stroke-width="2" fill="none" marker-end="url(#ch09arr)"><path d="M254 152H300V102H345"/><path d="M254 192H300V242H345"/><path d="M595 102H640V152H686"/><path d="M595 242H640V192H686"/></g>
+<text x="470" y="323" font-size="14">입력은 하강 에지에서 변경 · 비교는 상승 에지 이후에 수행</text>
+</g></svg>
+</div><figcaption>공통 입력은 request_config와 TB의 클록·리셋 생성부에서 공급합니다. 모델은 DUT의 내부 상태나 출력을 입력으로 읽지 않습니다.</figcaption></figure><table><thead><tr><th>DUT 공개 출력</th><th>참조 모델 출력</th><th>검사</th></tr></thead><tbody><tr><td>pwm_out</td><td>ref_pwm</td><td>출력 위상·극성</td></tr><tr><td>pending</td><td>ref_pending</td><td>설정 대기 여부</td></tr><tr><td>active_period[31:0]</td><td>ref_period[31:0]</td><td>활성 주기</td></tr><tr><td>active_duty[31:0]</td><td>ref_duty[31:0]</td><td>활성 듀티</td></tr><tr><td>active_enable</td><td>ref_enable</td><td>출력 활성</td></tr><tr><td>active_polarity</td><td>ref_polarity</td><td>극성</td></tr></tbody></table><p>독립 상태를 가진 모델이라고 해서 정답이 보장되는 것은 아닙니다. 현재 모델과 DUT는 구조와 수식이 유사하여 같은 명세 해석 오류를 공유할 수 있습니다. 독립적으로 계산한 적용 시간표와 경계값·속성 검사를 함께 사용해야 합니다.</p>
+<div class="teach-note"><h3>그림 읽기 · 공통 입력과 독립 상태</h3><p>한 요청을 DUT와 golden에 같이 넣습니다. golden은 자체 phase·queued_*·ref_*로 기대값을 만들고 DUT 출력이나 내부 상태는 입력으로 받지 않습니다. 스코어보드는 별도 모듈 인스턴스가 아니라 TB 안의 <code>always @(posedge clk)</code>입니다. DUT, 모델, 비교기 세 역할이 모듈 세 개라는 뜻은 아닙니다.</p><p>독립 상태를 가져도 두 코드가 같은 명세 해석 오류를 공유할 수 있습니다. 현재 두 구조가 유사하므로 아래의 수치 시간표와 리셋·경계 검사도 함께 읽어야 합니다. 모델을 DUT의 복사본처럼 무비판적으로 신뢰하지 않습니다.</p></div>
+</section>
+<section class="section" id="s03"><h2><span class="num">03</span>시간 계약 · 요청과 반영을 구분한다</h2><p>하강 에지에서 설정을 요청하고, 다음 상승 에지에서 대기 설정이 저장됩니다. 주기 경계가 오면 이전에 저장된 요청이 활성화됩니다. 새 요청이 경계와 같은 에지에 들어오면 현재 경계가 아니라 다음 경계에 반영됩니다.</p><table><thead><tr><th>사례</th><th>요청 ns</th><th>수락 상승 에지 ns</th><th>활성 반영 ns</th><th>관찰 ns</th><th>활성 설정</th></tr></thead><tbody><tr><td>1</td><td>30</td><td>35</td><td>95</td><td>96</td><td>duty 2, en 1, pol 0</td></tr><tr><td>2</td><td>140</td><td>145</td><td>175</td><td>176</td><td>duty 6, en 1, pol 0</td></tr><tr><td>3</td><td>250</td><td>255</td><td>335</td><td>336</td><td>duty 6, en 1, pol 1</td></tr><tr><td>4</td><td>360</td><td>365</td><td>415</td><td>416</td><td>duty 6, en 0, pol 1</td></tr><tr><td>5</td><td>470</td><td>475</td><td>495</td><td>496</td><td>duty 8, en 1, pol 0</td></tr><tr><td>6</td><td>610</td><td>615</td><td>675</td><td>676</td><td>duty 0, en 1, pol 0</td></tr></tbody></table><p>사례 3은 250ns에 요청하고 255ns 경계에서 수락합니다. 이전 pending이 0이므로 255ns에는 새 극성이 반영되지 않고 335ns 경계에서 반영됩니다. 리셋은 580ns에 인가되며 581ns에 조합 출력 차단을 확인합니다. 585ns 상승 에지에서 내부 상태가 초기화됩니다.</p><p>위 시간표는 초기 리셋 해제 후 8개 상승 에지마다 경계가 발생한다는 계약으로 계산한 예상값입니다. 내부 카운터를 읽어 산출한 로그가 아닙니다.</p>
+<div class="teach-note"><h3>판서 · 경계와 새 요청이 같은 에지에 올 때</h3><p>리셋 해제 20ns 뒤 첫 경계는 95ns이고 이후 175·255·335·415·495·575ns로 80ns씩 진행합니다. 사례3의 apply는 250~260ns에 1이므로 255ns 경계에서 샘플링됩니다. 에지 직전 pending은 0이라 기존 대기값을 적용할 조건이 없습니다. 같은 에지의 새 Shadow 저장과 pending=1은 NBA에서 일어나므로 극성은 335ns에 반영됩니다.</p><p>255ns에 곧바로 새 극성을 반영한 회로라면 256ns의 active_polarity 또는 pending에서 모델과 달라집니다. 이때 DUT 출력 파형이 우연히 같아도 공개 상태 비교로 차이를 발견할 수 있습니다. 경계 판정에는 ‘지금 대입될 값’이 아니라 ‘에지 직전 값’을 사용한다는 점이 핵심입니다.</p><p>580ns 리셋에서는 이미 HIGH인 것을 먼저 확인한 뒤 LOW를 인가하고 581ns에 출력 차단을 확인합니다. 내부 상태는 585ns 상승 에지에서 초기화됩니다. 적용·상태 갱신·관찰 시각을 각각 구분해 적습니다.</p></div>
+</section>
+<section class="section" id="s04"><h2><span class="num">04</span>참조 모델 전체 코드</h2><p>모델은 <code>phase</code>, <code>queued_*</code>, <code>ref_*</code>를 자체 관리합니다. 현재 주기의 마지막 박자인지 계산하고, 대기 중인 설정만 반영합니다.</p><div class="codeblock"><div class="codebar"><span>tb/ch09/pwm_reference_model.sv · SystemVerilog</span></div><pre tabindex="0"><code>`timescale 1ns/1ps
+// (추가) 제09장: 공개 PWM 계약으로 예상값을 계산하는 독립 참조 모델.
+// DUT 내부 신호 counter, boundary, shadow_*는 참조하지 않는다.
+module pwm_reference_model #(
+    parameter [31:0] INITIAL_PERIOD = 32'd8
+)(
+    input wire clk, resetn, cfg_apply,
+    input wire [31:0] cfg_period, cfg_duty,
+    input wire cfg_enable, cfg_polarity,
+    output wire ref_pwm,
+    output reg ref_pending,
+    output reg [31:0] ref_period, ref_duty,
+    output reg ref_enable, ref_polarity
+);
+    reg [31:0] phase, queued_period, queued_duty;
+    reg queued_enable, queued_polarity;
+
+    // 주기/듀티 기준으로 DUT와 별개 예상 파형을 구한다.
+    // 이번 장의 입력 주기는 항상 8이므로 0 주기는 다루지 않는다.
+    wire period_end = (phase + 32'd1 &gt;= ref_period);
+    wire high_window = (phase &lt; ref_duty);
+    assign ref_pwm = resetn &amp;&amp; ref_enable &amp;&amp;
+                     (ref_polarity ? !high_window : high_window);
+
+    always @(posedge clk) begin
+        if (!resetn) begin
+            phase           &lt;= 32'd0;
+            ref_period      &lt;= INITIAL_PERIOD;
+            ref_duty        &lt;= 32'd0;
+            ref_enable      &lt;= 1'b0;
+            ref_polarity    &lt;= 1'b0;
+            queued_period   &lt;= INITIAL_PERIOD;
+            queued_duty     &lt;= 32'd0;
+            queued_enable   &lt;= 1'b0;
+            queued_polarity &lt;= 1'b0;
+            ref_pending     &lt;= 1'b0;
+        end else begin
+            // 현재 주기를 완료한 뒤 대기 중인 설정을 반영한다.
+            if (period_end) begin
+                phase &lt;= 32'd0;
+                if (ref_pending) begin
+                    ref_period   &lt;= queued_period;
+                    ref_duty     &lt;= queued_duty;
+                    ref_enable   &lt;= queued_enable;
+                    ref_polarity &lt;= queued_polarity;
+                    ref_pending  &lt;= 1'b0;
+                end
+            end else begin
+                phase &lt;= phase + 32'd1;
+            end
+
+            // 경계와 cfg_apply가 겹치면 새 값은 다음 경계에서 적용.
+            if (cfg_apply) begin
+                queued_period   &lt;= cfg_period;
+                queued_duty     &lt;= cfg_duty;
+                queued_enable   &lt;= cfg_enable;
+                queued_polarity &lt;= cfg_polarity;
+                ref_pending     &lt;= 1'b1;
+            end
+        end
+    end
+endmodule
+</code></pre></div><table><thead><tr><th>실제 코드</th><th>의미</th></tr></thead><tbody><tr><td>phase + 32'd1 &gt;= ref_period</td><td>고정 주기 8의 마지막 박자 판정</td></tr><tr><td>phase &lt; ref_duty</td><td>정상 극성의 HIGH 구간</td></tr><tr><td>queued_*</td><td>대기 설정</td></tr><tr><td>ref_*</td><td>활성 설정과 기대 출력</td></tr><tr><td>if (cfg_apply)</td><td>새 요청을 대기 상태에 저장. 같은 에지의 적용보다 뒤에 대입</td></tr></tbody></table><p>비차단 대입은 에지 직전 상태를 기준으로 계산합니다. 같은 에지에 적용과 새 요청이 겹치면 기존 queued 값을 반영하고 새 값을 다음 적용을 위해 저장합니다. 주기 0, 범위를 벗어난 듀티, 여러 요청의 덮어쓰기 전체 조합은 이번 실습의 검증 범위가 아닙니다.</p>
+<div class="teach-note"><h3>모델 풀이 · 독립 상태가 시간에 따라 진행되는 방법</h3><p>phase는 현재 주기 위치이고 queued_*는 다음 반영할 설정입니다. 고정 8에서 phase=7이면 <code>phase+1 &gt;= ref_period</code>가 참이 되어 0으로 돌아갑니다. ref_pending이 있었으면 그때 이전 queued_*를 적용하고, cfg_apply가 있으면 새 값을 이후 반영용으로 저장합니다.</p><p>queued는 이름일 뿐 SystemVerilog queue 자료구조가 아닙니다. 여기에는 한 묶음의 레지스터만 있으며 여러 요청을 모두 보존하는 FIFO도 아닙니다. 순차 상태는 같은 시간 슬롯의 비차단 갱신으로 진행하고 ref_pwm은 갱신된 상태에서 조합 계산됩니다.</p><h4>tb/ch09/pwm_reference_model.sv · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-6</td><td><code class="teach-fragment">`timescale 1ns/1ps
+// (추가) 제09장: 공개 PWM 계약으로 예상값을 계산하는 독립 참조 모델.
+// DUT 내부 신호 counter, boundary, shadow_*는 참조하지 않는다.
+module pwm_reference_model #(
+    parameter [31:0] INITIAL_PERIOD = 32&#x27;d8
+)(</code></td><td>DUT 내부를 읽지 않는 참조 모델과 초기 주기 파라미터를 정의합니다.</td></tr><tr><td>7-14</td><td><code class="teach-fragment">    input wire clk, resetn, cfg_apply,
+    input wire [31:0] cfg_period, cfg_duty,
+    input wire cfg_enable, cfg_polarity,
+    output wire ref_pwm,
+    output reg ref_pending,
+    output reg [31:0] ref_period, ref_duty,
+    output reg ref_enable, ref_polarity
+);</code></td><td>DUT와 같은 입력 7개를 받고 기대 출력 6개를 내보냅니다. ref_*는 실제 출력과 구분한 이름입니다.</td></tr><tr><td>15-16</td><td><code class="teach-fragment">    reg [31:0] phase, queued_period, queued_duty;
+    reg queued_enable, queued_polarity;</code></td><td>모델 자체의 주기 위치와 다음 반영할 설정 한 묶음을 보존합니다. DUT와 저장 공간을 공유하지 않습니다.</td></tr><tr><td>18-23</td><td><code class="teach-fragment">    // 주기/듀티 기준으로 DUT와 별개 예상 파형을 구한다.
+    // 이번 장의 입력 주기는 항상 8이므로 0 주기는 다루지 않는다.
+    wire period_end = (phase + 32&#x27;d1 &gt;= ref_period);
+    wire high_window = (phase &lt; ref_duty);
+    assign ref_pwm = resetn &amp;&amp; ref_enable &amp;&amp;
+                     (ref_polarity ? !high_window : high_window);</code></td><td>주기8의 끝과 HIGH 구간을 자체 상태에서 계산합니다. resetn·enable이 출력 허용을 결정하고 polarity가 HIGH 구간을 반전합니다.</td></tr><tr><td>25-31</td><td><code class="teach-fragment">    always @(posedge clk) begin
+        if (!resetn) begin
+            phase           &lt;= 32&#x27;d0;
+            ref_period      &lt;= INITIAL_PERIOD;
+            ref_duty        &lt;= 32&#x27;d0;
+            ref_enable      &lt;= 1&#x27;b0;
+            ref_polarity    &lt;= 1&#x27;b0;</code></td><td>상승 에지의 리셋 분기에서 phase와 현재 설정을 초기화합니다. 내부 상태는 동기식 리셋입니다.</td></tr><tr><td>32-37</td><td><code class="teach-fragment">            queued_period   &lt;= INITIAL_PERIOD;
+            queued_duty     &lt;= 32&#x27;d0;
+            queued_enable   &lt;= 1&#x27;b0;
+            queued_polarity &lt;= 1&#x27;b0;
+            ref_pending     &lt;= 1&#x27;b0;
+        end else begin</code></td><td>대기값과 ref_pending도 지웁니다. 리셋 중 요청을 유지해서 반영하는 동작은 없습니다.</td></tr><tr><td>38-47</td><td><code class="teach-fragment">            // 현재 주기를 완료한 뒤 대기 중인 설정을 반영한다.
+            if (period_end) begin
+                phase &lt;= 32&#x27;d0;
+                if (ref_pending) begin
+                    ref_period   &lt;= queued_period;
+                    ref_duty     &lt;= queued_duty;
+                    ref_enable   &lt;= queued_enable;
+                    ref_polarity &lt;= queued_polarity;
+                    ref_pending  &lt;= 1&#x27;b0;
+                end</code></td><td>주기 끝이면 phase=0으로 예약하고 기존 대기값이 있을 때만 ref_*에 적용합니다. 같은 에지에 새로 들어오는 요청은 이 이전 값 검사에 포함되지 않습니다.</td></tr><tr><td>48-50</td><td><code class="teach-fragment">            end else begin
+                phase &lt;= phase + 32&#x27;d1;
+            end</code></td><td>끝이 아니면 phase를 1 증가시켜 다음 위치로 이동합니다.</td></tr><tr><td>52-59</td><td><code class="teach-fragment">            // 경계와 cfg_apply가 겹치면 새 값은 다음 경계에서 적용.
+            if (cfg_apply) begin
+                queued_period   &lt;= cfg_period;
+                queued_duty     &lt;= cfg_duty;
+                queued_enable   &lt;= cfg_enable;
+                queued_polarity &lt;= cfg_polarity;
+                ref_pending     &lt;= 1&#x27;b1;
+            end</code></td><td>cfg_apply가 있으면 새 네 설정을 queued_*에 넣고 pending=1로 예약합니다. 경계에서 기존 적용을 한 경우에도 새 요청을 다음 경계에 남깁니다.</td></tr><tr><td>60-62</td><td><code class="teach-fragment">        end
+    end
+endmodule</code></td><td>비리셋 분기·순차 블록·모듈을 닫습니다. phase+1의 32비트 극단값 전체를 다루는 범용 모델로 확대하지 않습니다.</td></tr></tbody></table></details></div>
+</section>
+<section class="section" id="s05"><h2><span class="num">05</span>스코어보드 전체 테스트벤치</h2><p>매 상승 에지 이후 #1ns에 공개 출력 여섯 개를 비교합니다. 이는 비차단 대입과 조합 출력 갱신이 끝난 뒤 관찰하기 위한 TB 시간이며, 실제 DUT 지연 사양은 아닙니다.</p><div class="codeblock"><div class="codebar"><span>tb/ch09/tb_pwm_scoreboard.sv · SystemVerilog</span></div><pre tabindex="0"><code>`timescale 1ns/1ps
+// (추가) 제09장: DUT와 참조 모델의 공개 출력 6개를 자동 비교한다.
+module tb_pwm_scoreboard;
+    reg clk = 1'b0, resetn = 1'b0, cfg_apply = 1'b0;
+    reg [31:0] cfg_period = 32'd8, cfg_duty = 32'd0;
+    reg cfg_enable = 1'b1, cfg_polarity = 1'b0;
+
+    wire pwm_out, pending, active_enable, active_polarity;
+    wire [31:0] active_period, active_duty;
+    wire ref_pwm, ref_pending, ref_enable, ref_polarity;
+    wire [31:0] ref_period, ref_duty;
+    integer score_cycles = 0, scenarios = 0;
+
+    // (추가) 원본 DUT 13포트를 변경 없이 연결한다.
+    pwm_core #(.RESET_PERIOD(32'd8)) dut (
+        .clk(clk), .resetn(resetn), .cfg_apply(cfg_apply),
+        .cfg_period(cfg_period), .cfg_duty(cfg_duty),
+        .cfg_enable(cfg_enable), .cfg_polarity(cfg_polarity),
+        .pwm_out(pwm_out), .pending(pending),
+        .active_period(active_period), .active_duty(active_duty),
+        .active_enable(active_enable), .active_polarity(active_polarity)
+    );
+
+    // (추가) 같은 입력을 독립된 Golden(정답) 모델에도 공급한다.
+    pwm_reference_model #(.INITIAL_PERIOD(32'd8)) golden (
+        .clk(clk), .resetn(resetn), .cfg_apply(cfg_apply),
+        .cfg_period(cfg_period), .cfg_duty(cfg_duty),
+        .cfg_enable(cfg_enable), .cfg_polarity(cfg_polarity),
+        .ref_pwm(ref_pwm), .ref_pending(ref_pending),
+        .ref_period(ref_period), .ref_duty(ref_duty),
+        .ref_enable(ref_enable), .ref_polarity(ref_polarity)
+    );
+
+    // 입력 자극은 하강 에지에서, 비교는 상승 에지 이후에 수행한다.
+    always #5 clk = ~clk;
+
+    // (추가) scoreboard: 4상태 비교 !==로 X/Z까지 놓치지 않는다.
+    // #1은 비차단 대입이 완료된 뒤 읽는 테스트벤치 관찰 지연이다.
+    always @(posedge clk) begin
+        #1;
+        score_cycles = score_cycles + 1;
+        // (추가) 양쪽이 같은 X/Z여도 정상으로 판정하지 않는다.
+        // Reduction XOR는 묶음에 X/Z가 있으면 X를 반환한다.
+        if ((^{pwm_out, pending, active_period, active_duty,
+               active_enable, active_polarity}) === 1'bx ||
+            (^{ref_pwm, ref_pending, ref_period, ref_duty,
+               ref_enable, ref_polarity}) === 1'bx)
+            $fatal(1, &quot;UNKNOWN_OUTPUT t=%0d&quot;, $time);
+        if ((pwm_out         !== ref_pwm)      ||
+            (pending         !== ref_pending)  ||
+            (active_period   !== ref_period)   ||
+            (active_duty     !== ref_duty)     ||
+            (active_enable   !== ref_enable)   ||
+            (active_polarity !== ref_polarity)) begin
+            $display(&quot;EXPECTED t=%0d pwm=%b pend=%b period=%0d duty=%0d en=%b pol=%b&quot;,
+                $time, ref_pwm, ref_pending, ref_period,
+                ref_duty, ref_enable, ref_polarity);
+            $fatal(1,
+                &quot;FAIL t=%0d pwm=%b pend=%b period=%0d duty=%0d en=%b pol=%b&quot;,
+                $time, pwm_out, pending, active_period,
+                active_duty, active_enable, active_polarity);
+        end
+    end
+
+    // (추가) 설정을 한 클록만 HIGH로 전달하는 재사용 태스크.
+    task automatic request_config(
+        input integer case_id,
+        input [31:0] duty_ticks,
+        input reg enabled, inverted
+    );
+        begin
+            @(negedge clk);
+            cfg_period   = 32'd8;
+            cfg_duty     = duty_ticks;
+            cfg_enable   = enabled;
+            cfg_polarity = inverted;
+            cfg_apply    = 1'b1;
+            scenarios = scenarios + 1;
+            $display(&quot;REQUEST case=%0d t=%0d duty=%0d en=%b pol=%b&quot;,
+                case_id, $time, duty_ticks, enabled, inverted);
+            @(negedge clk);
+            cfg_apply = 1'b0;
+        end
+    endtask
+
+`ifdef VCD
+    // (변경) VCD는 Icarus 실행에서만 활성화한다.
+    initial begin
+        $dumpfile(&quot;ch09_pwm_scoreboard.vcd&quot;);
+        $dumpvars(0, tb_pwm_scoreboard);
+    end
+`endif
+    initial begin
+        #1200;
+        $fatal(1, &quot;CH09 TIMEOUT: 검증이 정상 종료되지 않음&quot;);
+    end
+
+    initial begin
+        $display(&quot;=== CH09 PWM MODEL / SCOREBOARD START ===&quot;);
+
+        repeat (2) @(negedge clk); // t=20ns 초기 리셋 해제
+        resetn = 1'b1;
+
+        request_config(1, 32'd2, 1'b1, 1'b0); // t=30ns: 25%
+        repeat (9) @(negedge clk);
+
+        request_config(2, 32'd6, 1'b1, 1'b0); // t=140ns: 75%
+        repeat (9) @(negedge clk);
+
+        // t=250ns 요청이 t=255ns 주기 경계와 겹친다.
+        // 새 극성은 다음 주기 경계(t=335ns)에 반영되어야 한다.
+        request_config(3, 32'd6, 1'b1, 1'b1);
+        repeat (9) @(negedge clk);
+
+        request_config(4, 32'd6, 1'b0, 1'b1); // 출력 차단
+        repeat (9) @(negedge clk);
+
+        request_config(5, 32'd8, 1'b1, 1'b0); // 100% HIGH
+        repeat (9) @(negedge clk);
+
+        // t=580ns: PWM HIGH 상태에서 LOW 리셋 인가.
+        @(negedge clk);
+        // (추가) 이미 LOW라면 출력 차단 검사가 무의미하므로 선행 조건 확인.
+        if ((pwm_out !== 1'b1) || (ref_pwm !== 1'b1))
+            $fatal(1, &quot;FAIL RESET_PRECONDITION: expected HIGH&quot;);
+        resetn = 1'b0;
+        #1;
+        if ((pwm_out !== 1'b0) || (ref_pwm !== 1'b0))
+            $fatal(1, &quot;FAIL RESET_GATE: 출력 즉시 LOW 실패&quot;);
+        $display(&quot;RESET_GATE PASS t=%0d&quot;, $time);
+
+        repeat (2) @(negedge clk); // t=600ns 리셋 해제
+        resetn = 1'b1;
+        request_config(6, 32'd0, 1'b1, 1'b0); // 0% 듀티
+        repeat (10) @(negedge clk);
+
+        // (추가) 현재 고정 시나리오의 전체 비교·요청 횟수 확인.
+        if (score_cycles != 72 || scenarios != 6)
+            $fatal(1, &quot;FAIL COUNT cycles=%0d scenarios=%0d&quot;,
+                score_cycles, scenarios);
+        $display(&quot;PASS CH09 score_cycles=%0d scenarios=%0d&quot;,
+            score_cycles, scenarios);
+        $finish;
+    end
+endmodule
+</code></pre></div><h3>핵심 코드 풀이</h3><table><thead><tr><th>코드</th><th>역할</th></tr></thead><tbody><tr><td>request_config()</td><td>하강 에지에서 한 클록 동안 설정 요청</td></tr><tr><td>always @(posedge clk) · #1</td><td>상승 에지 이후 출력 비교</td></tr><tr><td>^{...} === 1'bx</td><td>감소 XOR로 DUT/모델 각각의 X/Z 존재 검사</td></tr><tr><td>!==</td><td>실제값과 기대값의 4상태 비일치 비교</td></tr><tr><td>score_cycles</td><td>6개 출력 묶음을 검사한 클록 수</td></tr><tr><td>RESET_PRECONDITION</td><td>리셋 전 출력 HIGH인지 확인</td></tr><tr><td>RESET_GATE</td><td>리셋 직후 LOW인지 확인</td></tr><tr><td>COUNT</td><td>현재 고정 실습의 72클록·6요청 확인</td></tr></tbody></table><p>두 값에 동일한 X/Z가 포함되어 있으면 <code>!==</code>만으로는 불일치를 발견하지 못합니다. 이 실습은 정상 입력과 초기 리셋 이후의 확정 출력을 기대하므로 양쪽 출력의 미정값을 별도로 금지합니다. 리셋 차단 역시 이미 LOW라면 의미가 약하므로 HIGH였음을 먼저 확인합니다.</p>
+<div class="teach-note"><h3>비교 순서 · 같은 X끼리 같아도 정상은 아니다</h3><p>!==만 쓰면 양쪽에 같은 위치의 X가 있는 경우 서로 같다고 판정합니다. 이 시험은 초기 리셋 후 모든 공개 출력이 확정되어야 하므로 먼저 각 묶음의 reduction XOR(리덕션 엑스오어, 전체 비트 배타 합)이 X인지 확인합니다. 한 비트라도 X·Z이면 결과가 X가 되어 UNKNOWN_OUTPUT으로 끝냅니다. 그 뒤 여섯 출력의 불일치를 비교합니다.</p><p>출력 묶음은 1+1+32+32+1+1=68비트입니다. score_cycles는 묶음을 확인한 클록 수 72이며 각 비트를 센 수가 아닙니다. 요청 수 6도 별도 집계합니다. 이 개수 조건은 비교 절차가 누락되지 않았는지 확인하지만 정답 모델의 옳음까지 대신 증명하지는 않습니다.</p><h4>tb/ch09/tb_pwm_scoreboard.sv · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-6</td><td><code class="teach-fragment">`timescale 1ns/1ps
+// (추가) 제09장: DUT와 참조 모델의 공개 출력 6개를 자동 비교한다.
+module tb_pwm_scoreboard;
+    reg clk = 1&#x27;b0, resetn = 1&#x27;b0, cfg_apply = 1&#x27;b0;
+    reg [31:0] cfg_period = 32&#x27;d8, cfg_duty = 32&#x27;d0;
+    reg cfg_enable = 1&#x27;b1, cfg_polarity = 1&#x27;b0;</code></td><td>ns/ps 시간 규격과 클록·리셋·고정 period=8 입력을 선언·초기화합니다.</td></tr><tr><td>8-12</td><td><code class="teach-fragment">    wire pwm_out, pending, active_enable, active_polarity;
+    wire [31:0] active_period, active_duty;
+    wire ref_pwm, ref_pending, ref_enable, ref_polarity;
+    wire [31:0] ref_period, ref_duty;
+    integer score_cycles = 0, scenarios = 0;</code></td><td>DUT 실제 출력과 모델 기대 출력을 따로 선언하고 클록 비교·시나리오 카운터를 둡니다.</td></tr><tr><td>14-22</td><td><code class="teach-fragment">    // (추가) 원본 DUT 13포트를 변경 없이 연결한다.
+    pwm_core #(.RESET_PERIOD(32&#x27;d8)) dut (
+        .clk(clk), .resetn(resetn), .cfg_apply(cfg_apply),
+        .cfg_period(cfg_period), .cfg_duty(cfg_duty),
+        .cfg_enable(cfg_enable), .cfg_polarity(cfg_polarity),
+        .pwm_out(pwm_out), .pending(pending),
+        .active_period(active_period), .active_duty(active_duty),
+        .active_enable(active_enable), .active_polarity(active_polarity)
+    );</code></td><td>원본 DUT에 같은 13개 포트를 연결하고 RESET_PERIOD=8로 인스턴스화합니다.</td></tr><tr><td>24-32</td><td><code class="teach-fragment">    // (추가) 같은 입력을 독립된 Golden(정답) 모델에도 공급한다.
+    pwm_reference_model #(.INITIAL_PERIOD(32&#x27;d8)) golden (
+        .clk(clk), .resetn(resetn), .cfg_apply(cfg_apply),
+        .cfg_period(cfg_period), .cfg_duty(cfg_duty),
+        .cfg_enable(cfg_enable), .cfg_polarity(cfg_polarity),
+        .ref_pwm(ref_pwm), .ref_pending(ref_pending),
+        .ref_period(ref_period), .ref_duty(ref_duty),
+        .ref_enable(ref_enable), .ref_polarity(ref_polarity)
+    );</code></td><td>별도 모델 golden에 동일 입력을 공급하고 ref_* 출력에 연결합니다. DUT 내부·출력을 모델 입력으로 쓰지 않습니다.</td></tr><tr><td>34-35</td><td><code class="teach-fragment">    // 입력 자극은 하강 에지에서, 비교는 상승 에지 이후에 수행한다.
+    always #5 clk = ~clk;</code></td><td>10ns 클록을 생성합니다. 입력은 하강 에지, 비교는 상승 에지 이후로 분리합니다.</td></tr><tr><td>37-41</td><td><code class="teach-fragment">    // (추가) scoreboard: 4상태 비교 !==로 X/Z까지 놓치지 않는다.
+    // #1은 비차단 대입이 완료된 뒤 읽는 테스트벤치 관찰 지연이다.
+    always @(posedge clk) begin
+        #1;
+        score_cycles = score_cycles + 1;</code></td><td>매 상승 에지 1ns 뒤 출력 묶음 비교 횟수를 늘립니다. NBA·조합 갱신 뒤의 상태를 관찰합니다.</td></tr><tr><td>42-48</td><td><code class="teach-fragment">        // (추가) 양쪽이 같은 X/Z여도 정상으로 판정하지 않는다.
+        // Reduction XOR는 묶음에 X/Z가 있으면 X를 반환한다.
+        if ((^{pwm_out, pending, active_period, active_duty,
+               active_enable, active_polarity}) === 1&#x27;bx ||
+            (^{ref_pwm, ref_pending, ref_period, ref_duty,
+               ref_enable, ref_polarity}) === 1&#x27;bx)
+            $fatal(1, &quot;UNKNOWN_OUTPUT t=%0d&quot;, $time);</code></td><td>실제 출력과 기대 출력을 각각 XOR 감소 연산으로 확인하고 미정 비트가 있으면 즉시 UNKNOWN_OUTPUT을 보고합니다.</td></tr><tr><td>49-54</td><td><code class="teach-fragment">        if ((pwm_out         !== ref_pwm)      ||
+            (pending         !== ref_pending)  ||
+            (active_period   !== ref_period)   ||
+            (active_duty     !== ref_duty)     ||
+            (active_enable   !== ref_enable)   ||
+            (active_polarity !== ref_polarity)) begin</code></td><td>여섯 공개 출력을 각각 대응 기대값과 4상태 비일치 비교합니다. 하나라도 다르면 오류 경로입니다.</td></tr><tr><td>55-63</td><td><code class="teach-fragment">            $display(&quot;EXPECTED t=%0d pwm=%b pend=%b period=%0d duty=%0d en=%b pol=%b&quot;,
+                $time, ref_pwm, ref_pending, ref_period,
+                ref_duty, ref_enable, ref_polarity);
+            $fatal(1,
+                &quot;FAIL t=%0d pwm=%b pend=%b period=%0d duty=%0d en=%b pol=%b&quot;,
+                $time, pwm_out, pending, active_period,
+                active_duty, active_enable, active_polarity);
+        end
+    end</code></td><td>먼저 기대값을 보여 주고 이어 실제값·시각을 Fatal에 남깁니다. 비교기는 별도 RTL 인스턴스가 아니라 이 always 블록입니다.</td></tr><tr><td>65-70</td><td><code class="teach-fragment">    // (추가) 설정을 한 클록만 HIGH로 전달하는 재사용 태스크.
+    task automatic request_config(
+        input integer case_id,
+        input [31:0] duty_ticks,
+        input reg enabled, inverted
+    );</code></td><td>사례 번호, 듀티, 허용·극성을 받는 설정 요청 task를 선언합니다.</td></tr><tr><td>71-80</td><td><code class="teach-fragment">        begin
+            @(negedge clk);
+            cfg_period   = 32&#x27;d8;
+            cfg_duty     = duty_ticks;
+            cfg_enable   = enabled;
+            cfg_polarity = inverted;
+            cfg_apply    = 1&#x27;b1;
+            scenarios = scenarios + 1;
+            $display(&quot;REQUEST case=%0d t=%0d duty=%0d en=%b pol=%b&quot;,
+                case_id, $time, duty_ticks, enabled, inverted);</code></td><td>하강 에지에 period=8과 요청 인자를 설정해 apply를 올립니다. 요청 수를 늘리고 시각·조건을 기록합니다.</td></tr><tr><td>81-84</td><td><code class="teach-fragment">            @(negedge clk);
+            cfg_apply = 1&#x27;b0;
+        end
+    endtask</code></td><td>다음 하강 에지에서 apply를 내려 상승 에지 한 번만 요청하게 합니다. 이 task는 적용 완료를 기다리는 task가 아닙니다.</td></tr><tr><td>86-92</td><td><code class="teach-fragment">`ifdef VCD
+    // (변경) VCD는 Icarus 실행에서만 활성화한다.
+    initial begin
+        $dumpfile(&quot;ch09_pwm_scoreboard.vcd&quot;);
+        $dumpvars(0, tb_pwm_scoreboard);
+    end
+`endif</code></td><td>선택적으로 VCD 파형을 기록합니다.</td></tr><tr><td>93-96</td><td><code class="teach-fragment">    initial begin
+        #1200;
+        $fatal(1, &quot;CH09 TIMEOUT: 검증이 정상 종료되지 않음&quot;);
+    end</code></td><td>별도 1,200ns watchdog는 정상 절차가 멈추면 Fatal로 종료합니다.</td></tr><tr><td>98-105</td><td><code class="teach-fragment">    initial begin
+        $display(&quot;=== CH09 PWM MODEL / SCOREBOARD START ===&quot;);
+
+        repeat (2) @(negedge clk); // t=20ns 초기 리셋 해제
+        resetn = 1&#x27;b1;
+
+        request_config(1, 32&#x27;d2, 1&#x27;b1, 1&#x27;b0); // t=30ns: 25%
+        repeat (9) @(negedge clk);</code></td><td>20ns에 리셋을 풀고 30ns에 duty2를 요청한 뒤 40ns task 반환 후 하강 에지 아홉 번까지 기다립니다.</td></tr><tr><td>107-108</td><td><code class="teach-fragment">        request_config(2, 32&#x27;d6, 1&#x27;b1, 1&#x27;b0); // t=140ns: 75%
+        repeat (9) @(negedge clk);</code></td><td>140ns에 duty6·정상 극성을 요청하고 동일 대기 절차를 수행합니다.</td></tr><tr><td>110-113</td><td><code class="teach-fragment">        // t=250ns 요청이 t=255ns 주기 경계와 겹친다.
+        // 새 극성은 다음 주기 경계(t=335ns)에 반영되어야 한다.
+        request_config(3, 32&#x27;d6, 1&#x27;b1, 1&#x27;b1);
+        repeat (9) @(negedge clk);</code></td><td>250ns에 반전 극성을 요청해 255ns 주기 경계와 저장이 겹치게 합니다. 기대 반영은 다음 335ns입니다.</td></tr><tr><td>115-119</td><td><code class="teach-fragment">        request_config(4, 32&#x27;d6, 1&#x27;b0, 1&#x27;b1); // 출력 차단
+        repeat (9) @(negedge clk);
+
+        request_config(5, 32&#x27;d8, 1&#x27;b1, 1&#x27;b0); // 100% HIGH
+        repeat (9) @(negedge clk);</code></td><td>360ns 출력 비활성 요청과 470ns duty8 정상 극성 요청을 순서대로 수행합니다.</td></tr><tr><td>121-127</td><td><code class="teach-fragment">        // t=580ns: PWM HIGH 상태에서 LOW 리셋 인가.
+        @(negedge clk);
+        // (추가) 이미 LOW라면 출력 차단 검사가 무의미하므로 선행 조건 확인.
+        if ((pwm_out !== 1&#x27;b1) || (ref_pwm !== 1&#x27;b1))
+            $fatal(1, &quot;FAIL RESET_PRECONDITION: expected HIGH&quot;);
+        resetn = 1&#x27;b0;
+        #1;</code></td><td>580ns에 양쪽 출력 HIGH 선행 조건을 검사하고 resetn을 내린 뒤 1ns 관찰 대기합니다.</td></tr><tr><td>128-130</td><td><code class="teach-fragment">        if ((pwm_out !== 1&#x27;b0) || (ref_pwm !== 1&#x27;b0))
+            $fatal(1, &quot;FAIL RESET_GATE: 출력 즉시 LOW 실패&quot;);
+        $display(&quot;RESET_GATE PASS t=%0d&quot;, $time);</code></td><td>581ns 양쪽 출력이 LOW인지 확인하고 RESET_GATE PASS를 남깁니다. 내부 상태는 다음 상승 에지에 초기화됩니다.</td></tr><tr><td>132-135</td><td><code class="teach-fragment">        repeat (2) @(negedge clk); // t=600ns 리셋 해제
+        resetn = 1&#x27;b1;
+        request_config(6, 32&#x27;d0, 1&#x27;b1, 1&#x27;b0); // 0% 듀티
+        repeat (10) @(negedge clk);</code></td><td>600ns에 리셋을 풀고 610ns에 duty0을 요청합니다. task 반환 620ns 후 열 하강 에지인 720ns까지 기다립니다.</td></tr><tr><td>137-145</td><td><code class="teach-fragment">        // (추가) 현재 고정 시나리오의 전체 비교·요청 횟수 확인.
+        if (score_cycles != 72 || scenarios != 6)
+            $fatal(1, &quot;FAIL COUNT cycles=%0d scenarios=%0d&quot;,
+                score_cycles, scenarios);
+        $display(&quot;PASS CH09 score_cycles=%0d scenarios=%0d&quot;,
+            score_cycles, scenarios);
+        $finish;
+    end
+endmodule</code></td><td>72클록·6요청이 완료됐는지 확인하고 최종 PASS 후 종료합니다. 앞의 mismatch·unknown·reset 실패는 이 경로 전에 Fatal 종료합니다.</td></tr></tbody></table></details></div>
+</section>
+<section class="section" id="s06"><h2><span class="num">06</span>Ubuntu 실행 및 예상 출력</h2><p>세 파일을 저장한 ch09_lab 폴더에서 실행합니다. Vivado XSIM을 우선 사용합니다.</p><div class="codeblock"><div class="codebar"><span>Ubuntu · Vivado XSIM</span></div><pre tabindex="0"><code># Vivado 설치 경로의 settings64.sh를 source한 뒤 실행
+command -v xvlog xelab xsim
+mkdir -p .build/ch09/xsim
+cd .build/ch09/xsim
+xvlog ../../../reference_rtl/pwm_core.v
+xvlog -sv ../../../tb/ch09/pwm_reference_model.sv
+xvlog -sv ../../../tb/ch09/tb_pwm_scoreboard.sv
+xelab -debug typical tb_pwm_scoreboard -s ch09_sim
+xsim ch09_sim -runall
+# 같은 폴더에서 파형 확인
+xsim ch09_sim -gui</code></pre></div><table><thead><tr><th>명령</th><th>기능</th></tr></thead><tbody><tr><td>xvlog</td><td>원본 RTL·참조 모델·TB 분석</td></tr><tr><td>xelab</td><td>최상위 테스트벤치 연결 및 스냅샷 생성</td></tr><tr><td>xsim</td><td>시뮬레이션 실행·GUI 파형 관찰</td></tr></tbody></table><p>GUI에서 clk, resetn, cfg_apply, pwm_out, ref_pwm, pending, ref_pending, active_duty, ref_duty를 추가합니다. Icarus Verilog는 아래 대체 실행 경로를 사용합니다.</p><div class="codeblock"><div class="codebar"><span>Ubuntu · 실습 루트에서 Icarus</span></div><pre tabindex="0"><code>mkdir -p .build/ch09/iverilog
+iverilog -g2012 -DVCD -s tb_pwm_scoreboard \
+  -o .build/ch09/iverilog/sim \
+  reference_rtl/pwm_core.v \
+  tb/ch09/pwm_reference_model.sv \
+  tb/ch09/tb_pwm_scoreboard.sv
+(cd .build/ch09/iverilog &amp;&amp; vvp ./sim)</code></pre></div><p>-DVCD는 조건부 파형 기록을 활성화합니다. VCD 파일은 .build/ch09/iverilog/ch09_pwm_scoreboard.vcd에 생성됩니다.</p><h3>예상 콘솔 출력 · 실제 실행 로그 아님</h3><div class="codeblock"><div class="codebar"><span>독립 시간 계약으로 계산한 예상 결과</span></div><pre tabindex="0"><code>=== CH09 PWM MODEL / SCOREBOARD START ===
+REQUEST case=1 t=30 duty=2 en=1 pol=0
+REQUEST case=2 t=140 duty=6 en=1 pol=0
+REQUEST case=3 t=250 duty=6 en=1 pol=1
+REQUEST case=4 t=360 duty=6 en=0 pol=1
+REQUEST case=5 t=470 duty=8 en=1 pol=0
+RESET_GATE PASS t=581
+REQUEST case=6 t=610 duty=0 en=1 pol=0
+PASS CH09 score_cycles=72 scenarios=6</code></pre></div><p>5ns부터 715ns까지 상승 에지 72회, 6개 설정 요청, 리셋 검사 1회가 예정되어 있습니다. 72는 출력 묶음의 비교 횟수이며 6개 출력 조건을 각각 합산한 값이 아닙니다. 정상 종료는 720ns입니다.</p>
+<div class="execution-evidence" data-evidence="v59"><h3>2026-11-26 실제 실행 결과</h3><p>Icarus Verilog 12.0 · 종료 코드 0 · <strong>PASS</strong>. 정상 실행과 정의된 오류 검출 조건을 장별 실행기로 확인했습니다.</p><div class="codeblock"><div class="codebar"><span>저장소 루트 · Bash · 실행 재현 명령</span></div><pre tabindex="0"><code>bash scripts/run_chapter.sh 09</code></pre></div><div class="codeblock"><div class="codebar"><span>실제 로그 발췌 · 예상 출력과 구별</span></div><pre tabindex="0"><code>RESET_GATE PASS t=581
+PASS CH09 score_cycles=72 scenarios=6</code></pre></div><p><a href="https://github.com/Yuul-Jung/system_verilog_uvm_tb/blob/2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708/docs/evidence/v59/README.md#ch09">실행 명령·종료 코드·공개 로그 및 해시 확인</a>. 위의 예상 파형은 코드에서 계산한 도식이며, 실측 파형 이미지는 별도로 수록하지 않았습니다.</p></div>
+
+<div class="teach-note"><h3>수치로 읽는 실행 증거</h3><p>상승 에지는 5+10k ns이고 k=0~71이면 마지막은 715ns입니다. 각 #1 뒤 6~716ns에 72번 비교하고 720ns 하강 에지에 정상 종료합니다. 요청은 30·140·250·360·470·610ns의 여섯 번입니다. RESET_GATE PASS t=581은 580ns 리셋 뒤 클록을 기다리지 않는 조합 차단을 관찰한 별도 검사입니다.</p><p>원본 전체 세 파일을 저장한 독립 폴더는 직접 XSIM 또는 Icarus 명령을 사용합니다. 원본 저장소 runner는 별도 전체 체크아웃용입니다. 현재 페이지는 보존된 Icarus PASS 증거를 유지하며 새로운 RTL_SIM은 <strong>NOT_RUN</strong>입니다.</p></div>
+</section>
+<section class="section" id="s07"><h2><span class="num">07</span>반례와 검증 범위</h2><table><thead><tr><th>가상 결함</th><th>예상 검출</th></tr></thead><tbody><tr><td>255ns에 새 극성 즉시 반영</td><td>256ns 공개 active_polarity 또는 pending 불일치</td></tr><tr><td>비활성화 상태에서도 출력 HIGH</td><td>활성화 차단 조건에 따라 pwm_out 비교에서 검출</td></tr><tr><td>resetn 조합 차단 누락</td><td>581ns RESET_GATE 검사</td></tr><tr><td>양쪽 출력에 같은 X</td><td>UNKNOWN_OUTPUT 검사</td></tr><tr><td>비교 블록이 실행되지 않음</td><td>최종 COUNT 검사</td></tr></tbody></table><p>위 반례는 시간 계약과 코드 경로에 따른 논리 분석입니다. 실제 변이 RTL을 실행한 결과가 아닙니다. 두 모델이 같은 오류를 포함하거나 샘플 사이에서 순간적인 출력 이상이 발생하면 검출하지 못할 수 있습니다. 제10장은 경계조건·중간 리셋·오류 주입으로 검사를 확장합니다.</p>
+<div class="teach-note"><h3>예상 문답 · 매 클록 비교의 경계</h3><p><strong>모델과 일치하면 모든 오류를 찾았나요?</strong> 같은 명세 오류를 공유하거나 샘플 사이의 짧은 글리치가 있으면 놓칠 수 있습니다. 이 시험은 정의한 72개 관찰 시점의 공개 출력 일치를 확인합니다.</p><p><strong>리셋 전에 HIGH를 확인하는 이유는요?</strong> 원래 LOW인 출력이 계속 LOW면 리셋 차단 경로가 없어도 통과할 수 있습니다. 선행 조건을 확인해야 ‘HIGH를 리셋으로 낮췄다’는 검사의 의미가 생깁니다.</p><p><strong>왜 모델의 내부 신호까지 DUT와 비교하지 않나요?</strong> 서로 다른 구현도 같은 공개 계약을 만족할 수 있습니다. 현재 비교는 공개 출력 경계에 둡니다. 다음 장은 경계값·타임아웃·오류 주입으로 실제 검출 경로를 더 확인합니다.</p></div>
+</section>
+<div class="chapter-links" id="chapter-links"></div></main></div><footer class="footer">RTL TESTBENCH · SYSTEMVERILOG · UVM · CH09 교수용 v01 · 원본 v04 · PASS</footer><script>window.COURSE={"title":"RTL · SystemVerilog · UVM 교수용 해설서","short_title":"SV UVM TEACH","home_label":"전체 교수용 해설서","chapters":[{"id":"ch01","number":1,"title":"테스트벤치의 첫 실행","file":"ch01_teacher_v02.html"},{"id":"ch02","number":2,"title":"Clock·Reset·이벤트","file":"ch02_teacher_v01.html"},{"id":"ch03","number":3,"title":"반복 자극과 작업 분리","file":"ch03_teacher_v01.html"},{"id":"ch04","number":4,"title":"PASS/FAIL 자동 판정","file":"ch04_teacher_v01.html"},{"id":"ch05","number":5,"title":"검증 자료형과 타입","file":"ch05_teacher_v01.html"},{"id":"ch06","number":6,"title":"배열·큐·패키지","file":"ch06_teacher_v01.html"},{"id":"ch07","number":7,"title":"인터페이스·타이밍 분리","file":"ch07_teacher_v01.html"},{"id":"ch08","number":8,"title":"객체와 제약 기반 입력","file":"ch08_teacher_v01.html"},{"id":"ch09","number":9,"title":"참조 모델·스코어보드","file":"ch09_teacher_v01.html"}]};</script><script src="assets/site.js"></script></body></html>

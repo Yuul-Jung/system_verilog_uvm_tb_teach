@@ -19,4 +19,5 @@
 - [제06장 · 배열·큐·패키지](ch06_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch06_v01.md)
 - [제07장 · 인터페이스·타이밍 분리](ch07_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch07_v01.md)
 - [제08장 · 객체와 제약 기반 입력](ch08_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch08_v01.md)
+- [제09장 · 참조 모델·스코어보드](ch09_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch09_v01.md)
 <!-- /PUBLISHED -->

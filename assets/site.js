@@ -71,6 +71,12 @@
       "number": 8,
       "title": "객체와 제약 기반 입력",
       "file": "ch08_teacher_v01.html"
+    },
+    {
+      "id": "ch09",
+      "number": 9,
+      "title": "참조 모델·스코어보드",
+      "file": "ch09_teacher_v01.html"
     }
   ]
 };

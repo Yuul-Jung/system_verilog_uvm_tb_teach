@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v09",
+  "version": "v10",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -124,6 +124,21 @@
       "source_tb": "tb/ch08/tb_uart_objects.sv",
       "rtl_simulation": "NOT_RUN",
       "original_execution": "PASS"
+    },
+    {
+      "id": "ch09",
+      "number": 9,
+      "title": "참조 모델·스코어보드",
+      "slug": "ch09_teacher",
+      "version": "v01",
+      "source_html": "ch09_reference_model_scoreboard_v04.html",
+      "source_version": "v04",
+      "source_blob": "84263f8fba1ba39d5f7c37508159f459aadbd6a4",
+      "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
+      "source_course_version": "v60",
+      "source_tb": "tb/ch09/tb_pwm_scoreboard.sv",
+      "rtl_simulation": "NOT_RUN",
+      "original_execution": "PASS"
     }
   ],
   "planned_chapters": [
@@ -197,7 +212,7 @@
       "title": "참조 모델·스코어보드",
       "source_html": "ch09_reference_model_scoreboard_v04.html",
       "source_version": "v04",
-      "status": "planned"
+      "status": "published"
     },
     {
       "id": "ch10",
