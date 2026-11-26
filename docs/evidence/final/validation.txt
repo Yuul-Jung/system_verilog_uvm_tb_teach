@@ -1,0 +1,48 @@
+CH01 adversarial: code / SVG / section mutations rejected
+CH01: sections=8 codeboxes=9 SVG=3 PASS
+CH02 adversarial: code / SVG / section mutations rejected
+CH02: sections=8 codeboxes=8 SVG=2 PASS
+CH03 adversarial: code / SVG / section mutations rejected
+CH03: sections=8 codeboxes=8 SVG=1 PASS
+CH04 adversarial: code / SVG / section mutations rejected
+CH04: sections=8 codeboxes=9 SVG=1 PASS
+CH05 adversarial: code / SVG / section mutations rejected
+CH05: sections=8 codeboxes=10 SVG=1 PASS
+CH06 adversarial: code / SVG / section mutations rejected
+CH06: sections=8 codeboxes=11 SVG=1 PASS
+CH07 adversarial: code / SVG / section mutations rejected
+CH07: sections=8 codeboxes=10 SVG=1 PASS
+CH08 adversarial: code / SVG / section mutations rejected
+CH08: sections=8 codeboxes=11 SVG=1 PASS
+CH09 adversarial: code / SVG / section mutations rejected
+CH09: sections=8 codeboxes=9 SVG=1 PASS
+CH10 adversarial: code / SVG / section mutations rejected
+CH10: sections=8 codeboxes=11 SVG=1 PASS
+CH11 adversarial: code / SVG / section mutations rejected
+CH11: sections=8 codeboxes=8 SVG=1 PASS
+CH12 adversarial: code / SVG / section mutations rejected
+CH12: sections=8 codeboxes=8 SVG=1 PASS
+CH13 adversarial: code / SVG / section mutations rejected
+CH13: sections=8 codeboxes=9 SVG=1 PASS
+CH14 adversarial: code / SVG / section mutations rejected
+CH14: sections=8 codeboxes=11 SVG=1 PASS
+CH15 adversarial: code / SVG / section mutations rejected
+CH15: sections=8 codeboxes=10 SVG=1 PASS
+CH16 adversarial: code / SVG / section mutations rejected
+CH16: sections=8 codeboxes=13 SVG=1 PASS
+CH17 adversarial: code / SVG / section mutations rejected
+CH17: sections=8 codeboxes=9 SVG=1 PASS
+CH18 adversarial: code / SVG / section mutations rejected
+CH18: sections=8 codeboxes=9 SVG=1 PASS
+CH19 adversarial: code / SVG / section mutations rejected
+CH19: sections=8 codeboxes=9 SVG=1 PASS
+CH20 adversarial: code / SVG / section mutations rejected
+CH20: sections=8 codeboxes=9 SVG=1 PASS
+CH21 adversarial: code / SVG / section mutations rejected
+CH21: sections=8 codeboxes=9 SVG=1 PASS
+CH22 adversarial: code / SVG / section mutations rejected
+CH22: sections=8 codeboxes=11 SVG=1 PASS
+CH23 adversarial: code / SVG / section mutations rejected
+CH23: sections=8 codeboxes=8 SVG=2 PASS
+CH24 adversarial: code / SVG / section mutations rejected
+CH24: sections=7 codeboxes=8 SVG=2 PASS

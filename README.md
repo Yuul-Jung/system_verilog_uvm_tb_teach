@@ -15,6 +15,8 @@
 
 종합 품질 검증: [제1부](docs/PART01_QUALITY_REVIEW.md) · [제2부](docs/PART02_QUALITY_REVIEW.md) · [제3부](docs/PART03_QUALITY_REVIEW.md) · [제4부](docs/PART04_QUALITY_REVIEW.md) · [제5부](docs/PART05_QUALITY_REVIEW.md) · [제6부](docs/PART06_QUALITY_REVIEW.md). 원본 설명에서 발견한 세 항목은 [별도 기록](docs/SOURCE_ISSUES.md)에 보존했습니다.
 
+[24장 최종 검증 보고서](docs/FINAL_REVIEW_v25.md) · [전체 파일 정합성](docs/evidence/final/integrity.json) · [공개 Pages 실제 검증](docs/evidence/publication/pages.json)
+
 Pages는 `main` 루트의 정적 HTML을 제공합니다. `.nojekyll`로 원본 SystemVerilog·Python·SVG를 템플릿 처리 없이 배포합니다. 공개 배포의 실제 커밋·HTTP·SHA256·화면은 `scripts/check_publication.py`로 확인합니다.
 
 <!-- PUBLISHED -->

@@ -1,0 +1,341 @@
+{
+  "course_version": "v25",
+  "rows": [
+    {
+      "chapter": 1,
+      "part": 1,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 2,
+      "part": 1,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 3,
+      "part": 1,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 4,
+      "part": 1,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 5,
+      "part": 2,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 6,
+      "part": 2,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 7,
+      "part": 2,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 8,
+      "part": 2,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 9,
+      "part": 3,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 10,
+      "part": 3,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 11,
+      "part": 3,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 12,
+      "part": 3,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 13,
+      "part": 4,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 14,
+      "part": 4,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 15,
+      "part": 4,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 16,
+      "part": 4,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 17,
+      "part": 5,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 18,
+      "part": 5,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 19,
+      "part": 5,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 20,
+      "part": 5,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 21,
+      "part": 6,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 22,
+      "part": 6,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 23,
+      "part": 6,
+      "mode": "online",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 24,
+      "part": 6,
+      "mode": "online",
+      "sections": 7,
+      "links": true
+    },
+    {
+      "chapter": 1,
+      "part": 1,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 2,
+      "part": 1,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 3,
+      "part": 1,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 4,
+      "part": 1,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 5,
+      "part": 2,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 6,
+      "part": 2,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 7,
+      "part": 2,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 8,
+      "part": 2,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 9,
+      "part": 3,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 10,
+      "part": 3,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 11,
+      "part": 3,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 12,
+      "part": 3,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 13,
+      "part": 4,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 14,
+      "part": 4,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 15,
+      "part": 4,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 16,
+      "part": 4,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 17,
+      "part": 5,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 18,
+      "part": 5,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 19,
+      "part": 5,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 20,
+      "part": 5,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 21,
+      "part": 6,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 22,
+      "part": 6,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 23,
+      "part": 6,
+      "mode": "manifest_blocked",
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 24,
+      "part": 6,
+      "mode": "manifest_blocked",
+      "sections": 7,
+      "links": true
+    }
+  ]
+}

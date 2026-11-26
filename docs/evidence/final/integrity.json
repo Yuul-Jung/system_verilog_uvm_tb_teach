@@ -1,0 +1,257 @@
+{
+  "course": "v25",
+  "published": 24,
+  "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
+  "source_worktree": "CLEAN",
+  "shared_css": "BYTE_IDENTICAL",
+  "chapters": [
+    {
+      "chapter": 1,
+      "file": "ch01_teacher_v02.html",
+      "sha256": "51147725ea155c372dfd5d34aecb5f8e4536613943e5b3643dd25012604f224b",
+      "source_html": "ch01_testbench_basics_v05.html",
+      "source_blob": "080bc24ec12d33d2ea081345d96a076571aa4338",
+      "sections": 8,
+      "codeboxes": 9,
+      "svg": 3
+    },
+    {
+      "chapter": 2,
+      "file": "ch02_teacher_v01.html",
+      "sha256": "baf68c78a5ffd3601d19d74218542c7fa4f2b93540b72a30dbe3dfc0cd292817",
+      "source_html": "ch02_clock_reset_events_v04.html",
+      "source_blob": "f5ab9297bacf395c29e4259312598b575b375519",
+      "sections": 8,
+      "codeboxes": 8,
+      "svg": 2
+    },
+    {
+      "chapter": 3,
+      "file": "ch03_teacher_v01.html",
+      "sha256": "e0f1cc2a4df0265ddf0e1077a648490b42c65ce366bd40bd0a74a08723179b59",
+      "source_html": "ch03_reusable_stimulus_v04.html",
+      "source_blob": "4d8e82acddb9321d0caf45b2ca4b61bed095e196",
+      "sections": 8,
+      "codeboxes": 8,
+      "svg": 1
+    },
+    {
+      "chapter": 4,
+      "file": "ch04_teacher_v01.html",
+      "sha256": "3fb809886e9ec5a63949290801a16f865574a88a0473b9cc6af9d650998c5b6a",
+      "source_html": "ch04_pass_fail_automation_v05.html",
+      "source_blob": "03f3eed8fae6583baf29517cc025eeb00433162c",
+      "sections": 8,
+      "codeboxes": 9,
+      "svg": 1
+    },
+    {
+      "chapter": 5,
+      "file": "ch05_teacher_v01.html",
+      "sha256": "24eaa6ab5eb0121d488da3400287df6fef0aa27d22a97a8b6eacbe0d52ff44c7",
+      "source_html": "ch05_verification_types_v05.html",
+      "source_blob": "1c818b81e1872acd19f4972aa3ba6efc7487cb33",
+      "sections": 8,
+      "codeboxes": 10,
+      "svg": 1
+    },
+    {
+      "chapter": 6,
+      "file": "ch06_teacher_v01.html",
+      "sha256": "df1fc96e5303c5baa7ed5c6192c7fc6118aba475f2d693af1b7f2d7779ff12ed",
+      "source_html": "ch06_arrays_queues_packages_v05.html",
+      "source_blob": "4b6557004d9fd303323b2644d6f19f9ecc01b601",
+      "sections": 8,
+      "codeboxes": 11,
+      "svg": 1
+    },
+    {
+      "chapter": 7,
+      "file": "ch07_teacher_v01.html",
+      "sha256": "033d931f106d614a9ea04bdeb076a9b9cbfabe9194c905cc5373ed1b9455e0f1",
+      "source_html": "ch07_interface_modport_clocking_v04.html",
+      "source_blob": "ad797efdebf5589e68e23d1584dde5c9cfcab500",
+      "sections": 8,
+      "codeboxes": 10,
+      "svg": 1
+    },
+    {
+      "chapter": 8,
+      "file": "ch08_teacher_v01.html",
+      "sha256": "d069b37aae5c5d9d75358968cc009961e07655888d479c95167c8b49a75c7369",
+      "source_html": "ch08_objects_constraints_v04.html",
+      "source_blob": "aa977f5463f130080ec41fad25e6af45ece7b9d9",
+      "sections": 8,
+      "codeboxes": 11,
+      "svg": 1
+    },
+    {
+      "chapter": 9,
+      "file": "ch09_teacher_v01.html",
+      "sha256": "742da47143ad99894b30e0d019f4c9d8371baa13f6e692a13c810d537beaff78",
+      "source_html": "ch09_reference_model_scoreboard_v04.html",
+      "source_blob": "84263f8fba1ba39d5f7c37508159f459aadbd6a4",
+      "sections": 8,
+      "codeboxes": 9,
+      "svg": 1
+    },
+    {
+      "chapter": 10,
+      "file": "ch10_teacher_v01.html",
+      "sha256": "97949f965003ee95e00c345071262691cda6026939b48486671427eec1e25b0e",
+      "source_html": "ch10_corner_reset_timeout_v05.html",
+      "source_blob": "cefdc418474eb3cda20e2eba577c5057a03f3235",
+      "sections": 8,
+      "codeboxes": 11,
+      "svg": 1
+    },
+    {
+      "chapter": 11,
+      "file": "ch11_teacher_v01.html",
+      "sha256": "ec3dccefd481d338b95d6a34ebcf0d32705f9fc3816a359d5da9d15023711ff1",
+      "source_html": "ch11_temporal_assertions_v05.html",
+      "source_blob": "97c9453d30ddc48532bf1988250e62722a818e80",
+      "sections": 8,
+      "codeboxes": 8,
+      "svg": 1
+    },
+    {
+      "chapter": 12,
+      "file": "ch12_teacher_v01.html",
+      "sha256": "11204a8f849021afe56c316c1664dd59dae581e3947e59c78773ea0c478a5797",
+      "source_html": "ch12_functional_coverage_v03.html",
+      "source_blob": "9a6db6d63c48fc47fa0b8fec04e888ac47a73c7c",
+      "sections": 8,
+      "codeboxes": 8,
+      "svg": 1
+    },
+    {
+      "chapter": 13,
+      "file": "ch13_teacher_v01.html",
+      "sha256": "7886ef41cbe22f29c14782fd5c275218e30d2f870a384bc135e22d22b2858eda",
+      "source_html": "ch13_uart_stream_verification_v03.html",
+      "source_blob": "dec9f9f19dd29ae6326f426d3ca2a41de599c9e2",
+      "sections": 8,
+      "codeboxes": 9,
+      "svg": 1
+    },
+    {
+      "chapter": 14,
+      "file": "ch14_teacher_v01.html",
+      "sha256": "ad11fbe74b0df6159c76d7b1a95c38616b302c36e849b23508e56e53ad6b8f96",
+      "source_html": "ch14_fifo_flow_control_v04.html",
+      "source_blob": "aaea77b620ea5f0d84b09477b692206bf4eb0959",
+      "sections": 8,
+      "codeboxes": 11,
+      "svg": 1
+    },
+    {
+      "chapter": 15,
+      "file": "ch15_teacher_v01.html",
+      "sha256": "0aa5aded0f83f92c575d3bced14ccd556e2802703aa27ca9613505b4fa737a6c",
+      "source_html": "ch15_axi4lite_register_verification_v03.html",
+      "source_blob": "11cd6f719a5a7538a6919b1f68d71961db9b741e",
+      "sections": 8,
+      "codeboxes": 10,
+      "svg": 1
+    },
+    {
+      "chapter": 16,
+      "file": "ch16_teacher_v01.html",
+      "sha256": "da727e03bb76285871d707af3680bd62fda4259aa08c59d61cf435bbcc5ae4f4",
+      "source_html": "ch16_mac_npu_integer_verification_v03.html",
+      "source_blob": "2c80e700449b8dbc5ded2cd67ec2837d2c46e7a1",
+      "sections": 8,
+      "codeboxes": 13,
+      "svg": 1
+    },
+    {
+      "chapter": 17,
+      "file": "ch17_teacher_v01.html",
+      "sha256": "42bf35ee2e9a6608bab0d9e3b0f2173ffad22fd64fb9901899e2ef12501b01be",
+      "source_html": "ch17_minimal_uvm_environment_v04.html",
+      "source_blob": "0d1615e5c0f08d1010e0b48e60c24bc0e8070029",
+      "sections": 8,
+      "codeboxes": 9,
+      "svg": 1
+    },
+    {
+      "chapter": 18,
+      "file": "ch18_teacher_v01.html",
+      "sha256": "8d75410ad9d912cde2f7c6c8001862facf8ee6dfb20de5c1ce07bb8011796b6d",
+      "source_html": "ch18_sequence_driver_v04.html",
+      "source_blob": "7485a07685b8821142d321e6aff0ffcb22443165",
+      "sections": 8,
+      "codeboxes": 9,
+      "svg": 1
+    },
+    {
+      "chapter": 19,
+      "file": "ch19_teacher_v01.html",
+      "sha256": "d7afed9c5547e181a452f7a3babdb7d69603baf194d8d75e0e96aad57002f1b1",
+      "source_html": "ch19_monitor_agent_scoreboard_v05.html",
+      "source_blob": "56bcf0db00b89dbf32524c81d39f5c4aff001c6d",
+      "sections": 8,
+      "codeboxes": 9,
+      "svg": 1
+    },
+    {
+      "chapter": 20,
+      "file": "ch20_teacher_v01.html",
+      "sha256": "5a6ab7441e2229128fcf2ccfb6623f4eef9f89cc712a5cedefa44e452d9bdb75",
+      "source_html": "ch20_factory_config_objection_v04.html",
+      "source_blob": "4c946e22723b8d2ed9e7d7c95abf133916e9ff70",
+      "sections": 8,
+      "codeboxes": 9,
+      "svg": 1
+    },
+    {
+      "chapter": 21,
+      "file": "ch21_teacher_v01.html",
+      "sha256": "81da745b63cc52ed0106f07f5da399168df45a3e4e0a1b87738595a69995abd5",
+      "source_html": "ch21_uvm_register_abstraction_v04.html",
+      "source_blob": "e96080913581c31bd9b14c7f831774f9c4ce87b7",
+      "sections": 8,
+      "codeboxes": 9,
+      "svg": 1
+    },
+    {
+      "chapter": 22,
+      "file": "ch22_teacher_v01.html",
+      "sha256": "e1f9c329575a615a77c4f4cb0e5ce36140c28194d91b32ae09916f1969c0d629",
+      "source_html": "ch22_multi_agent_vip_v05.html",
+      "source_blob": "8118843b89e7e4a63cf706bf1ae6101d10a6b263",
+      "sections": 8,
+      "codeboxes": 11,
+      "svg": 1
+    },
+    {
+      "chapter": 23,
+      "file": "ch23_teacher_v01.html",
+      "sha256": "e1ae2ee476da3f845bc8249e5ae9aa8c4638cf7dc3c9cac90ca47a7756a1b565",
+      "source_html": "ch23_npu_integrated_scoreboard_v05.html",
+      "source_blob": "9e9a9819f4b6235932f6e2eac3c1c8cc9dd8d379",
+      "sections": 8,
+      "codeboxes": 8,
+      "svg": 2
+    },
+    {
+      "chapter": 24,
+      "file": "ch24_teacher_v01.html",
+      "sha256": "e37e47fb1eb9694cd9de152db6ff6b426a9b2be74bfeacb50bbc2a188c81c192",
+      "source_html": "ch24_regression_ci_reporting_v04.html",
+      "source_blob": "f292c0c9c0987e54d6d8ca93388bd208ded759fb",
+      "sections": 7,
+      "codeboxes": 8,
+      "svg": 2
+    }
+  ],
+  "totals": {
+    "sections": 191,
+    "codeboxes": 227,
+    "svg": 29
+  },
+  "part_viewports": 144,
+  "rejected_mutations": 72,
+  "rtl_simulation": "NOT_RUN"
+}
