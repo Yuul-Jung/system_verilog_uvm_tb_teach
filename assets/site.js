@@ -112,7 +112,7 @@
       "id": "ch15",
       "number": 15,
       "title": "AXI4-Lite 레지스터 검증",
-      "file": "ch15_teacher_v01.html"
+      "file": "ch15_teacher_v02.html"
     },
     {
       "id": "ch16",
