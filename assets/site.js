@@ -125,6 +125,12 @@
       "number": 17,
       "title": "최소 UVM 환경",
       "file": "ch17_teacher_v01.html"
+    },
+    {
+      "id": "ch18",
+      "number": 18,
+      "title": "Sequence에서 Driver까지",
+      "file": "ch18_teacher_v01.html"
     }
   ]
 };
