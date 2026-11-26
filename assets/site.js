@@ -154,7 +154,7 @@
       "id": "ch22",
       "number": 22,
       "title": "다중 Agent·VIP",
-      "file": "ch22_teacher_v01.html"
+      "file": "ch22_teacher_v02.html"
     },
     {
       "id": "ch23",
