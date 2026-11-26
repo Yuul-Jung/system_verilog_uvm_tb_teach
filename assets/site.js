@@ -137,6 +137,12 @@
       "number": 19,
       "title": "Monitor·Agent·Scoreboard",
       "file": "ch19_teacher_v01.html"
+    },
+    {
+      "id": "ch20",
+      "number": 20,
+      "title": "Factory·Config·Objection",
+      "file": "ch20_teacher_v01.html"
     }
   ]
 };

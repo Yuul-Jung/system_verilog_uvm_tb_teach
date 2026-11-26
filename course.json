@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v20",
+  "version": "v21",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -289,6 +289,21 @@
       "source_tb": "tb/ch19/tb_pwm_monitor_agent_scoreboard.sv",
       "rtl_simulation": "NOT_RUN",
       "original_execution": "PASS"
+    },
+    {
+      "id": "ch20",
+      "number": 20,
+      "title": "Factory·Config·Objection",
+      "slug": "ch20_teacher",
+      "version": "v01",
+      "source_html": "ch20_factory_config_objection_v04.html",
+      "source_version": "v04",
+      "source_blob": "4c946e22723b8d2ed9e7d7c95abf133916e9ff70",
+      "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
+      "source_course_version": "v60",
+      "source_tb": "tb/ch20/tb_pwm_factory_config_objection.sv",
+      "rtl_simulation": "NOT_RUN",
+      "original_execution": "PASS"
     }
   ],
   "planned_chapters": [
@@ -450,7 +465,7 @@
       "title": "Factory·Config·Objection",
       "source_html": "ch20_factory_config_objection_v04.html",
       "source_version": "v04",
-      "status": "planned"
+      "status": "published"
     },
     {
       "id": "ch21",
