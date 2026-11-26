@@ -1,0 +1,135 @@
+{
+  "part": 2,
+  "chapters": [
+    5,
+    6,
+    7,
+    8
+  ],
+  "chapter_checks": [
+    {
+      "chapter": 5,
+      "script": "validate_teacher.py",
+      "exit_code": 0,
+      "stdout": "CH05 adversarial: code / SVG / section mutations rejected\nCH05: sections=8 codeboxes=10 SVG=1 PASS\n"
+    },
+    {
+      "chapter": 5,
+      "script": "check_teacher_browser.py",
+      "exit_code": 0,
+      "stdout": "CH05: browser widths=6 flagged=0\n"
+    },
+    {
+      "chapter": 6,
+      "script": "validate_teacher.py",
+      "exit_code": 0,
+      "stdout": "CH06 adversarial: code / SVG / section mutations rejected\nCH06: sections=8 codeboxes=11 SVG=1 PASS\n"
+    },
+    {
+      "chapter": 6,
+      "script": "check_teacher_browser.py",
+      "exit_code": 0,
+      "stdout": "CH06: browser widths=6 flagged=0\n"
+    },
+    {
+      "chapter": 7,
+      "script": "validate_teacher.py",
+      "exit_code": 0,
+      "stdout": "CH07 adversarial: code / SVG / section mutations rejected\nCH07: sections=8 codeboxes=10 SVG=1 PASS\n"
+    },
+    {
+      "chapter": 7,
+      "script": "check_teacher_browser.py",
+      "exit_code": 0,
+      "stdout": "CH07: browser widths=6 flagged=0\n"
+    },
+    {
+      "chapter": 8,
+      "script": "validate_teacher.py",
+      "exit_code": 0,
+      "stdout": "CH08 adversarial: code / SVG / section mutations rejected\nCH08: sections=8 codeboxes=11 SVG=1 PASS\n"
+    },
+    {
+      "chapter": 8,
+      "script": "check_teacher_browser.py",
+      "exit_code": 0,
+      "stdout": "CH08: browser widths=6 flagged=0\n"
+    }
+  ],
+  "viewport_measurements": 24,
+  "rejected_mutations": 12,
+  "navigation": [
+    {
+      "chapter": 5,
+      "manifest_fetch": "ONLINE",
+      "part": true,
+      "chapters": 4,
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 6,
+      "manifest_fetch": "ONLINE",
+      "part": true,
+      "chapters": 4,
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 7,
+      "manifest_fetch": "ONLINE",
+      "part": true,
+      "chapters": 4,
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 8,
+      "manifest_fetch": "ONLINE",
+      "part": true,
+      "chapters": 4,
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 5,
+      "manifest_fetch": "BLOCKED",
+      "part": true,
+      "chapters": 4,
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 6,
+      "manifest_fetch": "BLOCKED",
+      "part": true,
+      "chapters": 4,
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 7,
+      "manifest_fetch": "BLOCKED",
+      "part": true,
+      "chapters": 4,
+      "sections": 8,
+      "links": true
+    },
+    {
+      "chapter": 8,
+      "manifest_fetch": "BLOCKED",
+      "part": true,
+      "chapters": 4,
+      "sections": 8,
+      "links": true
+    }
+  ],
+  "browser_sha256": {
+    "docs/evidence/ch05_v01/browser.json": "4c7e12789c09aa3865bf4dd2e7026b9fda68400517d0c2acc519b4e0aa39c6b3",
+    "docs/evidence/ch06_v01/browser.json": "0e8d50702f07b1742f226d00e46e57c0bebfd2fd91afb24ecdc5bf2c1480c153",
+    "docs/evidence/ch07_v01/browser.json": "87eafe103b08a25ddc07ab2c265cd1b89cc68a9c3c57e49c31d7fbfe617f8ca5",
+    "docs/evidence/ch08_v01/browser.json": "e0a0be287cc71d6df130eacd19ac02f45a134c4d95617ced6a1fa73905784984"
+  },
+  "rtl_simulation": "NOT_RUN",
+  "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708"
+}
