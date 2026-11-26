@@ -26,6 +26,8 @@ def main():
     course = json.loads((ROOT / 'course.json').read_text())
     chapters = [c for c in course['chapters'] if (c['number'] - 1)//4 + 1 == args.part]
     assert len(chapters) == 4, 'part must contain four published chapters'
+    section_counts = {c['number']: len(re.findall(r'<section\b', (args.source / c['source_html']).read_text()))
+                      for c in chapters}
     results = []
     for c in chapters:
         for script, params in [('validate_teacher.py', ['--chapter', str(c['number']), '--self-test']),
@@ -52,10 +54,10 @@ def main():
                 assert links == [f"{n['slug']}_{n['version']}.html" for n in chapters]
                 current = page.locator('.course-ch-link[aria-current="page"]')
                 assert current.get_attribute('href') == f"{c['slug']}_{c['version']}.html"
-                assert page.locator('.course-nested-sections a').count() == 8
+                assert page.locator('.course-nested-sections a').count() == section_counts[c['number']]
                 for href in page.locator('#chapter-links a').evaluate_all('nodes=>nodes.map(e=>e.getAttribute("href"))'):
                     assert (ROOT / href).is_file()
-                navigation.append(dict(chapter=c['number'], manifest_fetch='BLOCKED' if offline else 'ONLINE', part=True, chapters=4, sections=8, links=True))
+                navigation.append(dict(chapter=c['number'], manifest_fetch='BLOCKED' if offline else 'ONLINE', part=True, chapters=4, sections=section_counts[c['number']], links=True))
             context.close()
         page = browser.new_page()
         page.goto(f'http://127.0.0.1:{server.server_port}/index.html')
