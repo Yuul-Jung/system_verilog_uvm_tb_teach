@@ -1,15 +1,335 @@
 {
- "s00":"<h3>교수용 이론 · 같은 환경에 서로 다른 정책을 적용한다</h3><p>입력·관찰·판정 기능을 매번 복사하면 작은 변경에도 여러 버전을 고쳐야 합니다. Test가 생성 타입·설정 계획·완료 조건을 정하고 기존 Agent를 그대로 구성하면 재사용할 수 있습니다. Factory는 어떤 구현을 만들지, Config DB는 어떤 설정을 전달할지, Objection은 실행을 언제 끝낼지를 담당합니다.</p><p>현재 component 계층은 test→env→ag·sb, ag→sqr·drv·mon입니다. cfg·Sequence·Item·Sample은 별도 object이고, 실제 bus·dut는 정적 top 아래에 있습니다. 이 구분은 구성 정책이 회로 구조를 바꾸는 것으로 오해하지 않게 합니다.</p>",
- "s01":"<h3>원본 회로 · 구동기의 교체와 DUT 변경을 구별한다</h3><p>원본 pwm_core는 그대로이며 적용 경계·주기8 계약도 같습니다. 교체하는 것은 시뮬레이션의 Driver 클래스입니다. 파생 Driver가 로그를 추가해도 실제 pin 구동은 super.drive_one으로 기존 코드를 실행합니다. RTL 변경 없이 검증 행동을 확장하는 예입니다.</p>",
- "s02":"<h3>Factory 판서 · 변수 타입과 실제 객체 타입은 다를 수 있다</h3><p>Agent의 drv 선언과 create 요청 타입은 pwm20_driver입니다. Test가 하위 생성 전에 type override를 등록하면 실제 객체는 pwm20_traced_driver입니다. 기반 타입 핸들에 파생 객체를 담을 수 있고 virtual drive_one 호출은 파생 구현으로 갑니다. 파생 구현은 기록→super 구동→trace_count 증가 순서입니다.</p><p>$cast(traced,env.ag.drv)는 현재 객체가 파생 타입인지 확인하며 새 객체를 만들거나 변환 복사하지 않습니다. trace_count3은 그 파생 동작이 세 거래에서 실제 끝났음을 확인합니다. new로 직접 생성한 객체에 Factory override가 자동 적용된다고 설명하면 안 됩니다.</p>",
- "s03":"<h3>Config DB 판서 · 같은 핸들은 같은 설정을 가리킨다</h3><p>settings 하나를 Driver와 Scoreboard의 정확한 경로에 set하고 Sequence에는 seq.cfg=settings로 직접 전달합니다. 자동 복제가 아니므로 세 핸들은 같은 객체를 봅니다. CFG_IDENTITY는 값만 같은 다른 객체도 구분합니다. 실행 중 한쪽에서 duty_plan을 바꾸면 다른 쪽 기대값도 바뀔 수 있어 구성 후 고정해서 사용합니다.</p><p>기본2·6·0과 대안1·8·3은 시나리오 계약입니다. 구동·판정이 설정을 공유하므로 설정 자체 오류까지 완전히 독립적으로 검출한다고 주장할 수 없습니다. 실행기가 계획별 RESULT와 trace duty3개를 별도로 요구하여 의도한 두 계획이 실행되었는지 대조합니다. 배열3개·거래3개와 duty0~8은 build에서 확인합니다.</p>",
- "s04":"<h3>수치·종료 · 마지막 적용이 마지막 검사보다 먼저 온다</h3><p>대안1/8·8/8·3/8은12.5%·100%·37.5%이며8위상 기대는10000000·11111111·11100000입니다. 요청46·126·206ns, 적용106·186·266ns와 총34관찰은 기본 계획과 같습니다. 정상은336ns 마지막 표본 뒤340ns 하강 에지에 종료를 허용합니다.</p><p>EARLY_DROP에서는 세 번째 적용을 본 Driver가270ns에 완료하고 Sequence가 반환한 직후 objection을 내립니다. 활성106~266ns는(266-106)/10+1=17표본입니다. 마지막 주기 나머지7개가 빠져 COUNTS가 실패해야 합니다. phase 종료에 별도 drain 지연을 설정하지 않은 현재 실행의 결과이며 모든 UVM 환경에서17이라고 일반화하지 않습니다.</p>",
- "s05":"<h3>전체 코드 · 세 부정 시험은 서로 다른 연결을 끊는다</h3><p>NO_OVERRIDE는 교체 등록만 생략하여 실제 타입 검사가 FACTORY로 실패합니다. NO_CFG는 Driver에 대한 설정 set만 생략해 build의 NO_CFG로 실패합니다. EARLY_DROP는 생성·설정·구동은 정상인 상태에서 마지막 관찰 대기만 제거합니다. 한 실행에 원인 하나를 바꿔 실패 위치를 해석하기 쉽습니다.</p><p>Monitor는 매 에지 새4상태 Sample을 발행하고 Scoreboard는 cycles%8 독립 위상을 유지합니다. 단지 cfg를 공유한다는 이유로 실제 출력·pending을 정답으로 읽어 들이지는 않습니다. 최종 검사는 trace3·driven3·requests3·applied3·활성24·정상31·리셋3·미결없음을 함께 요구합니다.</p>",
- "s06":"<h3>실습 지도 · 어떤 단계의 실패인지 로그로 분류한다</h3><p>build의 NO_CFG는 런타임 PWM 파형보다 설정 경로를 먼저 보게 합니다. reset 후 FACTORY는 실제 생성 타입을 보게 합니다. 마지막 COUNTS는 UVM이 정상 종료를 시도했어도 검증이 미완료였음을 드러냅니다. 모든 fatal을 DUT 기능 오류로 분류하면 원인 추적이 어려워집니다.</p><p>실행기는 기본·ALT_PLAN 정상2회와 부정3회를 분리하고 정확한 전용 진단·정상 PASS 부재를 요구합니다. 원본 XSIM 실측을 보존했으며 이 교수용 제작의 새 UVM/RTL_SIM은 <strong>NOT_RUN</strong>입니다.</p>",
- "s07":"<h3>예상 문답 · 세 도구의 책임</h3><p><strong>Config DB로 Driver 타입도 바꾸나요?</strong> 이 코드의 타입 선택은 Factory override이고 Config DB는 cfg·vif 참조 전달입니다. 각각 실제 호출 위치를 구별합니다.</p><p><strong>trace_count가3이면 검증 완료인가요?</strong> Driver의 세 구동이 끝난 증거입니다. 마지막 출력7표본이 남을 수 있어 Scoreboard24표본과 phase 최종 검사를 함께 확인해야 합니다.</p><p><strong>timeout 설정도 다양하게 검증했나요?</strong> max_wait_cycles12·max_apply_ns80은 현재 두 계획에서 고정입니다. 설정 필드가 있다는 사실과 경계값 변화 시험을 실제 수행했다는 사실은 다릅니다.</p>",
- "__lines__":[
- {"reuse":"content/pwm_line_notes.json"},
- {"path":"tb/ch20/tb_pwm_factory_config_objection.sv","section":"s05","rows":[["1-18","원본 PWM interface와 UVM package를 정의합니다."],["20-39","공유 cfg object에3개 duty·대기 기한·최대 적용 시간·거래 수·trace 설정의 기본값을 넣습니다."],["41-73","요청 Item·cfg 기반 Sequence·Sequencer를 정의합니다. cfg null이면 거절하고 계획대로3개 요청합니다."],["75-91","기본 Driver는 vif와 cfg를 모두 build에서 요구합니다."],["92-122","virtual drive_one은 하강 에지 설정·apply와 cfg의 기한 대기를 수행합니다. run은 요청/완료 프로토콜을 반복합니다."],["124-138","파생 Driver는 조건부 trace 후 기반 구동을 실행하고 정상 완료마다 trace_count를 셉니다."],["140-152","관찰 Sample은 입출력4상태와 시각을 보존합니다."],["154-192","Monitor는 vif·분석 포트를 구성하고 매 상승 에지+1ns의 모든 공개 신호를 새 객체로 발행합니다."],["194-216","Scoreboard 수신 imp·독립 상태를 선언하고 별도 경로로 cfg를 요구합니다."],["218-234","초기3리셋 표본을 확인하고 정상 클록 수로 독립 위상을 계산합니다."],["236-248","주기 경계에 이전 계획을 적용하고 cfg가 정한 최대 지연을 검사합니다."],["249-263","새 공개 요청을 계획·범위·미결 상태와 대조하고 기대 pending을 갱신합니다."],["265-277","매 표본의 실제 상태·PWM을 기대값과 비교하며 활성 표본을 셉니다."],["279-299","Agent는 기반 타입 create를 유지하고 sqr/drv/mon 생성과 요청 연결을 수행합니다. 실제 Driver 타입은 Factory 정책이 결정합니다."],["301-317","env는 Agent·Scoreboard 생성과 분석 경로 연결을 담당합니다."],["319-344","test가 cfg를 만들고 ALT_PLAN이면1·8·3으로 변경한 뒤 배열·거래·duty 범위를 확인합니다."],["345-359","vif를 얻고 하위 생성 전에 override를 등록합니다. 필요한 drv·sb 경로에만 같은 cfg를 전달하며 NO_CFG는 drv 전달만 생략합니다."],["361-382","objection 아래 리셋을 처리하고 실제 파생 타입·공유 cfg 동일성을 확인한 뒤 cfg를 Sequence에 직접 넘겨 실행합니다."],["383-401","정상은24표본과 다음 하강 에지를 기다립니다. EARLY_DROP는 이를 생략하며 check가 전체 계수 누락을 검출합니다."],["403-413","오류 누계0을 요구하고 실제 계획 값을 포함한 RESULT를 출력합니다."],["415-443","정적 top의 클록·bus·원본 DUT를 연결하고 test/drv/mon에 vif를 제공한 뒤 run_test 및 watchdog를 시작합니다."]]},
- {"path":"scripts/run_ch20.sh","section":"s06","rows":[["1-22","DUT·도구 준비를 검사하고 새 폴더에서 RTL·UVM을 분석·연결합니다."],["23-37","정상 검사 함수는 계획별 RESULT·오류0·각 trace duty 및 정확한trace3회를 요구하고 기본·대안을 별도 실행합니다."],["39-54","부정 실행 함수는 전용 진단과 PASS/timeout 부재를 요구합니다. 세 구성 오류를 각각 실행하고 전체 harness 완료를 기록합니다."]]}
+ "s00": "<h3>교수용 이론 · 같은 환경에 서로 다른 정책을 적용한다</h3><p>입력·관찰·판정 기능을 매번 복사하면 작은 변경에도 여러 버전을 고쳐야 합니다. Test가 생성 타입·설정 계획·완료 조건을 정하고 기존 Agent를 그대로 구성하면 재사용할 수 있습니다. Factory는 어떤 구현을 만들지, Config DB는 어떤 설정을 전달할지, Objection은 실행을 언제 끝낼지를 담당합니다.</p><p>현재 component 계층은 test→env→ag·sb, ag→sqr·drv·mon입니다. cfg·Sequence·Item·Sample은 별도 object이고, 실제 bus·dut는 정적 top 아래에 있습니다. 이 구분은 구성 정책이 회로 구조를 바꾸는 것으로 오해하지 않게 합니다.</p>",
+ "s01": "<h3>원본 회로 · 구동기의 교체와 DUT 변경을 구별한다</h3><p>원본 pwm_core는 그대로이며 적용 경계·주기8 계약도 같습니다. 교체하는 것은 시뮬레이션의 Driver 클래스입니다. 파생 Driver가 로그를 추가해도 실제 pin 구동은 super.drive_one으로 기존 코드를 실행합니다. RTL 변경 없이 검증 행동을 확장하는 예입니다.</p>",
+ "s02": "<h3>Factory 판서 · 변수 타입과 실제 객체 타입은 다를 수 있다</h3><p>Agent의 drv 선언과 create 요청 타입은 pwm20_driver입니다. Test가 하위 생성 전에 type override를 등록하면 실제 객체는 pwm20_traced_driver입니다. 기반 타입 핸들에 파생 객체를 담을 수 있고 virtual drive_one 호출은 파생 구현으로 갑니다. 파생 구현은 기록→super 구동→trace_count 증가 순서입니다.</p><p>$cast(traced,env.ag.drv)는 현재 객체가 파생 타입인지 확인하며 새 객체를 만들거나 변환 복사하지 않습니다. trace_count3은 그 파생 동작이 세 거래에서 실제 끝났음을 확인합니다. new로 직접 생성한 객체에 Factory override가 자동 적용된다고 설명하면 안 됩니다.</p><h4>핵심 구문 ① · 선언 타입과 실제 생성 타입</h4><table><thead><tr><th scope=\"col\">실제 구문</th><th scope=\"col\">의미</th></tr></thead><tbody><tr><td><code>pwm20_driver drv;</code></td><td>기반 클래스 핸들 선언. 아직 객체 없음</td></tr><tr><td><code>pwm20_driver::type_id::set_type_override(pwm20_traced_driver::get_type())</code></td><td>Factory에 기반 등록 타입 대신 파생 타입을 생성하도록 설정</td></tr><tr><td><code>pwm20_driver::type_id::create(\"drv\",this)</code></td><td>이름 drv, 부모 Agent로 실제 객체를 생성</td></tr><tr><td><code>virtual task drive_one(pwm20_item req)</code></td><td>실제 객체의 타입에 따른 메서드 호출</td></tr><tr><td><code>super.drive_one(req)</code></td><td>파생 구현에서 기반의 실제 구동 재사용</td></tr><tr><td><code>$cast(traced,env.ag.drv)</code></td><td>타입 호환 검사 후 동일 객체의 파생 핸들 얻기</td></tr></tbody></table><p>Test의 build에서 override를 등록한 뒤 env→ag→drv를 생성합니다. 이미 생성한 객체를 교체하는 기능이 아닙니다. 직접 new로 기반 객체를 만들면 Factory 선택을 거치지 않습니다. 기반 run_phase의 drive_one 호출은 정상에서 파생 구현으로 가며 trace→super 구동→trace_count 증가 순서를 수행합니다. NO_OVERRIDE는 reset 이후 $cast가 실패합니다.</p>",
+ "s03": "<h3>Config DB 판서 · 같은 핸들은 같은 설정을 가리킨다</h3><p>settings 하나를 Driver와 Scoreboard의 정확한 경로에 set하고 Sequence에는 seq.cfg=settings로 직접 전달합니다. 자동 복제가 아니므로 세 핸들은 같은 객체를 봅니다. CFG_IDENTITY는 값만 같은 다른 객체도 구분합니다. 실행 중 한쪽에서 duty_plan을 바꾸면 다른 쪽 기대값도 바뀔 수 있어 구성 후 고정해서 사용합니다.</p><p>기본2·6·0과 대안1·8·3은 시나리오 계약입니다. 구동·판정이 설정을 공유하므로 설정 자체 오류까지 완전히 독립적으로 검출한다고 주장할 수 없습니다. 실행기가 계획별 RESULT와 trace duty3개를 별도로 요구하여 의도한 두 계획이 실행되었는지 대조합니다. 배열3개·거래3개와 duty0~8은 build에서 확인합니다.</p><h4>핵심 구문 ② · Config DB의 네 인자</h4><table><thead><tr><th scope=\"col\">인자</th><th scope=\"col\">실제 값</th><th scope=\"col\">역할</th></tr></thead><tbody><tr><td>cntxt</td><td>this</td><td>현재 Test 문맥</td></tr><tr><td>inst_name</td><td>env.ag.drv</td><td>Test 아래 상대 인스턴스 경로</td></tr><tr><td>field_name</td><td>cfg</td><td>조회 키</td></tr><tr><td>value</td><td>settings</td><td>pwm20_cfg 객체의 핸들</td></tr></tbody></table><p><code>uvm_config_db#(pwm20_cfg)::set(this,\"env.ag.drv\",\"cfg\",settings)</code>에서 타입 매개변수는 설정의 자료형입니다. Driver의 <code>get(this,\"\",\"cfg\",cfg)</code>는 자기 범위의 같은 타입과 키를 찾아 cfg에 참조를 돌려줍니다. 실제 레지스터를 쓰는 동작이 아닙니다.</p><table><thead><tr><th scope=\"col\">핸들</th><th scope=\"col\">전달 방식</th><th scope=\"col\">대상</th></tr></thead><tbody><tr><td>settings</td><td>Test의 create</td><td>설정 객체 하나</td></tr><tr><td>env.ag.drv.cfg</td><td>Config DB</td><td>동일 객체</td></tr><tr><td>env.sb.cfg</td><td>별도 Config DB 경로</td><td>동일 객체</td></tr><tr><td>seq.cfg</td><td>직접 핸들 대입</td><td>동일 객체</td></tr></tbody></table><p>CFG_IDENTITY는 값의 동일성이 아니라 객체의 동일성을 검사합니다. 공유 객체를 실행 중 변경하면 구동과 기대 모델이 함께 바뀔 수 있으므로 현재 코드는 build 이후 계획을 변경하지 않습니다.</p><table><thead><tr><th scope=\"col\">설정</th><th scope=\"col\">기본값</th><th scope=\"col\">사용 위치</th></tr></thead><tbody><tr><td>duty_plan</td><td>2,6,0</td><td>Sequence와 Scoreboard</td></tr><tr><td>max_wait_cycles</td><td>12</td><td>Driver guard &gt; 12</td></tr><tr><td>max_apply_ns</td><td>80</td><td>요청→적용 지연</td></tr><tr><td>expected_transactions</td><td>3</td><td>반복과 배열 범위</td></tr><tr><td>enable_trace</td><td>1</td><td>파생 Driver 메시지</td></tr></tbody></table>",
+ "s04": "<h3>수치·종료 · 마지막 적용이 마지막 검사보다 먼저 온다</h3><p>대안1/8·8/8·3/8은12.5%·100%·37.5%이며8위상 기대는10000000·11111111·11100000입니다. 요청46·126·206ns, 적용106·186·266ns와 총34관찰은 기본 계획과 같습니다. 정상은336ns 마지막 표본 뒤340ns 하강 에지에 종료를 허용합니다.</p><p>EARLY_DROP에서는 세 번째 적용을 본 Driver가270ns에 완료하고 Sequence가 반환한 직후 objection을 내립니다. 활성106~266ns는(266-106)/10+1=17표본입니다. 마지막 주기 나머지7개가 빠져 COUNTS가 실패해야 합니다. phase 종료에 별도 drain 지연을 설정하지 않은 현재 실행의 결과이며 모든 UVM 환경에서17이라고 일반화하지 않습니다.</p><h4>판서 · 마지막 요청 완료와 마지막 표본의 차이</h4><table><thead><tr><th scope=\"col\">관찰 시각</th><th scope=\"col\">실제 코드 흐름</th><th scope=\"col\">활성 표본</th></tr></thead><tbody><tr><td>46ns</td><td>첫 apply 관찰</td><td>0</td></tr><tr><td>106ns</td><td>첫 적용 phase0</td><td>1</td></tr><tr><td>176ns</td><td>첫 주기 phase7</td><td>8</td></tr><tr><td>186ns</td><td>두 번째 적용</td><td>9</td></tr><tr><td>256ns</td><td>두 번째 phase7</td><td>16</td></tr><tr><td>266ns</td><td>세 번째 적용</td><td>17</td></tr><tr><td>270ns</td><td>Driver pending0 확인·item_done·Sequence 반환</td><td>17</td></tr><tr><td>276~336ns</td><td>마지막 phase1~7 관찰</td><td>18~24</td></tr><tr><td>340ns</td><td>정상 drop_objection</td><td>24</td></tr></tbody></table><p>원본 코드 기반 예상 시각입니다. 정상 관찰은 36~336ns의 31개이고, 활성 관찰은 (336−106)/10+1 → 24개입니다. 세 요청의 적용 지연은 각각 60ns입니다. EARLY_DROP는 270ns 종료 시도에서 17개만 남습니다.</p><p><code>phase.raise_objection(this)</code>는 종료를 보류하고 <code>wait(env.sb.samples == 24)</code>는 검사 완료 조건을 기다립니다. 다음 하강 에지에서 <code>phase.drop_objection(this)</code>으로 보류를 해제합니다. Objection 자체가 표본을 비교하거나 성공을 판정하는 것은 아닙니다.</p>",
+ "s05": "<h3>전체 코드 · 세 부정 시험은 서로 다른 연결을 끊는다</h3><p>NO_OVERRIDE는 교체 등록만 생략하여 실제 타입 검사가 FACTORY로 실패합니다. NO_CFG는 Driver에 대한 설정 set만 생략해 build의 NO_CFG로 실패합니다. EARLY_DROP는 생성·설정·구동은 정상인 상태에서 마지막 관찰 대기만 제거합니다. 한 실행에 원인 하나를 바꿔 실패 위치를 해석하기 쉽습니다.</p><p>Monitor는 매 에지 새4상태 Sample을 발행하고 Scoreboard는 cycles%8 독립 위상을 유지합니다. 단지 cfg를 공유한다는 이유로 실제 출력·pending을 정답으로 읽어 들이지는 않습니다. 최종 검사는 trace3·driven3·requests3·applied3·활성24·정상31·리셋3·미결없음을 함께 요구합니다.</p><h4>핵심 구문 ③ · 요청과 적용, 독립 비교</h4><table><thead><tr><th scope=\"col\">변수</th><th scope=\"col\">갱신 시점</th><th scope=\"col\">역할</th></tr></thead><tbody><tr><td>requests</td><td>실제 apply 관찰</td><td>요청 수</td></tr><tr><td>request_time[requests]</td><td>요청 표본</td><td>적용 지연 기준</td></tr><tr><td>expected_pending</td><td>요청 시 1, 경계 적용 시 0</td><td>실제 pending 비교</td></tr><tr><td>expected_duty</td><td>phase0에서 이전 요청 적용</td><td>실제 duty 비교</td></tr><tr><td>expected_pwm</td><td>enable &amp;&amp; phase_idx &lt; duty</td><td>실제 pwm 비교</td></tr><tr><td>samples</td><td>활성 enable인 모든 표본</td><td>종료 조건 24</td></tr></tbody></table><p>cycles%8은 DUT counter 대신 독립 관찰 클록 수를 이용합니다. 첫 정상 표본은 phase1, 여덟 번째는 phase0입니다. duty0도 8개 LOW 표본을 검사하고 duty8은 8개 HIGH를 검사합니다. samples는 HIGH 횟수가 아닙니다.</p><h4>세 부정 시험의 원인과 검출 위치</h4><table><thead><tr><th scope=\"col\">인자</th><th scope=\"col\">제거 조건</th><th scope=\"col\">검출</th></tr></thead><tbody><tr><td>NO_OVERRIDE</td><td>Factory 등록</td><td>$cast → FACTORY</td></tr><tr><td>NO_CFG</td><td>Driver 설정 set</td><td>build_phase → NO_CFG</td></tr><tr><td>EARLY_DROP</td><td>마지막 표본 대기</td><td>check_phase → COUNTS samples=17</td></tr></tbody></table><p>세 시험은 원본 DUT를 변경하지 않고 각각 생성·설정·종료의 검증 환경 오류를 시험합니다. 모든 DUT 결함의 검출을 증명하지 않습니다.</p>",
+ "s06": "<h3>실습 지도 · 어떤 단계의 실패인지 로그로 분류한다</h3><p>build의 NO_CFG는 런타임 PWM 파형보다 설정 경로를 먼저 보게 합니다. reset 후 FACTORY는 실제 생성 타입을 보게 합니다. 마지막 COUNTS는 UVM이 정상 종료를 시도했어도 검증이 미완료였음을 드러냅니다. 모든 fatal을 DUT 기능 오류로 분류하면 원인 추적이 어려워집니다.</p><p>실행기는 기본·ALT_PLAN 정상2회와 부정3회를 분리하고 정확한 전용 진단·정상 PASS 부재를 요구합니다. 원본 XSIM 실측을 보존했으며 이 교수용 제작의 새 UVM/RTL_SIM은 <strong>NOT_RUN</strong>입니다.</p>",
+ "s07": "<h3>예상 문답 · 세 도구의 책임</h3><p><strong>Config DB로 Driver 타입도 바꾸나요?</strong> 이 코드의 타입 선택은 Factory override이고 Config DB는 cfg·vif 참조 전달입니다. 각각 실제 호출 위치를 구별합니다.</p><p><strong>trace_count가3이면 검증 완료인가요?</strong> Driver의 세 구동이 끝난 증거입니다. 마지막 출력7표본이 남을 수 있어 Scoreboard24표본과 phase 최종 검사를 함께 확인해야 합니다.</p><p><strong>timeout 설정도 다양하게 검증했나요?</strong> max_wait_cycles12·max_apply_ns80은 현재 두 계획에서 고정입니다. 설정 필드가 있다는 사실과 경계값 변화 시험을 실제 수행했다는 사실은 다릅니다.</p><h4>추가 교수용 문답</h4><p><strong>Factory와 상속은 같은 기능인가요?</strong> 상속은 타입 관계를 정의하고 Factory는 생성 요청의 실제 타입을 선택합니다. virtual 호출은 생성 이후 실제 타입의 구현을 선택합니다.</p><p><strong>trace_count=3이면 로그도 반드시 세 줄인가요?</strong> trace_count는 기반 구동 반환 후 증가하고 메시지는 enable_trace와 verbosity에 의존합니다. 현재 실행기는 두 계획의 로그도 별도로 검사합니다.</p><p><strong>Config DB가 설정 객체를 복제하나요?</strong> 여기서는 핸들 전달입니다. 객체 동일성을 검사하고, Sequence의 직접 대입도 같은 객체를 가리킵니다.</p><p><strong>Objection을 계속 올리면 성공인가요?</strong> 종료를 보류할 뿐입니다. 실제 검사와 완료 조건, 별도 watchdog가 필요합니다.</p>",
+ "__lines__": [
+  {
+   "reuse": "content/pwm_line_notes.json"
+  },
+  {
+   "path": "tb/ch20/tb_pwm_factory_config_objection.sv",
+   "section": "s05",
+   "rows": [
+    [
+     "1-5",
+     "시간 단위 1ns·정밀도 1ps. 원본 RTL은 유지하고 검증 정책만 확장합니다. pwm20_if는 실제 정적 신호 묶음입니다."
+    ],
+    [
+     "6-14",
+     "TB 구동 입력은 logic, DUT가 구동하는 출력은 wire입니다. period 8은 시간이 아니라 클록 횟수입니다."
+    ],
+    [
+     "16-18",
+     "UVM 클래스와 매크로를 가져오는 package입니다. 클래스 선언은 물리 회로를 생성하지 않습니다."
+    ],
+    [
+     "20-24",
+     "pwm20_cfg는 공유 설정 객체입니다. duty_plan[3]은 0~2 인덱스의 고정 배열이며 각 원소가 32비트입니다."
+    ],
+    [
+     "25-28",
+     "max_wait_cycles는 Driver 대기 반복 제한, max_apply_ns는 Scoreboard 적용 지연 제한, expected_transactions는 요청 수, enable_trace는 메시지 설정입니다."
+    ],
+    [
+     "29-33",
+     "생성자는 객체 이름을 전달하고 기본 duty 계획 2·6·0을 초기화합니다."
+    ],
+    [
+     "34-39",
+     "12회 대기 제한, 80ns 적용 제한, 3거래, trace 활성화를 설정합니다. DUT 출력에서 복사한 정답이 아닙니다."
+    ],
+    [
+     "41-47",
+     "pwm20_item은 한 duty 요청 객체입니다. Factory에 타입을 등록하고 이름을 받는 생성자를 정의합니다."
+    ],
+    [
+     "49-54",
+     "pwm20_sequence는 pwm20_item 타입의 요청을 보내며 cfg는 설정 객체를 가리키는 핸들입니다."
+    ],
+    [
+     "55-58",
+     "cfg가 null이면 계획을 읽을 수 없으므로 SEQ_CFG Fatal을 발생시킵니다."
+    ],
+    [
+     "59-60",
+     "expected_transactions만큼 반복하면서 req_0~req_2라는 새 객체를 Factory로 생성합니다."
+    ],
+    [
+     "61-66",
+     "start_item은 중재 승인 대기, duty 대입은 요청 내용 결정, finish_item은 전달 및 Driver 완료 대기입니다. 여기서는 randomize하지 않습니다."
+    ],
+    [
+     "68-73",
+     "요청 전달용 Sequencer component입니다. 생성자의 parent는 계층의 상위 component를 지정합니다."
+    ],
+    [
+     "75-84",
+     "기반 Driver는 실제 vif 참조와 cfg 참조, 완료된 요청 수 driven을 보유합니다. 생성자에서 부모를 전달합니다."
+    ],
+    [
+     "85-88",
+     "get(this,&quot;&quot;,&quot;vif&quot;,vif)는 자기 범위에서 virtual pwm20_if 타입의 vif 키를 조회해 출력 핸들에 전달합니다. 누락은 NOVIF입니다."
+    ],
+    [
+     "89-91",
+     "pwm20_cfg 타입의 cfg 키를 별도로 조회합니다. get 실패 또는 null이면 NO_CFG입니다."
+    ],
+    [
+     "92-99",
+     "virtual task drive_one은 파생 타입에서 재정의할 수 있습니다. 하강 에지에 period8·요청 duty·enable1·polarity0·apply1을 설정합니다."
+    ],
+    [
+     "100-104",
+     "다음 하강 에지에 apply를 내립니다. 한 상승 에지에서 요청이 샘플링됩니다. Driver는 다음 자극 시점만 제어하고 정답 판정은 Scoreboard가 맡습니다."
+    ],
+    [
+     "105-111",
+     "pending이 정확히 0이 될 때까지 대기합니다. !==는 X/Z도 0과 다르게 봅니다. guard &gt; 12이므로 13번째 반복에서 시간 초과를 검출합니다."
+    ],
+    [
+     "112-122",
+     "기반 구동 완료 후 driven을 증가시킵니다. get_next_item → virtual drive_one → item_done 순서가 반복되며 실제 객체 타입에 따라 파생 구현으로 호출됩니다."
+    ],
+    [
+     "124-130",
+     "파생 Driver는 기반 타입을 상속하고 trace_count를 추가합니다. 기존 cfg와 vif를 재사용합니다."
+    ],
+    [
+     "131-134",
+     "enable_trace가 참이면 FACTORY_TRACE 메시지를 출력합니다. $sformatf는 duty를 문자열에 삽입하며 UVM_LOW는 verbosity 수준입니다."
+    ],
+    [
+     "135-138",
+     "super.drive_one은 기반 구현을 명시 호출합니다. 반환 후 trace_count를 증가시킵니다. trace 메시지를 끄더라도 완료 계수는 증가합니다."
+    ],
+    [
+     "140-148",
+     "sample은 4상태 입력·출력과 관찰 시각을 보존하는 객체입니다. 요청 객체와 관찰 객체는 별개입니다."
+    ],
+    [
+     "149-152",
+     "객체 생성자는 이름만 전달합니다. component 부모를 지정하지 않습니다."
+    ],
+    [
+     "154-163",
+     "Monitor는 실제 bus를 가리키는 vif와 분석 포트 ap를 갖습니다. new(&quot;ap&quot;,this)는 발행 포트를 생성합니다."
+    ],
+    [
+     "164-168",
+     "Monitor 자기 범위에서 vif를 조회합니다. Driver의 요청 객체나 핸들에서 읽는 구조가 아닙니다."
+    ],
+    [
+     "169-175",
+     "상승 에지 이후 #1에 새 표본을 생성합니다. DUT 비차단 대입 갱신 뒤의 값을 읽습니다. 입력도 #1에 관찰하므로 이 실습의 하강 에지 구동 규약에 의존합니다."
+    ],
+    [
+     "176-181",
+     "공개 인터페이스의 reset·apply·설정 입력을 실제로 읽습니다. Sequence 요청 내용을 정답으로 복사하지 않습니다."
+    ],
+    [
+     "182-189",
+     "Active 상태·pending·pwm·관찰 시간까지 새 sample에 담아 ap.write로 전달합니다. 기존 표본을 덮어쓰지 않습니다."
+    ],
+    [
+     "190-192",
+     "매 클록 관찰 절차를 닫습니다. 출력 변화가 없어도 계속 발행합니다."
+    ],
+    [
+     "194-200",
+     "uvm_analysis_imp #(표본 타입, 구현 클래스)로 수신 함수를 연결합니다. requests/applied와 cfg, 요청 시각 배열을 보존합니다."
+    ],
+    [
+     "201-205",
+     "리셋 표본·정상 클록·활성 표본은 별개 계수입니다. phase_idx와 expected_*가 독립 기준 상태입니다."
+    ],
+    [
+     "207-216",
+     "수신 포트를 생성하고 자기 경로의 cfg를 조회합니다. Driver와 같은 객체 타입이나 경로는 다릅니다."
+    ],
+    [
+     "218-224",
+     "write(sample)은 시간 소모 없는 분석 수신 함수입니다. 초기 리셋 이후 정상 거래 중 리셋을 허용하지 않습니다."
+    ],
+    [
+     "225-230",
+     "초기 상태 period8·duty0·enable0·polarity0·pending0·pwm0을 검사하고 반환합니다. 정상 cycles에는 포함되지 않습니다."
+    ],
+    [
+     "231-234",
+     "리셋 해제는 정확히 1, 초기 리셋 표본은 3개여야 합니다. cycles를 늘리고 나머지 연산으로 위상 0~7을 계산합니다."
+    ],
+    [
+     "236-242",
+     "phase=0이고 예상 pending이 참일 때 이전 요청의 계획 duty를 활성화합니다. 요청 없이 적용하거나 범위를 넘으면 실패합니다."
+    ],
+    [
+     "243-248",
+     "관찰 시각 차이가 80ns를 초과하는지 검사하고 적용 횟수를 증가시킵니다. 실제 적용 판단에 DUT pending을 정답으로 사용하지 않습니다."
+    ],
+    [
+     "249-256",
+     "실제 cfg_apply=1을 새 요청으로 인식합니다. 중첩 또는 계획 밖 요청을 금지하고 period·duty·enable·polarity를 확인합니다."
+    ],
+    [
+     "257-263",
+     "요청 시각을 저장하고 requests와 예상 pending을 갱신합니다. apply가 X/Z이면 실패합니다. 이전 요청 적용을 먼저 계산하므로 같은 에지의 새 요청과 구분됩니다."
+    ],
+    [
+     "265-270",
+     "실제 활성 상태와 독립 기대 상태를 !==로 대조합니다. 미정값도 오류로 검출합니다."
+    ],
+    [
+     "271-277",
+     "expected_enable &amp;&amp; (phase_idx &lt; expected_duty)로 예상 PWM을 계산합니다. duty0도 활성 주기의 8개 LOW 표본을 검사합니다. samples는 HIGH 개수가 아닙니다."
+    ],
+    [
+     "279-288",
+     "Agent의 drv는 기반 클래스 핸들입니다. 파생 객체도 가리킬 수 있지만 선언만으로 객체가 생성되지는 않습니다."
+    ],
+    [
+     "289-294",
+     "sqr/drv/mon을 Factory create로 생성합니다. drv의 실제 타입은 앞서 등록한 override 정책이 결정합니다."
+    ],
+    [
+     "295-299",
+     "Driver 요청 포트를 Sequencer export에 연결합니다. 파생 타입에서도 상속된 요청 인터페이스가 유지됩니다."
+    ],
+    [
+     "301-307",
+     "env는 Agent와 Scoreboard 핸들을 갖고 생성자에서 상위 계층을 등록합니다."
+    ],
+    [
+     "308-312",
+     "env의 build_phase에서 두 하위 component를 생성합니다. Test가 등록한 정책은 하위 생성과 조회에 적용됩니다."
+    ],
+    [
+     "313-317",
+     "Monitor의 분석 포트를 Scoreboard의 수신 imp에 연결합니다. Driver 요청을 직접 정답으로 전달하지 않습니다."
+    ],
+    [
+     "319-326",
+     "Test는 settings·vif·env·파생 Driver 확인용 traced 핸들·Sequence 완료 플래그를 보유합니다."
+    ],
+    [
+     "327-332",
+     "settings를 Factory로 생성하면 기본 생성자가 계획과 기한을 초기화합니다."
+    ],
+    [
+     "333-338",
+     "ALT_PLAN plusarg가 있으면 동일 객체의 세 duty만 1·8·3으로 바꿉니다. 다른 회로를 만드는 분기가 아닙니다."
+    ],
+    [
+     "339-344",
+     "요청 수가 정확히 3인지, foreach로 모든 배열 원소가 8 이하인지 검사합니다. duty는 무부호입니다."
+    ],
+    [
+     "345-346",
+     "Test 자체의 실제 인터페이스를 조회합니다. reset을 직접 구동할 참조입니다."
+    ],
+    [
+     "348-351",
+     "NO_OVERRIDE가 없으면 기반 등록 타입 요청을 파생 등록 타입 생성으로 교체합니다. env/Agent/Driver 생성 전에 등록하며 기존 객체를 소급 교체하지 않습니다."
+    ],
+    [
+     "353-359",
+     "set(this,&quot;env.ag.drv&quot;,&quot;cfg&quot;,settings)는 Test 기준 상대 경로와 키, 객체 핸들을 전달합니다. NO_CFG는 Driver 경로만 생략하고 sb에는 항상 전달합니다. 그 뒤 env를 생성합니다."
+    ],
+    [
+     "361-366",
+     "run_phase에서 objection을 올리고 세 하강 에지를 기다립니다. 이 보류는 시뮬레이션 실행 phase의 종료 제어이지 하드웨어 신호가 아닙니다."
+    ],
+    [
+     "367-370",
+     "실제 동기 리셋 결과 period8/duty0/pending0을 확인한 뒤 resetn을 1로 올립니다."
+    ],
+    [
+     "372-374",
+     "$cast(traced,env.ag.drv)는 실제 객체 타입이 파생 타입과 호환되는지 확인합니다. 성공하면 같은 객체의 파생 타입 핸들을 얻습니다. 실패는 FACTORY입니다."
+    ],
+    [
+     "376-378",
+     "Driver와 Scoreboard의 cfg가 settings와 같은 객체인지 검사합니다. 필드가 같은 별도 객체는 통과하지 않습니다."
+    ],
+    [
+     "379-382",
+     "Sequence를 생성하여 seq.cfg=settings로 직접 전달합니다. seq.start(env.ag.sqr)는 실행 완료까지 기다리고 반환 후 seq_finished를 설정합니다."
+    ],
+    [
+     "383-390",
+     "정상은 samples24까지 기다린 뒤 다음 하강 에지에서 objection을 내립니다. EARLY_DROP는 이 대기만 생략합니다. 다른 objection이 있으면 그것도 해제되어야 종료됩니다."
+    ],
+    [
+     "392-401",
+     "check_phase에서 실제 파생 객체·요청/구동/적용/trace 각3·활성24·정상31·리셋3·미결없음을 확인합니다. EARLY_DROP의 17표본은 COUNTS 오류입니다."
+    ],
+    [
+     "403-413",
+     "오류·Fatal 누계가 0일 때만 실제 계획별 RESULT를 기록합니다. UVM_NONE은 메시지 verbosity 수준입니다."
+    ],
+    [
+     "415-420",
+     "정적 top에서 5ns마다 반전하는 10ns 주기 clk와 실제 bus 인터페이스를 만듭니다."
+    ],
+    [
+     "422-431",
+     "원본 pwm_core의 RESET_PERIOD를 인스턴스에서 8로 지정하고 모든 실제 포트를 연결합니다. Factory가 RTL을 교체하지는 않습니다."
+    ],
+    [
+     "433-438",
+     "config_db set(null,절대 경로,&quot;vif&quot;,bus)로 test/drv/mon에 동일한 정적 인터페이스를 제공합니다. run_test는 등록된 pwm20_test를 실행합니다."
+    ],
+    [
+     "439-443",
+     "별도 initial watchdog는 2000ns(2µs)에 GLOBAL_TIMEOUT을 발생시킵니다. 정상 실행은 그 전에 끝납니다."
+    ]
+   ]
+  },
+  {
+   "path": "scripts/run_ch20.sh",
+   "section": "s06",
+   "rows": [
+    [
+     "1-10",
+     "Bash 명령 실패·미정 변수·파이프 실패를 감지하도록 설정합니다. ROOT와 DUT_PATH를 결정하고 RTL 누락이면 NOT_RUN/exit2입니다."
+    ],
+    [
+     "11-16",
+     "xvlog/xelab/xsim 존재 여부를 확인합니다. 도구 미설치는 검증 성공이 아닙니다."
+    ],
+    [
+     "17-22",
+     "새 실행 폴더를 만들어 RTL 분석, SV/UVM 분석, 정교화를 실행하고 각각 로그를 저장합니다."
+    ],
+    [
+     "23-28",
+     "check_normal의 인자는 로그, 계획 문자열, 세 duty입니다. 정확한 RESULT와 UVM_ERROR/FATAL 0을 확인합니다."
+    ],
+    [
+     "29-33",
+     "각 duty trace가 존재하며 전체 trace가 3개인지 확인합니다. trace의 순서 자체를 독립 검사하는 코드는 아닙니다."
+    ],
+    [
+     "34-37",
+     "기본 2,6,0과 ALT_PLAN 1,8,3을 같은 스냅샷으로 별도 실행하고 각 결과를 확인합니다."
+    ],
+    [
+     "39-43",
+     "check_negative는 plusarg와 전용 진단 정규식을 받아 별도 부정 로그를 만들고 종료 코드 rc를 기록합니다."
+    ],
+    [
+     "44-49",
+     "지정 진단이 있어도 정상 PASS 또는 GLOBAL_TIMEOUT이 포함되면 실패합니다. 해당 조건을 만족할 때 DETECTED를 기록합니다."
+    ],
+    [
+     "50-54",
+     "NO_OVERRIDE, NO_CFG, EARLY_DROP를 각각 실행하고 FACTORY, NO_CFG, COUNTS samples=17을 요구합니다. 정상2·부정3 완료를 기록합니다."
+    ]
+   ]
+  }
  ]
 }
