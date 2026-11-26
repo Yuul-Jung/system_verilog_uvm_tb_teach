@@ -41,9 +41,11 @@ Pages는 `main` 루트의 정적 HTML을 제공합니다. `.nojekyll`로 원본 
 - [제19장 · Monitor·Agent·Scoreboard](ch19_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch19_v01.md)
 - [제20장 · Factory·Config·Objection](ch20_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch20_v01.md)
 - [제21장 · UVM 레지스터 추상화](ch21_teacher_v02.html) · [검증 기록](docs/VALIDATION_ch21_v02.md)
-- [제22장 · 다중 Agent·VIP](ch22_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch22_v01.md)
+- [제22장 · 다중 Agent·VIP](ch22_teacher_v02.html) · [검증 기록](docs/VALIDATION_ch22_v02.md)
 - [제23장 · NPU 통합 정답 비교](ch23_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch23_v01.md)
 - [제24장 · 회귀·CI·검증 보고](ch24_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch24_v01.md)
 <!-- /PUBLISHED -->
 
 교수용 해설 보강 v26: 제21장 v02에서 RAL 구문 및 API 인자, 객체 생성, 독립 예측 경로, 실제 행별 풀이를 세분화했다. [제21장 v02 검증](docs/VALIDATION_ch21_v02.md). 기존 v25 화면·Pages 증거는 해당 시점의 기록이며 v02 화면/공개 HTTP 신규 확인은 별도 수행 대상이다.
+
+교수용 해설 보강 v27: 제22장 v02에서 두 Agent·Virtual Sequencer, Analysis Imp, AR 수락 시각과 IRQ 예상 상태, commit 큐, W1C 동시 충돌 및 구문별 해설을 보강했다. [제22장 v02 검증](docs/VALIDATION_ch22_v02.md). 신규 브라우저·공개 Pages 검사는 별도 수행 대상이다.
