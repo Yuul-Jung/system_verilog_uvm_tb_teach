@@ -1,0 +1,1542 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="제21장 UVM RAL 레지스터 추상화와 AXI4-Lite 검증"><title>교수용 해설서 · 제21장 · UVM 레지스터 추상화</title><link rel="stylesheet" href="assets/site.css"><style>.teach-note{margin:18px 0 4px;padding:15px 18px;background:#f8f7fc;border:1px solid #dddaee;border-left:4px solid #4635b1;border-radius:6px;overflow-wrap:anywhere}.teach-note h3{margin:0 0 10px;color:#4635b1}.teach-note h4{margin:14px 0 6px}.teach-note p{margin:8px 0}.teach-note summary{cursor:pointer;font-weight:600;margin:10px 0}.teach-fragment{white-space:pre-wrap;overflow-wrap:anywhere;display:block;min-width:140px}.teach-note table{margin:10px 0}.teach-note td{vertical-align:top}@media(max-width:860px){.teach-note{padding:12px}.teach-note td{min-width:68px}}.teach-note details table{min-width:680px}.teach-note details th:first-child,.teach-note details td:first-child{min-width:60px;white-space:nowrap}.teach-note details .teach-fragment{min-width:250px}</style></head><body data-chapter="ch21"><a class="access-skip" href="#main-content">본문 바로가기</a><button type="button" class="mobile-menu" id="mobile-menu" aria-controls="course-nav" aria-expanded="false">☰ 장·목차</button><div class="shade" id="shade"></div><header class="hero"><div class="hero-inner"><p class="kicker">교수용 해설서 · 제6부 · 실무 회귀 검증</p><h1>제21장 · UVM 레지스터 추상화</h1><p>RAL · Adapter · Predictor로 기존 AXI4-Lite 레지스터를 검증합니다.</p><div class="chips"><span class="chip">PART 06 · CHAPTER 21</span><span class="chip">Frontdoor 10거래 · 독립 Predictor</span><span class="chip">기존 RTL 변경 없음</span></div></div></header><div class="wrap"><nav class="toc" id="course-nav" aria-label="부·장·절 탐색"></nav><main class="content" id="main-content"><p>원본 제21장 · v04의 절·그림·전체 코드·실습을 보존한 교수용 해설서입니다.</p>
+<section class="section" id="s00"><h2><span class="num">00</span>개요 · 레지스터를 객체로 검증한다</h2><p>RAL(Register Abstraction Layer, 레지스터 추상화 계층)은 주소·필드·접근 정책·리셋값을 객체로 정의합니다. 제15장의 AXI4-Lite 스냅샷과 제19장의 독립 Monitor 개념을 연결합니다. RAL의 write/read가 실제 버스 거래로 변환되고, 관찰된 거래는 Predictor(프리딕터, 예측값 갱신기)를 통해 Mirror(미러, 모델의 예상 레지스터값)에 반영됩니다.</p><p><strong>설계 개념 연계:</strong> amd_soc_p2 04.2장 03~04절 AXI·WSTRB, 10.3장 사양서 2~3절 및 03.2장 IRQ 관련 설계. 현행 PWM/IRQ IP와 동일 원본으로 확인되지 않은 범용 스냅샷이므로 개념 연계만 적용합니다.</p><div class="codeblock"><div class="codebar"><span>Ubuntu · 폴더 준비</span></div><pre tabindex="0"><code>mkdir -p ch21_lab/reference_rtl ch21_lab/tb/ch21 ch21_lab/scripts
+cd ch21_lab</code></pre></div><table><thead><tr><th>파일</th><th>역할</th></tr></thead><tbody><tr><td>reference_rtl/axi4lite_slave_adapter.v</td><td>AXI 채널 처리</td></tr><tr><td>reference_rtl/custom_register_bank.v</td><td>레지스터 저장·읽기</td></tr><tr><td>tb/ch21/tb_axi_uvm_ral.sv</td><td>RAL 및 UVM 전체 환경</td></tr><tr><td>scripts/run_ch21.sh</td><td>XSIM 정상/부정 시험</td></tr></tbody></table><p>01절·05절·06절의 전체 코드를 지정된 경로에 저장합니다.</p>
+<div class="teach-note"><h3>교수용 이론 · 주소 숫자를 레지스터 의미로 다룬다</h3><p>RAL(Register Abstraction Layer, 레지스터 추상화 계층)은 CONTROL의 필드·권한·리셋값과 주소 맵을 객체로 표현합니다. 시험은 control.write처럼 의도를 말하고 Adapter와 Driver가 실제 AXI 거래로 바꿉니다. 주소·필드 정책을 여러 시험에 복사하는 부담을 줄이는 방법입니다.</p><p>Mirror는 모델이 현재 예상하는 값입니다. 실제 하드웨어를 항상 들여다보는 창이 아닙니다. 모델 reset은 예상 상태만 초기화하고 실제 resetn은 별도 구동해야 합니다. 이 장은 제15장의 범용 스냅샷에 RAL과 독립 버스 관찰을 붙입니다.</p></div>
+</section>
+<section class="section" id="s01"><h2><span class="num">01</span>원본 RTL 전체</h2><div class="codeblock"><div class="codebar"><span>reference_rtl/axi4lite_slave_adapter.v · Verilog</span></div><pre tabindex="0"><code>module axi4lite_slave_adapter #(
+    parameter integer C_S_AXI_ADDR_WIDTH = 32
+)(
+    input  wire                          s_axi_aclk,
+    input  wire                          s_axi_aresetn,
+
+    // AXI4-Lite Write Address Channel
+    input  wire [C_S_AXI_ADDR_WIDTH-1:0] s_axi_awaddr,
+    input  wire [2:0]                    s_axi_awprot,
+    input  wire                          s_axi_awvalid,
+    output wire                          s_axi_awready,
+
+    // AXI4-Lite Write Data Channel
+    input  wire [31:0]                   s_axi_wdata,
+    input  wire [3:0]                    s_axi_wstrb,
+    input  wire                          s_axi_wvalid,
+    output wire                          s_axi_wready,
+
+    // AXI4-Lite Write Response Channel
+    output reg  [1:0]                    s_axi_bresp,
+    output reg                           s_axi_bvalid,
+    input  wire                          s_axi_bready,
+
+    // AXI4-Lite Read Address Channel
+    input  wire [C_S_AXI_ADDR_WIDTH-1:0] s_axi_araddr,
+    input  wire [2:0]                    s_axi_arprot,
+    input  wire                          s_axi_arvalid,
+    output wire                          s_axi_arready,
+
+    // AXI4-Lite Read Data Channel
+    output reg  [31:0]                   s_axi_rdata,
+    output reg  [1:0]                    s_axi_rresp,
+    output reg                           s_axi_rvalid,
+    input  wire                          s_axi_rready,
+
+    // Bus-independent register access interface
+    output wire                          wr_en,
+    output wire [7:0]                    wr_offset,
+    output wire [31:0]                   wr_data,
+    output wire [3:0]                    wr_strb,
+
+    output wire [7:0]                    rd_offset,
+    input  wire [31:0]                   rd_data
+);
+
+// AXI response code used by this basic slave.
+localparam [1:0] AXI_RESP_OKAY = 2'b00;
+
+// Write Address and Write Data are independent AXI channels.
+// Each channel is buffered separately until both are available.
+reg                          aw_stored;
+reg [C_S_AXI_ADDR_WIDTH-1:0] awaddr_stored;
+reg                          w_stored;
+reg [31:0]                   wdata_stored;
+reg [3:0]                    wstrb_stored;
+
+wire write_commit;
+
+// Single-outstanding-write policy:
+// Do not accept a new write while a response is pending.
+assign s_axi_awready =
+    s_axi_aresetn &amp;&amp; !aw_stored &amp;&amp; !s_axi_bvalid;
+
+assign s_axi_wready =
+    s_axi_aresetn &amp;&amp; !w_stored &amp;&amp; !s_axi_bvalid;
+
+// Register-bank write occurs only after BOTH address and data
+// channels have completed their independent handshakes.
+assign write_commit =
+    aw_stored &amp;&amp; w_stored &amp;&amp; !s_axi_bvalid;
+
+assign wr_en     = write_commit;
+assign wr_offset = awaddr_stored[7:0];
+assign wr_data   = wdata_stored;
+assign wr_strb   = wstrb_stored;
+
+// Read side accepts one address only when no previous R response
+// is waiting for the master.
+assign s_axi_arready =
+    s_axi_aresetn &amp;&amp; !s_axi_rvalid;
+
+// custom_register_bank read path is combinational.
+// The address presented during AR handshake selects rd_data.
+assign rd_offset = s_axi_araddr[7:0];
+
+// AWPROT / ARPROT are not used by this educational register slave.
+wire unused_prot;
+assign unused_prot = ^{s_axi_awprot, s_axi_arprot};
+
+always @(posedge s_axi_aclk) begin
+    if (!s_axi_aresetn) begin
+        aw_stored     &lt;= 1'b0;
+        awaddr_stored &lt;= {C_S_AXI_ADDR_WIDTH{1'b0}};
+        w_stored      &lt;= 1'b0;
+        wdata_stored  &lt;= 32'h0000_0000;
+        wstrb_stored  &lt;= 4'b0000;
+        s_axi_bresp   &lt;= AXI_RESP_OKAY;
+        s_axi_bvalid  &lt;= 1'b0;
+    end else begin
+        // Capture Write Address independently.
+        if (s_axi_awready &amp;&amp; s_axi_awvalid) begin
+            aw_stored     &lt;= 1'b1;
+            awaddr_stored &lt;= s_axi_awaddr;
+        end
+
+        // Capture Write Data independently.
+        if (s_axi_wready &amp;&amp; s_axi_wvalid) begin
+            w_stored     &lt;= 1'b1;
+            wdata_stored &lt;= s_axi_wdata;
+            wstrb_stored &lt;= s_axi_wstrb;
+        end
+
+        // Once both parts exist, pulse wr_en through write_commit
+        // and create the AXI B response.
+        if (write_commit) begin
+            aw_stored    &lt;= 1'b0;
+            w_stored     &lt;= 1'b0;
+            s_axi_bresp  &lt;= AXI_RESP_OKAY;
+            s_axi_bvalid &lt;= 1'b1;
+        end else if (s_axi_bvalid &amp;&amp; s_axi_bready) begin
+            s_axi_bvalid &lt;= 1'b0;
+        end
+    end
+end
+
+always @(posedge s_axi_aclk) begin
+    if (!s_axi_aresetn) begin
+        s_axi_rdata  &lt;= 32'h0000_0000;
+        s_axi_rresp  &lt;= AXI_RESP_OKAY;
+        s_axi_rvalid &lt;= 1'b0;
+    end else begin
+        // Capture the selected register value at AR handshake.
+        if (s_axi_arready &amp;&amp; s_axi_arvalid) begin
+            s_axi_rdata  &lt;= rd_data;
+            s_axi_rresp  &lt;= AXI_RESP_OKAY;
+            s_axi_rvalid &lt;= 1'b1;
+        end else if (s_axi_rvalid &amp;&amp; s_axi_rready) begin
+            s_axi_rvalid &lt;= 1'b0;
+        end
+    end
+end
+
+endmodule
+</code></pre></div><div class="codeblock"><div class="codebar"><span>reference_rtl/custom_register_bank.v · Verilog</span></div><pre tabindex="0"><code>module custom_register_bank (
+    input  wire        clk,
+    input  wire        resetn,
+
+    // Bus-independent register access interface.
+    // SoC 12 will connect this interface to AXI4-Lite.
+    input  wire        wr_en,
+    input  wire [7:0]  wr_offset,
+    input  wire [31:0] wr_data,
+    input  wire [3:0]  wr_strb,
+
+    input  wire [7:0]  rd_offset,
+    output reg  [31:0] rd_data,
+
+    // Hardware status / event inputs
+    input  wire        busy_i,
+    input  wire        done_i,
+    input  wire        error_i,
+    input  wire        irq_done_event_i,
+    input  wire        irq_error_event_i,
+    input  wire [31:0] data_out_i,
+
+    // Control outputs
+    output reg         enable_o,
+    output reg  [1:0]  mode_o,
+    output reg         start_pulse_o,
+    output reg         clear_pulse_o,
+    output reg  [31:0] data_in_o,
+    output reg  [1:0]  irq_status_o
+);
+
+localparam [7:0] REG_CONTROL    = 8'h00;
+localparam [7:0] REG_STATUS     = 8'h04;
+localparam [7:0] REG_COMMAND    = 8'h08;
+localparam [7:0] REG_IRQ_STATUS = 8'h0C;
+localparam [7:0] REG_DATA_IN    = 8'h10;
+localparam [7:0] REG_DATA_OUT   = 8'h14;
+localparam [7:0] REG_VERSION    = 8'h18;
+localparam [7:0] REG_ID         = 8'h1C;
+
+localparam [31:0] VERSION_VALUE = 32'h0001_0000;
+localparam [31:0] ID_VALUE      = 32'h524D_4150; // ASCII &quot;RMAP&quot;
+
+integer byte_index;
+
+always @(posedge clk) begin
+    if (!resetn) begin
+        enable_o      &lt;= 1'b0;
+        mode_o        &lt;= 2'b00;
+        start_pulse_o &lt;= 1'b0;
+        clear_pulse_o &lt;= 1'b0;
+        data_in_o     &lt;= 32'h0000_0000;
+        irq_status_o  &lt;= 2'b00;
+    end else begin
+        // W1P pulses are one clock wide by default.
+        start_pulse_o &lt;= 1'b0;
+        clear_pulse_o &lt;= 1'b0;
+
+        // Hardware events set IRQ status.
+        // Event set has priority over software clear in the same cycle.
+        if (irq_done_event_i) begin
+            irq_status_o[0] &lt;= 1'b1;
+        end else if (
+            wr_en &amp;&amp;
+            (wr_offset == REG_IRQ_STATUS) &amp;&amp;
+            wr_strb[0] &amp;&amp;
+            wr_data[0]
+        ) begin
+            irq_status_o[0] &lt;= 1'b0;
+        end
+
+        if (irq_error_event_i) begin
+            irq_status_o[1] &lt;= 1'b1;
+        end else if (
+            wr_en &amp;&amp;
+            (wr_offset == REG_IRQ_STATUS) &amp;&amp;
+            wr_strb[0] &amp;&amp;
+            wr_data[1]
+        ) begin
+            irq_status_o[1] &lt;= 1'b0;
+        end
+
+        if (wr_en) begin
+            case (wr_offset)
+                REG_CONTROL: begin
+                    if (wr_strb[0]) begin
+                        enable_o &lt;= wr_data[0];
+                        mode_o   &lt;= wr_data[2:1];
+                    end
+                end
+
+                REG_COMMAND: begin
+                    if (wr_strb[0]) begin
+                        start_pulse_o &lt;= wr_data[0];
+                        clear_pulse_o &lt;= wr_data[1];
+                    end
+                end
+
+                REG_DATA_IN: begin
+                    // Byte-enable write using WSTRB-equivalent strobes.
+                    for (byte_index = 0; byte_index &lt; 4; byte_index = byte_index + 1) begin
+                        if (wr_strb[byte_index]) begin
+                            data_in_o[byte_index*8 +: 8] &lt;=
+                                wr_data[byte_index*8 +: 8];
+                        end
+                    end
+                end
+
+                default: begin
+                    // RO / reserved / unmapped writes have no effect.
+                end
+            endcase
+        end
+    end
+end
+
+always @(*) begin
+    case (rd_offset)
+        REG_CONTROL: begin
+            rd_data = {29'h0, mode_o, enable_o};
+        end
+
+        REG_STATUS: begin
+            rd_data = {29'h0, error_i, done_i, busy_i};
+        end
+
+        REG_COMMAND: begin
+            // W1P command register has no retained state.
+            rd_data = 32'h0000_0000;
+        end
+
+        REG_IRQ_STATUS: begin
+            rd_data = {30'h0, irq_status_o};
+        end
+
+        REG_DATA_IN: begin
+            rd_data = data_in_o;
+        end
+
+        REG_DATA_OUT: begin
+            rd_data = data_out_i;
+        end
+
+        REG_VERSION: begin
+            rd_data = VERSION_VALUE;
+        end
+
+        REG_ID: begin
+            rd_data = ID_VALUE;
+        end
+
+        default: begin
+            rd_data = 32'h0000_0000;
+        end
+    endcase
+end
+
+endmodule
+</code></pre></div><p>어댑터는 AW/W를 따로 저장하고 두 채널이 모두 수락된 다음 bank에 쓰기를 반영합니다. 읽기값은 AR 수락 때 캡처합니다. 이 스냅샷은 미매핑 접근에도 OKAY를 반환하는 교육용 구현이며, 외부 주소 디코딩은 하위 8비트 별칭을 고려해야 합니다.</p>
+<div class="teach-note"><h3>원본 회로 · 버스 저장과 필드 정책을 따로 읽는다</h3><p>어댑터는 AW/W를 각각 저장하고 bank가 commit에서 상태를 바꿉니다. CONTROL은 하위3비트만 저장하고 예약 비트는 읽기0입니다. 이 동작을 RAL 필드 권한도 따라야 합니다. DUT를 보존한 상태에서 모델이 실제 계약과 맞는지 검사하는 것이며 모델 정의만으로 RTL이 바뀌지는 않습니다.</p><h4>reference_rtl/axi4lite_slave_adapter.v · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-44</td><td><code class="teach-fragment">module axi4lite_slave_adapter #(
+    parameter integer C_S_AXI_ADDR_WIDTH = 32
+)(
+    input  wire                          s_axi_aclk,
+    input  wire                          s_axi_aresetn,
+
+    // AXI4-Lite Write Address Channel
+    input  wire [C_S_AXI_ADDR_WIDTH-1:0] s_axi_awaddr,
+    input  wire [2:0]                    s_axi_awprot,
+    input  wire                          s_axi_awvalid,
+    output wire                          s_axi_awready,
+
+    // AXI4-Lite Write Data Channel
+    input  wire [31:0]                   s_axi_wdata,
+    input  wire [3:0]                    s_axi_wstrb,
+    input  wire                          s_axi_wvalid,
+    output wire                          s_axi_wready,
+
+    // AXI4-Lite Write Response Channel
+    output reg  [1:0]                    s_axi_bresp,
+    output reg                           s_axi_bvalid,
+    input  wire                          s_axi_bready,
+
+    // AXI4-Lite Read Address Channel
+    input  wire [C_S_AXI_ADDR_WIDTH-1:0] s_axi_araddr,
+    input  wire [2:0]                    s_axi_arprot,
+    input  wire                          s_axi_arvalid,
+    output wire                          s_axi_arready,
+
+    // AXI4-Lite Read Data Channel
+    output reg  [31:0]                   s_axi_rdata,
+    output reg  [1:0]                    s_axi_rresp,
+    output reg                           s_axi_rvalid,
+    input  wire                          s_axi_rready,
+
+    // Bus-independent register access interface
+    output wire                          wr_en,
+    output wire [7:0]                    wr_offset,
+    output wire [31:0]                   wr_data,
+    output wire [3:0]                    wr_strb,
+
+    output wire [7:0]                    rd_offset,
+    input  wire [31:0]                   rd_data
+);</code></td><td>다섯 AXI 채널과 bank 접근 포트를 선언합니다.</td></tr><tr><td>46-75</td><td><code class="teach-fragment">// AXI response code used by this basic slave.
+localparam [1:0] AXI_RESP_OKAY = 2&#x27;b00;
+
+// Write Address and Write Data are independent AXI channels.
+// Each channel is buffered separately until both are available.
+reg                          aw_stored;
+reg [C_S_AXI_ADDR_WIDTH-1:0] awaddr_stored;
+reg                          w_stored;
+reg [31:0]                   wdata_stored;
+reg [3:0]                    wstrb_stored;
+
+wire write_commit;
+
+// Single-outstanding-write policy:
+// Do not accept a new write while a response is pending.
+assign s_axi_awready =
+    s_axi_aresetn &amp;&amp; !aw_stored &amp;&amp; !s_axi_bvalid;
+
+assign s_axi_wready =
+    s_axi_aresetn &amp;&amp; !w_stored &amp;&amp; !s_axi_bvalid;
+
+// Register-bank write occurs only after BOTH address and data
+// channels have completed their independent handshakes.
+assign write_commit =
+    aw_stored &amp;&amp; w_stored &amp;&amp; !s_axi_bvalid;
+
+assign wr_en     = write_commit;
+assign wr_offset = awaddr_stored[7:0];
+assign wr_data   = wdata_stored;
+assign wr_strb   = wstrb_stored;</code></td><td>AW/W를 따로 저장하고 둘이 준비되면 저장 payload로 commit합니다. B 대기 중 새 쓰기 수락을 막습니다.</td></tr><tr><td>77-88</td><td><code class="teach-fragment">// Read side accepts one address only when no previous R response
+// is waiting for the master.
+assign s_axi_arready =
+    s_axi_aresetn &amp;&amp; !s_axi_rvalid;
+
+// custom_register_bank read path is combinational.
+// The address presented during AR handshake selects rd_data.
+assign rd_offset = s_axi_araddr[7:0];
+
+// AWPROT / ARPROT are not used by this educational register slave.
+wire unused_prot;
+assign unused_prot = ^{s_axi_awprot, s_axi_arprot};</code></td><td>한 미결 읽기 정책과 조합 bank 읽기 주소, 미사용 보호 속성을 정의합니다.</td></tr><tr><td>90-124</td><td><code class="teach-fragment">always @(posedge s_axi_aclk) begin
+    if (!s_axi_aresetn) begin
+        aw_stored     &lt;= 1&#x27;b0;
+        awaddr_stored &lt;= {C_S_AXI_ADDR_WIDTH{1&#x27;b0}};
+        w_stored      &lt;= 1&#x27;b0;
+        wdata_stored  &lt;= 32&#x27;h0000_0000;
+        wstrb_stored  &lt;= 4&#x27;b0000;
+        s_axi_bresp   &lt;= AXI_RESP_OKAY;
+        s_axi_bvalid  &lt;= 1&#x27;b0;
+    end else begin
+        // Capture Write Address independently.
+        if (s_axi_awready &amp;&amp; s_axi_awvalid) begin
+            aw_stored     &lt;= 1&#x27;b1;
+            awaddr_stored &lt;= s_axi_awaddr;
+        end
+
+        // Capture Write Data independently.
+        if (s_axi_wready &amp;&amp; s_axi_wvalid) begin
+            w_stored     &lt;= 1&#x27;b1;
+            wdata_stored &lt;= s_axi_wdata;
+            wstrb_stored &lt;= s_axi_wstrb;
+        end
+
+        // Once both parts exist, pulse wr_en through write_commit
+        // and create the AXI B response.
+        if (write_commit) begin
+            aw_stored    &lt;= 1&#x27;b0;
+            w_stored     &lt;= 1&#x27;b0;
+            s_axi_bresp  &lt;= AXI_RESP_OKAY;
+            s_axi_bvalid &lt;= 1&#x27;b1;
+        end else if (s_axi_bvalid &amp;&amp; s_axi_bready) begin
+            s_axi_bvalid &lt;= 1&#x27;b0;
+        end
+    end
+end</code></td><td>동기 리셋·독립 AW/W 캡처·commit 뒤 B 응답 생성·B 수락 후 해제를 수행합니다.</td></tr><tr><td>126-143</td><td><code class="teach-fragment">always @(posedge s_axi_aclk) begin
+    if (!s_axi_aresetn) begin
+        s_axi_rdata  &lt;= 32&#x27;h0000_0000;
+        s_axi_rresp  &lt;= AXI_RESP_OKAY;
+        s_axi_rvalid &lt;= 1&#x27;b0;
+    end else begin
+        // Capture the selected register value at AR handshake.
+        if (s_axi_arready &amp;&amp; s_axi_arvalid) begin
+            s_axi_rdata  &lt;= rd_data;
+            s_axi_rresp  &lt;= AXI_RESP_OKAY;
+            s_axi_rvalid &lt;= 1&#x27;b1;
+        end else if (s_axi_rvalid &amp;&amp; s_axi_rready) begin
+            s_axi_rvalid &lt;= 1&#x27;b0;
+        end
+    end
+end
+
+endmodule</code></td><td>AR 수락 순간 읽기 데이터를 저장해 R 수락까지 유지합니다.</td></tr></tbody></table></details><h4>reference_rtl/custom_register_bank.v · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-44</td><td><code class="teach-fragment">module custom_register_bank (
+    input  wire        clk,
+    input  wire        resetn,
+
+    // Bus-independent register access interface.
+    // SoC 12 will connect this interface to AXI4-Lite.
+    input  wire        wr_en,
+    input  wire [7:0]  wr_offset,
+    input  wire [31:0] wr_data,
+    input  wire [3:0]  wr_strb,
+
+    input  wire [7:0]  rd_offset,
+    output reg  [31:0] rd_data,
+
+    // Hardware status / event inputs
+    input  wire        busy_i,
+    input  wire        done_i,
+    input  wire        error_i,
+    input  wire        irq_done_event_i,
+    input  wire        irq_error_event_i,
+    input  wire [31:0] data_out_i,
+
+    // Control outputs
+    output reg         enable_o,
+    output reg  [1:0]  mode_o,
+    output reg         start_pulse_o,
+    output reg         clear_pulse_o,
+    output reg  [31:0] data_in_o,
+    output reg  [1:0]  irq_status_o
+);
+
+localparam [7:0] REG_CONTROL    = 8&#x27;h00;
+localparam [7:0] REG_STATUS     = 8&#x27;h04;
+localparam [7:0] REG_COMMAND    = 8&#x27;h08;
+localparam [7:0] REG_IRQ_STATUS = 8&#x27;h0C;
+localparam [7:0] REG_DATA_IN    = 8&#x27;h10;
+localparam [7:0] REG_DATA_OUT   = 8&#x27;h14;
+localparam [7:0] REG_VERSION    = 8&#x27;h18;
+localparam [7:0] REG_ID         = 8&#x27;h1C;
+
+localparam [31:0] VERSION_VALUE = 32&#x27;h0001_0000;
+localparam [31:0] ID_VALUE      = 32&#x27;h524D_4150; // ASCII &quot;RMAP&quot;
+
+integer byte_index;</code></td><td>단순 bank 인터페이스·하드웨어 상태·제어 출력과8개 offset·상수를 정의합니다.</td></tr><tr><td>46-58</td><td><code class="teach-fragment">always @(posedge clk) begin
+    if (!resetn) begin
+        enable_o      &lt;= 1&#x27;b0;
+        mode_o        &lt;= 2&#x27;b00;
+        start_pulse_o &lt;= 1&#x27;b0;
+        clear_pulse_o &lt;= 1&#x27;b0;
+        data_in_o     &lt;= 32&#x27;h0000_0000;
+        irq_status_o  &lt;= 2&#x27;b00;
+    end else begin
+        // W1P pulses are one clock wide by default.
+        start_pulse_o &lt;= 1&#x27;b0;
+        clear_pulse_o &lt;= 1&#x27;b0;
+</code></td><td>리셋 초기화와 한 클록 COMMAND 펄스의 기본 해제를 수행합니다.</td></tr><tr><td>59-81</td><td><code class="teach-fragment">        // Hardware events set IRQ status.
+        // Event set has priority over software clear in the same cycle.
+        if (irq_done_event_i) begin
+            irq_status_o[0] &lt;= 1&#x27;b1;
+        end else if (
+            wr_en &amp;&amp;
+            (wr_offset == REG_IRQ_STATUS) &amp;&amp;
+            wr_strb[0] &amp;&amp;
+            wr_data[0]
+        ) begin
+            irq_status_o[0] &lt;= 1&#x27;b0;
+        end
+
+        if (irq_error_event_i) begin
+            irq_status_o[1] &lt;= 1&#x27;b1;
+        end else if (
+            wr_en &amp;&amp;
+            (wr_offset == REG_IRQ_STATUS) &amp;&amp;
+            wr_strb[0] &amp;&amp;
+            wr_data[1]
+        ) begin
+            irq_status_o[1] &lt;= 1&#x27;b0;
+        end</code></td><td>IRQ 이벤트 설정을 소프트웨어 W1C 해제보다 우선합니다. 이 장의 자극에서는 이벤트를0으로 둡니다.</td></tr><tr><td>83-115</td><td><code class="teach-fragment">        if (wr_en) begin
+            case (wr_offset)
+                REG_CONTROL: begin
+                    if (wr_strb[0]) begin
+                        enable_o &lt;= wr_data[0];
+                        mode_o   &lt;= wr_data[2:1];
+                    end
+                end
+
+                REG_COMMAND: begin
+                    if (wr_strb[0]) begin
+                        start_pulse_o &lt;= wr_data[0];
+                        clear_pulse_o &lt;= wr_data[1];
+                    end
+                end
+
+                REG_DATA_IN: begin
+                    // Byte-enable write using WSTRB-equivalent strobes.
+                    for (byte_index = 0; byte_index &lt; 4; byte_index = byte_index + 1) begin
+                        if (wr_strb[byte_index]) begin
+                            data_in_o[byte_index*8 +: 8] &lt;=
+                                wr_data[byte_index*8 +: 8];
+                        end
+                    end
+                end
+
+                default: begin
+                    // RO / reserved / unmapped writes have no effect.
+                end
+            endcase
+        end
+    end
+end</code></td><td>CONTROL 하위3비트·COMMAND 두 펄스·DATA_IN 바이트별 strobe를 처리하고 나머지 쓰기는 무시합니다.</td></tr><tr><td>117-158</td><td><code class="teach-fragment">always @(*) begin
+    case (rd_offset)
+        REG_CONTROL: begin
+            rd_data = {29&#x27;h0, mode_o, enable_o};
+        end
+
+        REG_STATUS: begin
+            rd_data = {29&#x27;h0, error_i, done_i, busy_i};
+        end
+
+        REG_COMMAND: begin
+            // W1P command register has no retained state.
+            rd_data = 32&#x27;h0000_0000;
+        end
+
+        REG_IRQ_STATUS: begin
+            rd_data = {30&#x27;h0, irq_status_o};
+        end
+
+        REG_DATA_IN: begin
+            rd_data = data_in_o;
+        end
+
+        REG_DATA_OUT: begin
+            rd_data = data_out_i;
+        end
+
+        REG_VERSION: begin
+            rd_data = VERSION_VALUE;
+        end
+
+        REG_ID: begin
+            rd_data = ID_VALUE;
+        end
+
+        default: begin
+            rd_data = 32&#x27;h0000_0000;
+        end
+    endcase
+end
+
+endmodule</code></td><td>각 레지스터를 조합 읽기로 선택하고 reserved·미매핑은0을 반환합니다.</td></tr></tbody></table></details></div>
+</section>
+<section class="section" id="s02"><h2><span class="num">02</span>레지스터 맵과 필드 모델</h2><table><thead><tr><th>주소</th><th>레지스터</th><th>실제 계약</th><th>이번 모델</th></tr></thead><tbody><tr><td>00</td><td>CONTROL</td><td>enable[0], mode[2:1], 예약[31:3] 읽기 0</td><td>RW 1+2비트, RO 29비트</td></tr><tr><td>04</td><td>STATUS</td><td>busy/done/error · RO</td><td>범위 밖</td></tr><tr><td>08</td><td>COMMAND</td><td>W1P 펄스</td><td>범위 밖</td></tr><tr><td>0C</td><td>IRQ_STATUS</td><td>W1C 및 이벤트 우선</td><td>범위 밖</td></tr><tr><td>10</td><td>DATA_IN</td><td>RW 32비트, WSTRB</td><td>전체 32비트</td></tr><tr><td>14</td><td>DATA_OUT</td><td>RO</td><td>범위 밖</td></tr><tr><td>18</td><td>VERSION</td><td>RO 00010000</td><td>32비트 RO</td></tr><tr><td>1C</td><td>ID</td><td>RO 524D4150</td><td>32비트 RO</td></tr></tbody></table><p>create_map의 base=0, n_bytes=4, UVM_LITTLE_ENDIAN, byte_addressing=1을 적용합니다. lock_model()은 모델 구조를 확정합니다. CONTROL의 예약 비트는 1을 써도 저장되지 않습니다. 모델도 RO 필드로 정의하여 쓰기 예측에서 기존 0을 유지합니다. 모델 reset()은 DUT를 리셋하지 않으므로 실제 resetn 구동을 별도로 수행합니다. 이번 장에서는 전체 레지스터 접근만 수행하고 개별 필드 byte enable 및 부분 WSTRB 시험은 제15장의 범위와 구별합니다.</p>
+<div class="teach-note"><h3>필드·주소 판서 · FFFFFFFF가 왜7이 되는가</h3><p>CONTROL은 bit0 enable1비트, bits2:1 mode2비트, bits31:3 reserved29비트로 총32비트입니다. FFFFFFFF 쓰기의 유효 저장 마스크는00000007이라 읽기·Mirror는7입니다. 이어5=101을 쓰면 enable1·mode10입니다. 예약29비트를 RW로 잘못 모델링하면 DUT는7이어도 모델은FFFFFFFF로 예측할 수 있습니다.</p><p>map의 base0·n_bytes4·byte_addressing1에서 offset10은16바이트 주소이지 네 번째 주소 단위로 재해석한40이 아닙니다. little endian은 바이트 배치 규칙이며16진수 문자열을 거꾸로 출력한다는 뜻이 아닙니다. lock_model은 구조 확정, reset은 모델 상태 초기화입니다. STATUS·COMMAND·IRQ·DATA_OUT은 이번 모델 밖입니다.</p></div>
+</section>
+<section class="section" id="s03"><h2><span class="num">03</span>Adapter·Monitor·Predictor 연결</h2><figure style="overflow-x:auto;margin:16px 0"><div style="min-width:700px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 332" role="img" aria-labelledby="ch21title"><title id="ch21title">RAL Frontdoor와 독립 예측 경로</title><rect width="960" height="332" fill="white"/><defs><marker id="ch21arr" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="10" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L10 4L0 8Z" fill="#5A1E1E"/></marker></defs><g font-family="Noto Sans CJK KR,sans-serif" fill="#172439" text-anchor="middle"><text x="480" y="30" font-size="20" font-weight="bold">레지스터 객체 → 실제 버스 → Mirror</text><rect x="24" y="65" width="190" height="72" rx="4" fill="#F7F9FC" stroke="#1F3A5F" stroke-width="2"/><text x="119" y="92" font-size="15" font-weight="bold">axi21_block</text><text x="119" y="116" font-size="13">RAL · write/read</text><rect x="270" y="65" width="190" height="72" rx="4" fill="#F7F9FC" stroke="#1F3A5F" stroke-width="2"/><text x="365" y="92" font-size="15" font-weight="bold">axi21_adapter</text><text x="365" y="116" font-size="13">reg2bus / bus2reg</text><rect x="516" y="65" width="190" height="72" rx="4" fill="#F7F9FC" stroke="#1F3A5F" stroke-width="2"/><text x="611" y="92" font-size="15" font-weight="bold">sqr → drv</text><text x="611" y="116" font-size="13">AXI 거래 구동</text><rect x="762" y="65" width="174" height="72" rx="4" fill="#F7F9FC" stroke="#1F3A5F" stroke-width="2"/><text x="849" y="92" font-size="15" font-weight="bold">DUT · bank</text><text x="849" y="116" font-size="13">AXI4-Lite / RMAP</text><rect x="762" y="219" width="174" height="72" rx="4" fill="#F7F9FC" stroke="#1F3A5F" stroke-width="2"/><text x="849" y="246" font-size="15" font-weight="bold">axi21_monitor</text><text x="849" y="270" font-size="13">실제 B/R 수락</text><rect x="516" y="219" width="190" height="72" rx="4" fill="#F7F9FC" stroke="#1F3A5F" stroke-width="2"/><text x="611" y="246" font-size="15" font-weight="bold">predictor</text><text x="611" y="270" font-size="13">bus_in · adapter</text><rect x="24" y="219" width="190" height="72" rx="4" fill="#F7F9FC" stroke="#1F3A5F" stroke-width="2"/><text x="119" y="246" font-size="15" font-weight="bold">Mirror</text><text x="119" y="270" font-size="13">get_mirrored_value()</text><g fill="none" stroke="#5A1E1E" stroke-width="2" marker-end="url(#ch21arr)"><path d="M214 101H270"/><path d="M460 101H516"/><path d="M706 101H762"/><path d="M849 137V219"/><path d="M762 255H706"/><path d="M516 255H214"/></g><g font-size="12"><text x="780" y="180">공개 포트 관찰</text><text x="733" y="245">ap</text><text x="365" y="245">명시적 예측</text><text x="480" y="318">set_auto_predict(0) · Driver 요청 객체 대신 독립 Monitor의 완료 거래 사용</text></g></g></svg>
+</div><figcaption>실제 Frontdoor(프런트도어, 버스 접근)와 독립 예측 경로. 하단 Mirror는 RAL 모델의 상태이며 DUT의 별도 회로가 아닙니다.</figcaption></figure><table><thead><tr><th>구성</th><th>역할</th></tr></thead><tbody><tr><td>axi21_block</td><td>주소·필드·권한·리셋값</td></tr><tr><td>axi21_adapter.reg2bus</td><td>uvm_reg_bus_op를 AXI 거래로 변환</td></tr><tr><td>axi21_driver</td><td>AW/W/B/AR/R 구동 및 응답 반환</td></tr><tr><td>axi21_monitor</td><td>상승 에지의 실제 핸드셰이크 재구성</td></tr><tr><td>predictor.bus_in</td><td>완료된 독립 거래로 모델 갱신</td></tr><tr><td>set_auto_predict(0)</td><td>자동 예측 비활성, 명시적 Predictor만 사용</td></tr><tr><td>get_mirrored_value()</td><td>DUT 접근 없이 현재 예상값 반환</td></tr></tbody></table><p>provides_responses=0이므로 Driver는 요청 객체에 읽기 데이터와 응답을 기록하고 item_done()을 호출합니다. Monitor는 이 객체를 재사용하지 않고 AW/W/B 및 AR/R 수락으로 새 객체를 만들어 발행합니다. 입력은 하강 에지에 구동하며 Monitor는 상승 에지에서 수락된 값을 읽습니다. B/R 수락 후 다음 하강 에지에 Driver가 완료를 통지하므로 Predictor가 먼저 동작하는 구조입니다. 4상태의 X/Z는 2상태 거래 객체로 복사하기 전에 검사합니다.</p><p>Mirror는 실제 DUT의 읽기값과 자동으로 같은 값이 아닙니다. 쓰기 직후, 읽기 전에 기대 Mirror를 확인해야 읽기 예측이 쓰기 예측 누락을 가리는 문제를 방지할 수 있습니다.</p>
+<div class="teach-note"><h3>구조도 판서 · Frontdoor 반환과 독립 예측 경로</h3><p>component 계층은 test→env→drv·mon·sqr·predictor이며 Agent는 없습니다. model·각 register/field·adapter는 object 계열이고 별도 모델 소유 관계를 가집니다. DUT·bank·bus는 정적 top의 인스턴스입니다. 그림 아래 Mirror는 모델 상태를 나타냅니다.</p><p>Frontdoor는 RAL→reg2bus→sqr→drv→공개 버스 경로입니다. provides_responses0이므로 별도 response 객체 대신 요청 Item의 data·resp를 갱신하고 item_done합니다. 역방향 bus2reg는 응답을 RAL 상태로 변환합니다. 별도로 Monitor가 실제 AW/W/B·AR/R 수락에서 새 Item을 재구성하고 Predictor가 이를 Mirror에 반영합니다.</p><p>auto_predict0으로 두 예측 경로의 중복을 피합니다. B/R 상승 에지에서 Monitor의 write가 수행되고 Driver는 다음 하강 에지에 반환하므로, RAL 호출 반환 시에는 명시적 예측이 먼저 반영될 구조입니다. Item은2상태이므로 Monitor는 복사 전 원래4상태 포트의 X/Z를 검사합니다.</p></div>
+</section>
+<section class="section" id="s04"><h2><span class="num">04</span>정상 10거래와 예측 누락 부정 시험</h2><table><thead><tr><th>방향</th><th>주소(hex)</th><th>쓰기값(hex)</th><th>기대 Mirror/읽기값(hex)</th></tr></thead><tbody><tr><td>R</td><td>00</td><td>—</td><td>00000000</td></tr><tr><td>R</td><td>10</td><td>—</td><td>00000000</td></tr><tr><td>W</td><td>10</td><td>11223344</td><td>11223344</td></tr><tr><td>R</td><td>10</td><td>—</td><td>11223344</td></tr><tr><td>W</td><td>00</td><td>FFFFFFFF</td><td>00000007</td></tr><tr><td>R</td><td>00</td><td>—</td><td>00000007</td></tr><tr><td>W</td><td>00</td><td>00000005</td><td>00000005</td></tr><tr><td>R</td><td>00</td><td>—</td><td>00000005</td></tr><tr><td>R</td><td>18</td><td>—</td><td>00010000</td></tr><tr><td>R</td><td>1C</td><td>—</td><td>524D4150</td></tr></tbody></table><p>7개 읽기, 3개 쓰기입니다. 모든 쓰기는 WSTRB=1111로 기대합니다. CONTROL에 FFFFFFFF를 쓰면 실제 하위 3비트만 반영되어 00000007입니다. 이후 5를 쓰면 enable=1, mode=2입니다. VERSION과 ID는 읽기 전용 상수 읽기로 확인합니다. RO 쓰기, W1C, W1P, 외부 이벤트, 부분 쓰기, 모든 AXI 응답 오류는 이번 시험 범위가 아닙니다.</p><p>NO_PREDICT는 Monitor와 Predictor의 분석 연결만 생략합니다. 실제 DUT와 Driver는 동일하고 auto_predict도 꺼진 상태입니다. 첫 DATA_IN 쓰기가 끝나도 Mirror가 0에 머물러 PREDICT_WRITE 진단이 발생해야 합니다. 실제 레지스터는 쓰였을 수 있으므로 Mirror 오류와 DUT 오류를 구별합니다. 위 계산은 예상 계약이지 시뮬레이션 로그가 아닙니다.</p>
+<div class="teach-note"><h3>수치·시간 · 쓰기 예측을 읽기로 덮어 가리지 않는다</h3><p>총10거래는 읽기7·쓰기3입니다. DATA_IN11223344 쓰기 후 즉시 Mirror를 검사하고 그 다음 읽습니다. NO_PREDICT에서는 실제 쓰기가 성공해도 Mirror는0입니다. 먼저 read를 실행하면 읽기 예측이 새 값을 넣어 쓰기 예측 누락을 가릴 수 있습니다.</p><p>10ns 클록과 시간 없는 UVM 전달을 가정한 첫 DATA_IN 쓰기 예시는140ns 구동→145ns AW/W수락→155ns commit→165ns B수락·Monitor발행→170ns Driver완료입니다. Mirror 확인은 완료 뒤이며 버스 요청과 동시에 갱신되는 값으로 가정하지 않습니다. 이 계산은 코드의 예상 시각이며 별도 고정 지연 assertion은 아닙니다.</p></div>
+</section>
+<section class="section" id="s05"><h2><span class="num">05</span>전체 SystemVerilog/UVM 테스트벤치</h2><div class="codeblock"><div class="codebar"><span>tb/ch21/tb_axi_uvm_ral.sv · SystemVerilog / UVM</span></div><pre tabindex="0"><code>`timescale 1ns/1ps
+// CH21: UVM RAL frontdoor + adapter + predictor. DUT is read-only.
+interface axi21_if(input logic clk);
+    logic resetn=0;
+    logic [31:0] awaddr=0,wdata=0,araddr=0;
+    logic [3:0] wstrb=0;
+    logic awvalid=0,wvalid=0,bready=0,arvalid=0,rready=0;
+    wire awready,wready,bvalid,arready,rvalid;
+    wire [1:0] bresp,rresp;
+    wire [31:0] rdata;
+endinterface
+
+package ch21_pkg;
+    import uvm_pkg::*;
+    `include &quot;uvm_macros.svh&quot;
+
+    // AXI4-Lite master transaction: one completed read or write.
+    class axi21_item extends uvm_sequence_item;
+        `uvm_object_utils(axi21_item)
+        bit is_write;
+        bit [31:0] addr,data;
+        bit [3:0] strb=4'hf;
+        bit [1:0] resp;
+        function new(string name=&quot;axi21_item&quot;);
+            super.new(name);
+        endfunction
+    endclass
+
+    class axi21_adapter extends uvm_reg_adapter;
+        `uvm_object_utils(axi21_adapter)
+        function new(string name=&quot;axi21_adapter&quot;);
+            super.new(name);
+            // (변경) 전체 레지스터 접근만 수행한다. 개별 필드 byte 접근은 미지원.
+            supports_byte_enable=0;
+            provides_responses=0;
+        endfunction
+        virtual function uvm_sequence_item reg2bus(const ref uvm_reg_bus_op rw);
+            axi21_item t=axi21_item::type_id::create(&quot;t&quot;);
+            t.is_write=(rw.kind==UVM_WRITE);
+            t.addr=rw.addr;
+            t.data=rw.data;
+            t.strb=rw.byte_en;
+            return t;
+        endfunction
+        virtual function void bus2reg(uvm_sequence_item bus_item,
+                                       ref uvm_reg_bus_op rw);
+            axi21_item t;
+            if (!$cast(t,bus_item))
+                `uvm_fatal(&quot;ADAPTER&quot;,&quot;Unexpected bus transaction&quot;)
+            rw.kind=t.is_write ? UVM_WRITE : UVM_READ;
+            rw.addr=t.addr;
+            rw.data=t.data;
+            rw.byte_en=t.strb;
+            rw.status=(t.resp==2'b00) ? UVM_IS_OK : UVM_NOT_OK;
+        endfunction
+    endclass
+
+    class axi21_reg extends uvm_reg;
+        `uvm_object_utils(axi21_reg)
+        uvm_reg_field value;
+        string access_mode=&quot;RW&quot;;
+        bit is_control=0;
+        uvm_reg_field mode, reserved;
+        uvm_reg_data_t reset_value=0;
+        function new(string name=&quot;axi21_reg&quot;);
+            super.new(name,32,UVM_NO_COVERAGE);
+        endfunction
+        virtual function void build();
+            value=uvm_reg_field::type_id::create(&quot;value&quot;);
+            // (변경) CONTROL의 실제 쓰기 가능 범위는 3비트뿐이다.
+            if (is_control) begin
+                value.configure(this,1,0,&quot;RW&quot;,0,0,1,0,0); // enable
+                mode=uvm_reg_field::type_id::create(&quot;mode&quot;);
+                mode.configure(this,2,1,&quot;RW&quot;,0,0,1,0,0);
+                reserved=uvm_reg_field::type_id::create(&quot;reserved&quot;);
+                reserved.configure(this,29,3,&quot;RO&quot;,0,0,1,0,0);
+            end else
+                value.configure(this,32,0,access_mode,0,reset_value,1,0,0);
+        endfunction
+    endclass
+
+    class axi21_block extends uvm_reg_block;
+        `uvm_object_utils(axi21_block)
+        axi21_reg control,data_in,version_reg,id_reg;
+        function new(string name=&quot;axi21_block&quot;);
+            super.new(name,UVM_NO_COVERAGE);
+        endfunction
+        virtual function void build();
+            default_map=create_map(&quot;map&quot;,0,4,UVM_LITTLE_ENDIAN,1);
+            control=axi21_reg::type_id::create(&quot;control&quot;);
+            control.is_control=1;
+            control.configure(this);
+            control.build();
+            default_map.add_reg(control,'h00,&quot;RW&quot;);
+            data_in=axi21_reg::type_id::create(&quot;data_in&quot;);
+            data_in.configure(this);
+            data_in.build();
+            default_map.add_reg(data_in,'h10,&quot;RW&quot;);
+            version_reg=axi21_reg::type_id::create(&quot;version_reg&quot;);
+            version_reg.access_mode=&quot;RO&quot;;
+            version_reg.reset_value=32'h00010000;
+            version_reg.configure(this);
+            version_reg.build();
+            default_map.add_reg(version_reg,'h18,&quot;RO&quot;);
+            id_reg=axi21_reg::type_id::create(&quot;id_reg&quot;);
+            id_reg.access_mode=&quot;RO&quot;;
+            id_reg.reset_value=32'h524D4150;
+            id_reg.configure(this);
+            id_reg.build();
+            default_map.add_reg(id_reg,'h1c,&quot;RO&quot;);
+            lock_model();
+        endfunction
+    endclass
+
+    class axi21_sequencer extends uvm_sequencer #(axi21_item);
+        `uvm_component_utils(axi21_sequencer)
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction
+    endclass
+
+    class axi21_driver extends uvm_driver #(axi21_item);
+        `uvm_component_utils(axi21_driver)
+        virtual axi21_if vif;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction
+        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            if (!uvm_config_db#(virtual axi21_if)::get(this,&quot;&quot;,&quot;vif&quot;,vif))
+                `uvm_fatal(&quot;NO_VIF&quot;,&quot;Missing AXI interface&quot;)
+        endfunction
+        task automatic write_one(axi21_item t);
+            // AW and W independent; hold both until their handshakes.
+            bit aw_done=0,w_done=0;
+            @(negedge vif.clk);
+            vif.awaddr=t.addr;vif.wdata=t.data;vif.wstrb=t.strb;
+            vif.awvalid=1;vif.wvalid=1;
+            for(int k=0;k&lt;100;k++) begin
+                @(posedge vif.clk);
+                if(vif.awvalid &amp;&amp; vif.awready) aw_done=1;
+                if(vif.wvalid &amp;&amp; vif.wready) w_done=1;
+                @(negedge vif.clk);
+                if(aw_done) vif.awvalid=0;
+                if(w_done) vif.wvalid=0;
+                if(aw_done &amp;&amp; w_done) break;
+            end
+            if(!aw_done || !w_done) `uvm_fatal(&quot;AW_W&quot;,&quot;Handshake timeout&quot;)
+            for(int k=0;k&lt;100;k++) begin
+                @(negedge vif.clk);
+                if(vif.bvalid) begin
+                    t.resp=vif.bresp;
+                    vif.bready=1;
+                    @(posedge vif.clk);
+                    if (vif.bvalid !== 1'b1 || vif.bresp !== t.resp)
+                        `uvm_fatal(&quot;B_HANDSHAKE&quot;,&quot;Response changed before acceptance&quot;)
+                    @(negedge vif.clk);
+                    vif.bready=0;
+                    return;
+                end
+            end
+            `uvm_fatal(&quot;B_TIMEOUT&quot;,&quot;Write response timeout&quot;)
+        endtask
+        task automatic read_one(axi21_item t);
+            bit accepted=0;
+            @(negedge vif.clk);
+            vif.araddr=t.addr;vif.arvalid=1;
+            for(int k=0;k&lt;100;k++) begin
+                @(posedge vif.clk);
+                if(vif.arvalid &amp;&amp; vif.arready) accepted=1;
+                @(negedge vif.clk);
+                if(accepted) begin vif.arvalid=0;break;end
+            end
+            if(!accepted) `uvm_fatal(&quot;AR_TIMEOUT&quot;,&quot;Address timeout&quot;)
+            for(int k=0;k&lt;100;k++) begin
+                @(negedge vif.clk);
+                if(vif.rvalid) begin
+                    t.data=vif.rdata;t.resp=vif.rresp;
+                    vif.rready=1;
+                    @(posedge vif.clk);
+                    if (vif.rvalid !== 1'b1 || vif.rresp !== t.resp ||
+                        vif.rdata !== t.data)
+                        `uvm_fatal(&quot;R_HANDSHAKE&quot;,&quot;Response changed before acceptance&quot;)
+                    @(negedge vif.clk);
+                    vif.rready=0;
+                    return;
+                end
+            end
+            `uvm_fatal(&quot;R_TIMEOUT&quot;,&quot;Read response timeout&quot;)
+        endtask
+        task run_phase(uvm_phase phase);
+            axi21_item req;
+            forever begin
+                seq_item_port.get_next_item(req);
+                if(req.is_write) write_one(req);
+                else read_one(req);
+                seq_item_port.item_done();
+            end
+        endtask
+    endclass
+
+    // (추가) 실제 공개 버스 상승 에지에서만 완료 거래를 재구성한다.
+    // Driver의 요청 객체를 Predictor로 전달하지 않는다.
+    class axi21_monitor extends uvm_monitor;
+        `uvm_component_utils(axi21_monitor)
+        virtual axi21_if vif;
+        uvm_analysis_port #(axi21_item) ap;
+        bit have_aw=0, have_w=0, have_ar=0;
+        logic [31:0] wa, wd, ra;
+        logic [3:0] ws;
+        int unsigned writes=0, reads=0;
+        axi21_item last_write, last_read;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+            ap=new(&quot;ap&quot;,this);
+        endfunction
+        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            if(!uvm_config_db#(virtual axi21_if)::get(this,&quot;&quot;,&quot;vif&quot;,vif))
+                `uvm_fatal(&quot;NO_VIF&quot;,&quot;Monitor interface missing&quot;)
+        endfunction
+        task run_phase(uvm_phase phase);
+            axi21_item t;
+            forever begin
+                @(posedge vif.clk);
+                if(vif.resetn === 1'b0) begin
+                    have_aw=0; have_w=0; have_ar=0;
+                end else begin
+                    if ((^{vif.resetn,vif.awvalid,vif.awready,
+                           vif.wvalid,vif.wready,vif.bvalid,vif.bready,
+                           vif.arvalid,vif.arready,vif.rvalid,vif.rready}) === 1'bx)
+                        `uvm_fatal(&quot;BUS_X&quot;,&quot;Unknown handshake signal&quot;)
+                    if(vif.awvalid &amp;&amp; vif.awready) begin
+                        if(have_aw || (^vif.awaddr) === 1'bx)
+                            `uvm_fatal(&quot;MON_AW&quot;,&quot;Duplicate or unknown AW&quot;)
+                        wa=vif.awaddr; have_aw=1;
+                    end
+                    if(vif.wvalid &amp;&amp; vif.wready) begin
+                        if(have_w || (^{vif.wdata,vif.wstrb}) === 1'bx)
+                            `uvm_fatal(&quot;MON_W&quot;,&quot;Duplicate or unknown W&quot;)
+                        wd=vif.wdata; ws=vif.wstrb; have_w=1;
+                    end
+                    if(vif.bvalid &amp;&amp; vif.bready) begin
+                        if(!have_aw || !have_w || vif.bresp !== 2'b00)
+                            `uvm_fatal(&quot;MON_B&quot;,&quot;Unexpected write response&quot;)
+                        t=axi21_item::type_id::create(&quot;observed_write&quot;);
+                        t.is_write=1; t.addr=wa; t.data=wd; t.strb=ws;
+                        t.resp=vif.bresp;
+                        have_aw=0; have_w=0;
+                        writes++; last_write=t; ap.write(t);
+                    end
+                    if(vif.arvalid &amp;&amp; vif.arready) begin
+                        if(have_ar || (^vif.araddr) === 1'bx)
+                            `uvm_fatal(&quot;MON_AR&quot;,&quot;Duplicate or unknown AR&quot;)
+                        ra=vif.araddr; have_ar=1;
+                    end
+                    if(vif.rvalid &amp;&amp; vif.rready) begin
+                        if(!have_ar || vif.rresp !== 2'b00 ||
+                           (^vif.rdata) === 1'bx)
+                            `uvm_fatal(&quot;MON_R&quot;,&quot;Unexpected read response&quot;)
+                        t=axi21_item::type_id::create(&quot;observed_read&quot;);
+                        t.is_write=0; t.addr=ra; t.data=vif.rdata;
+                        t.strb=4'hf; t.resp=vif.rresp;
+                        have_ar=0;
+                        reads++; last_read=t; ap.write(t);
+                    end
+                end
+            end
+        endtask
+    endclass
+
+    class axi21_env extends uvm_env;
+        `uvm_component_utils(axi21_env)
+        axi21_driver drv;
+        axi21_monitor mon;
+        axi21_sequencer sqr;
+        axi21_adapter adapter;
+        axi21_block model;
+        uvm_reg_predictor #(axi21_item) predictor;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction
+        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            drv=axi21_driver::type_id::create(&quot;drv&quot;,this);
+            mon=axi21_monitor::type_id::create(&quot;mon&quot;,this);
+            sqr=axi21_sequencer::type_id::create(&quot;sqr&quot;,this);
+            predictor=uvm_reg_predictor#(axi21_item)::type_id::create(&quot;predictor&quot;,this);
+            adapter=axi21_adapter::type_id::create(&quot;adapter&quot;);
+            model=axi21_block::type_id::create(&quot;model&quot;);
+            model.build();
+        endfunction
+        function void connect_phase(uvm_phase phase);
+            super.connect_phase(phase);
+            drv.seq_item_port.connect(sqr.seq_item_export);
+            model.default_map.set_sequencer(sqr,adapter);
+            model.default_map.set_auto_predict(0);
+            predictor.map=model.default_map;
+            predictor.adapter=adapter;
+            // (변경) 부정 시험에서는 명시적 예측 경로만 끊는다.
+            if (!$test$plusargs(&quot;NO_PREDICT&quot;))
+                mon.ap.connect(predictor.bus_in);
+        endfunction
+    endclass
+
+    class axi21_test extends uvm_test;
+        `uvm_component_utils(axi21_test)
+        axi21_env env;
+        virtual axi21_if vif;
+        int unsigned read_checks=0, write_checks=0;
+        bit done=0;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction
+        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            env=axi21_env::type_id::create(&quot;env&quot;,this);
+            if(!uvm_config_db#(virtual axi21_if)::get(this,&quot;&quot;,&quot;vif&quot;,vif))
+                `uvm_fatal(&quot;NO_VIF&quot;,&quot;Test interface missing&quot;)
+        endfunction
+        // (추가) RAL 반환과 실제 버스 거래를 함께 확인한다.
+        task automatic write_expect(uvm_reg rg, bit [31:0] addr,
+                                    bit [31:0] data, bit [31:0] expected);
+            uvm_status_e status;
+            rg.write(status,data,UVM_FRONTDOOR,env.model.default_map);
+            write_checks++;
+            if(status!=UVM_IS_OK || env.mon.writes!=write_checks ||
+               env.mon.last_write==null ||
+               env.mon.last_write.addr!==addr ||
+               env.mon.last_write.data!==data ||
+               env.mon.last_write.strb!==4'hf)
+                `uvm_fatal(&quot;WRITE&quot;,&quot;Write status or observed transaction mismatch&quot;)
+            // 읽기 전에 확인해야 read prediction이 쓰기 예측 누락을 가리지 않는다.
+            if(rg.get_mirrored_value() !== uvm_reg_data_t'(expected))
+                `uvm_fatal(&quot;PREDICT_WRITE&quot;,$sformatf(
+                    &quot;addr=%h expected=%h&quot;,addr,expected))
+        endtask
+
+        task automatic read_expect(uvm_reg rg, bit [31:0] addr,
+                                   bit [31:0] expected);
+            uvm_status_e status;
+            uvm_reg_data_t value;
+            rg.read(status,value,UVM_FRONTDOOR,env.model.default_map);
+            read_checks++;
+            if(status!=UVM_IS_OK || value!==uvm_reg_data_t'(expected) ||
+               env.mon.reads!=read_checks || env.mon.last_read==null ||
+               env.mon.last_read.addr!==addr ||
+               env.mon.last_read.data!==expected ||
+               rg.get_mirrored_value()!==uvm_reg_data_t'(expected))
+                `uvm_fatal(&quot;READ&quot;,$sformatf(&quot;Read mismatch addr=%h&quot;,addr))
+        endtask
+
+        task run_phase(uvm_phase phase);
+            phase.raise_objection(this);
+            repeat(4) @(negedge vif.clk);
+            vif.resetn=1;
+            @(negedge vif.clk);
+            env.model.reset(); // 모델만 초기화한다. DUT reset은 위에서 수행.
+
+            read_expect(env.model.control,32'h00,32'h0);
+            read_expect(env.model.data_in,32'h10,32'h0);
+            write_expect(env.model.data_in,32'h10,32'h11223344,32'h11223344);
+            read_expect(env.model.data_in,32'h10,32'h11223344);
+            // (추가) 예약 비트는 1을 써도 읽기값과 mirror가 0이어야 한다.
+            write_expect(env.model.control,32'h00,32'hFFFFFFFF,32'h7);
+            read_expect(env.model.control,32'h00,32'h7);
+            write_expect(env.model.control,32'h00,32'h5,32'h5);
+            read_expect(env.model.control,32'h00,32'h5);
+            read_expect(env.model.version_reg,32'h18,32'h00010000);
+            read_expect(env.model.id_reg,32'h1C,32'h524D4150);
+            done=1;
+            phase.drop_objection(this);
+        endtask
+        function void check_phase(uvm_phase phase);
+            super.check_phase(phase);
+            if(!done || read_checks!=7 || write_checks!=3 ||
+               env.mon.reads!=7 || env.mon.writes!=3 ||
+               env.mon.have_aw || env.mon.have_w || env.mon.have_ar)
+                `uvm_fatal(&quot;COUNTS&quot;,&quot;Incomplete RAL verification&quot;)
+        endfunction
+        function void report_phase(uvm_phase phase);
+            super.report_phase(phase);
+            if (uvm_report_server::get_server().get_severity_count(UVM_ERROR)!=0 ||
+                uvm_report_server::get_server().get_severity_count(UVM_FATAL)!=0)
+                `uvm_fatal(&quot;REPORT&quot;,&quot;UVM error or fatal reported&quot;)
+            `uvm_info(&quot;RESULT&quot;,&quot;PASS CH21 RAL reads=7 writes=3&quot;,UVM_NONE)
+        endfunction
+    endclass
+endpackage
+
+module tb_axi_uvm_ral;
+    import uvm_pkg::*;
+    import ch21_pkg::*;
+    logic clk=0;
+    always #5 clk=~clk;
+    axi21_if bus(clk);
+    wire wr_en;
+    wire [7:0] wr_offset,rd_offset;
+    wire [31:0] wr_data,rd_data;
+    wire [3:0] wr_strb;
+    wire enable_o,start_pulse_o,clear_pulse_o;
+    wire [1:0] mode_o,irq_status_o;
+    wire [31:0] data_in_o;
+    axi4lite_slave_adapter dut(
+        .s_axi_aclk(clk),.s_axi_aresetn(bus.resetn),
+        .s_axi_awaddr(bus.awaddr),.s_axi_awprot(3'b000),
+        .s_axi_awvalid(bus.awvalid),.s_axi_awready(bus.awready),
+        .s_axi_wdata(bus.wdata),.s_axi_wstrb(bus.wstrb),
+        .s_axi_wvalid(bus.wvalid),.s_axi_wready(bus.wready),
+        .s_axi_bresp(bus.bresp),.s_axi_bvalid(bus.bvalid),.s_axi_bready(bus.bready),
+        .s_axi_araddr(bus.araddr),.s_axi_arprot(3'b000),
+        .s_axi_arvalid(bus.arvalid),.s_axi_arready(bus.arready),
+        .s_axi_rdata(bus.rdata),.s_axi_rresp(bus.rresp),
+        .s_axi_rvalid(bus.rvalid),.s_axi_rready(bus.rready),
+        .wr_en(wr_en),.wr_offset(wr_offset),.wr_data(wr_data),
+        .wr_strb(wr_strb),.rd_offset(rd_offset),.rd_data(rd_data)
+    );
+    custom_register_bank bank(
+        .clk(clk),.resetn(bus.resetn),.wr_en(wr_en),
+        .wr_offset(wr_offset),.wr_data(wr_data),.wr_strb(wr_strb),
+        .rd_offset(rd_offset),.rd_data(rd_data),
+        .busy_i(1'b0),.done_i(1'b0),.error_i(1'b0),
+        .irq_done_event_i(1'b0),.irq_error_event_i(1'b0),
+        .data_out_i(32'h12345678),.enable_o(enable_o),
+        .mode_o(mode_o),.start_pulse_o(start_pulse_o),
+        .clear_pulse_o(clear_pulse_o),.data_in_o(data_in_o),
+        .irq_status_o(irq_status_o)
+    );
+    initial begin
+        // (변경) test 자체도 정확한 경로로 설정한다.
+        uvm_config_db#(virtual axi21_if)::set(null,&quot;uvm_test_top&quot;,&quot;vif&quot;,bus);
+        uvm_config_db#(virtual axi21_if)::set(null,&quot;uvm_test_top.env.drv&quot;,&quot;vif&quot;,bus);
+        uvm_config_db#(virtual axi21_if)::set(null,&quot;uvm_test_top.env.mon&quot;,&quot;vif&quot;,bus);
+        run_test(&quot;axi21_test&quot;);
+    end
+    initial begin
+        #100000;
+        $fatal(1,&quot;CH21 GLOBAL_TIMEOUT&quot;);
+    end
+endmodule
+</code></pre></div><table><thead><tr><th>구문</th><th>풀이</th></tr></thead><tbody><tr><td>value / mode / reserved.configure</td><td>CONTROL 3비트 유효 필드와 29비트 RO</td></tr><tr><td>set_sequencer(sqr,adapter)</td><td>Frontdoor 버스 접근 연결</td></tr><tr><td>mon.ap.connect(predictor.bus_in)</td><td>독립 관찰 기반 명시적 예측</td></tr><tr><td>write_expect</td><td>쓰기 상태·실제 주소·데이터·WSTRB·읽기 전 Mirror 확인</td></tr><tr><td>read_expect</td><td>읽기 상태·실제 데이터·Mirror 비교</td></tr><tr><td>check_phase</td><td>정확한 7/3 거래와 미결 거래 부재</td></tr><tr><td>report_phase</td><td>오류 누계 및 최종 완료</td></tr></tbody></table><p>이 예제는 단일 미결 읽기·쓰기의 순차 RAL 접근을 대상으로 합니다. Monitor는 실제 신호에서 거래를 재구성하지만 독립적인 전체 AXI 프로토콜 검증기나 상용 VIP는 아닙니다.</p>
+<div class="teach-note"><h3>전체 코드 · 세 종류의 일치를 함께 확인한다</h3><p>write_expect는 RAL status, Monitor가 재구성한 주소·데이터·WSTRB1111, 쓰기 직후 Mirror를 각각 확인합니다. read_expect는 반환값, 실제 관찰 거래, Mirror를 기대 상수와 대조합니다. RAL 함수가 돌아왔다는 사실 하나만으로 데이터·주소·예측이 모두 맞았다고 보지 않습니다.</p><p>Monitor의 have_aw·have_w·have_ar는 미완료 채널 상태입니다. 완료 시 새 Item을 만들고 해당 상태를 지우며 끝에는 모두 비어야 합니다. 이 구현은 한 미결 쓰기/읽기 정책에 맞춘 관찰기이며 다중 outstanding·오류 응답·부분 WSTRB 검증기로 확대하지 않습니다.</p><h4>tb/ch21/tb_axi_uvm_ral.sv · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-27</td><td><code class="teach-fragment">`timescale 1ns/1ps
+// CH21: UVM RAL frontdoor + adapter + predictor. DUT is read-only.
+interface axi21_if(input logic clk);
+    logic resetn=0;
+    logic [31:0] awaddr=0,wdata=0,araddr=0;
+    logic [3:0] wstrb=0;
+    logic awvalid=0,wvalid=0,bready=0,arvalid=0,rready=0;
+    wire awready,wready,bvalid,arready,rvalid;
+    wire [1:0] bresp,rresp;
+    wire [31:0] rdata;
+endinterface
+
+package ch21_pkg;
+    import uvm_pkg::*;
+    `include &quot;uvm_macros.svh&quot;
+
+    // AXI4-Lite master transaction: one completed read or write.
+    class axi21_item extends uvm_sequence_item;
+        `uvm_object_utils(axi21_item)
+        bit is_write;
+        bit [31:0] addr,data;
+        bit [3:0] strb=4&#x27;hf;
+        bit [1:0] resp;
+        function new(string name=&quot;axi21_item&quot;);
+            super.new(name);
+        endfunction
+    endclass</code></td><td>실제 AXI interface와 한 완료 읽기/쓰기 Item을 정의합니다. Item은2상태이고 기본strobe는F입니다.</td></tr><tr><td>29-56</td><td><code class="teach-fragment">    class axi21_adapter extends uvm_reg_adapter;
+        `uvm_object_utils(axi21_adapter)
+        function new(string name=&quot;axi21_adapter&quot;);
+            super.new(name);
+            // (변경) 전체 레지스터 접근만 수행한다. 개별 필드 byte 접근은 미지원.
+            supports_byte_enable=0;
+            provides_responses=0;
+        endfunction
+        virtual function uvm_sequence_item reg2bus(const ref uvm_reg_bus_op rw);
+            axi21_item t=axi21_item::type_id::create(&quot;t&quot;);
+            t.is_write=(rw.kind==UVM_WRITE);
+            t.addr=rw.addr;
+            t.data=rw.data;
+            t.strb=rw.byte_en;
+            return t;
+        endfunction
+        virtual function void bus2reg(uvm_sequence_item bus_item,
+                                       ref uvm_reg_bus_op rw);
+            axi21_item t;
+            if (!$cast(t,bus_item))
+                `uvm_fatal(&quot;ADAPTER&quot;,&quot;Unexpected bus transaction&quot;)
+            rw.kind=t.is_write ? UVM_WRITE : UVM_READ;
+            rw.addr=t.addr;
+            rw.data=t.data;
+            rw.byte_en=t.strb;
+            rw.status=(t.resp==2&#x27;b00) ? UVM_IS_OK : UVM_NOT_OK;
+        endfunction
+    endclass</code></td><td>Adapter는 전체 접근·요청 객체 응답 방식을 선언하고 RAL op와 AXI Item의 방향·주소·데이터·strobe·status를 변환합니다.</td></tr><tr><td>58-80</td><td><code class="teach-fragment">    class axi21_reg extends uvm_reg;
+        `uvm_object_utils(axi21_reg)
+        uvm_reg_field value;
+        string access_mode=&quot;RW&quot;;
+        bit is_control=0;
+        uvm_reg_field mode, reserved;
+        uvm_reg_data_t reset_value=0;
+        function new(string name=&quot;axi21_reg&quot;);
+            super.new(name,32,UVM_NO_COVERAGE);
+        endfunction
+        virtual function void build();
+            value=uvm_reg_field::type_id::create(&quot;value&quot;);
+            // (변경) CONTROL의 실제 쓰기 가능 범위는 3비트뿐이다.
+            if (is_control) begin
+                value.configure(this,1,0,&quot;RW&quot;,0,0,1,0,0); // enable
+                mode=uvm_reg_field::type_id::create(&quot;mode&quot;);
+                mode.configure(this,2,1,&quot;RW&quot;,0,0,1,0,0);
+                reserved=uvm_reg_field::type_id::create(&quot;reserved&quot;);
+                reserved.configure(this,29,3,&quot;RO&quot;,0,0,1,0,0);
+            end else
+                value.configure(this,32,0,access_mode,0,reset_value,1,0,0);
+        endfunction
+    endclass</code></td><td>32비트 레지스터 객체를 정의합니다. CONTROL은1+2 RW·29 RO로 나누고 다른 레지스터는 전체32비트 필드입니다.</td></tr><tr><td>82-113</td><td><code class="teach-fragment">    class axi21_block extends uvm_reg_block;
+        `uvm_object_utils(axi21_block)
+        axi21_reg control,data_in,version_reg,id_reg;
+        function new(string name=&quot;axi21_block&quot;);
+            super.new(name,UVM_NO_COVERAGE);
+        endfunction
+        virtual function void build();
+            default_map=create_map(&quot;map&quot;,0,4,UVM_LITTLE_ENDIAN,1);
+            control=axi21_reg::type_id::create(&quot;control&quot;);
+            control.is_control=1;
+            control.configure(this);
+            control.build();
+            default_map.add_reg(control,&#x27;h00,&quot;RW&quot;);
+            data_in=axi21_reg::type_id::create(&quot;data_in&quot;);
+            data_in.configure(this);
+            data_in.build();
+            default_map.add_reg(data_in,&#x27;h10,&quot;RW&quot;);
+            version_reg=axi21_reg::type_id::create(&quot;version_reg&quot;);
+            version_reg.access_mode=&quot;RO&quot;;
+            version_reg.reset_value=32&#x27;h00010000;
+            version_reg.configure(this);
+            version_reg.build();
+            default_map.add_reg(version_reg,&#x27;h18,&quot;RO&quot;);
+            id_reg=axi21_reg::type_id::create(&quot;id_reg&quot;);
+            id_reg.access_mode=&quot;RO&quot;;
+            id_reg.reset_value=32&#x27;h524D4150;
+            id_reg.configure(this);
+            id_reg.build();
+            default_map.add_reg(id_reg,&#x27;h1c,&quot;RO&quot;);
+            lock_model();
+        endfunction
+    endclass</code></td><td>4바이트 little endian 주소 맵에 CONTROL·DATA_IN·VERSION·ID를 권한·리셋값과 함께 등록하고 구조를 잠급니다.</td></tr><tr><td>115-132</td><td><code class="teach-fragment">    class axi21_sequencer extends uvm_sequencer #(axi21_item);
+        `uvm_component_utils(axi21_sequencer)
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction
+    endclass
+
+    class axi21_driver extends uvm_driver #(axi21_item);
+        `uvm_component_utils(axi21_driver)
+        virtual axi21_if vif;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction
+        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            if (!uvm_config_db#(virtual axi21_if)::get(this,&quot;&quot;,&quot;vif&quot;,vif))
+                `uvm_fatal(&quot;NO_VIF&quot;,&quot;Missing AXI interface&quot;)
+        endfunction</code></td><td>Sequencer와 Driver component를 정의하며 Driver는 build에서 실제 vif를 요구합니다.</td></tr><tr><td>133-163</td><td><code class="teach-fragment">        task automatic write_one(axi21_item t);
+            // AW and W independent; hold both until their handshakes.
+            bit aw_done=0,w_done=0;
+            @(negedge vif.clk);
+            vif.awaddr=t.addr;vif.wdata=t.data;vif.wstrb=t.strb;
+            vif.awvalid=1;vif.wvalid=1;
+            for(int k=0;k&lt;100;k++) begin
+                @(posedge vif.clk);
+                if(vif.awvalid &amp;&amp; vif.awready) aw_done=1;
+                if(vif.wvalid &amp;&amp; vif.wready) w_done=1;
+                @(negedge vif.clk);
+                if(aw_done) vif.awvalid=0;
+                if(w_done) vif.wvalid=0;
+                if(aw_done &amp;&amp; w_done) break;
+            end
+            if(!aw_done || !w_done) `uvm_fatal(&quot;AW_W&quot;,&quot;Handshake timeout&quot;)
+            for(int k=0;k&lt;100;k++) begin
+                @(negedge vif.clk);
+                if(vif.bvalid) begin
+                    t.resp=vif.bresp;
+                    vif.bready=1;
+                    @(posedge vif.clk);
+                    if (vif.bvalid !== 1&#x27;b1 || vif.bresp !== t.resp)
+                        `uvm_fatal(&quot;B_HANDSHAKE&quot;,&quot;Response changed before acceptance&quot;)
+                    @(negedge vif.clk);
+                    vif.bready=0;
+                    return;
+                end
+            end
+            `uvm_fatal(&quot;B_TIMEOUT&quot;,&quot;Write response timeout&quot;)
+        endtask</code></td><td>AW/W를 동시에 제시하되 수락은 따로 추적합니다. B payload를 확인하고 수락 뒤 다음 하강 에지에 반환하며 각 단계에 기한을 둡니다.</td></tr><tr><td>164-200</td><td><code class="teach-fragment">        task automatic read_one(axi21_item t);
+            bit accepted=0;
+            @(negedge vif.clk);
+            vif.araddr=t.addr;vif.arvalid=1;
+            for(int k=0;k&lt;100;k++) begin
+                @(posedge vif.clk);
+                if(vif.arvalid &amp;&amp; vif.arready) accepted=1;
+                @(negedge vif.clk);
+                if(accepted) begin vif.arvalid=0;break;end
+            end
+            if(!accepted) `uvm_fatal(&quot;AR_TIMEOUT&quot;,&quot;Address timeout&quot;)
+            for(int k=0;k&lt;100;k++) begin
+                @(negedge vif.clk);
+                if(vif.rvalid) begin
+                    t.data=vif.rdata;t.resp=vif.rresp;
+                    vif.rready=1;
+                    @(posedge vif.clk);
+                    if (vif.rvalid !== 1&#x27;b1 || vif.rresp !== t.resp ||
+                        vif.rdata !== t.data)
+                        `uvm_fatal(&quot;R_HANDSHAKE&quot;,&quot;Response changed before acceptance&quot;)
+                    @(negedge vif.clk);
+                    vif.rready=0;
+                    return;
+                end
+            end
+            `uvm_fatal(&quot;R_TIMEOUT&quot;,&quot;Read response timeout&quot;)
+        endtask
+        task run_phase(uvm_phase phase);
+            axi21_item req;
+            forever begin
+                seq_item_port.get_next_item(req);
+                if(req.is_write) write_one(req);
+                else read_one(req);
+                seq_item_port.item_done();
+            end
+        endtask
+    endclass</code></td><td>AR 수락 후 R 데이터·응답을 요청 객체에 기록하고 수락 직전 안정성을 확인합니다. run은 요청 종류에 맞는 task 뒤 item_done합니다.</td></tr><tr><td>202-221</td><td><code class="teach-fragment">    // (추가) 실제 공개 버스 상승 에지에서만 완료 거래를 재구성한다.
+    // Driver의 요청 객체를 Predictor로 전달하지 않는다.
+    class axi21_monitor extends uvm_monitor;
+        `uvm_component_utils(axi21_monitor)
+        virtual axi21_if vif;
+        uvm_analysis_port #(axi21_item) ap;
+        bit have_aw=0, have_w=0, have_ar=0;
+        logic [31:0] wa, wd, ra;
+        logic [3:0] ws;
+        int unsigned writes=0, reads=0;
+        axi21_item last_write, last_read;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+            ap=new(&quot;ap&quot;,this);
+        endfunction
+        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            if(!uvm_config_db#(virtual axi21_if)::get(this,&quot;&quot;,&quot;vif&quot;,vif))
+                `uvm_fatal(&quot;NO_VIF&quot;,&quot;Monitor interface missing&quot;)
+        endfunction</code></td><td>독립 Monitor의 분석 포트·채널 보류 상태·실제 완료 계수와 마지막 거래 참조를 구성합니다.</td></tr><tr><td>222-242</td><td><code class="teach-fragment">        task run_phase(uvm_phase phase);
+            axi21_item t;
+            forever begin
+                @(posedge vif.clk);
+                if(vif.resetn === 1&#x27;b0) begin
+                    have_aw=0; have_w=0; have_ar=0;
+                end else begin
+                    if ((^{vif.resetn,vif.awvalid,vif.awready,
+                           vif.wvalid,vif.wready,vif.bvalid,vif.bready,
+                           vif.arvalid,vif.arready,vif.rvalid,vif.rready}) === 1&#x27;bx)
+                        `uvm_fatal(&quot;BUS_X&quot;,&quot;Unknown handshake signal&quot;)
+                    if(vif.awvalid &amp;&amp; vif.awready) begin
+                        if(have_aw || (^vif.awaddr) === 1&#x27;bx)
+                            `uvm_fatal(&quot;MON_AW&quot;,&quot;Duplicate or unknown AW&quot;)
+                        wa=vif.awaddr; have_aw=1;
+                    end
+                    if(vif.wvalid &amp;&amp; vif.wready) begin
+                        if(have_w || (^{vif.wdata,vif.wstrb}) === 1&#x27;bx)
+                            `uvm_fatal(&quot;MON_W&quot;,&quot;Duplicate or unknown W&quot;)
+                        wd=vif.wdata; ws=vif.wstrb; have_w=1;
+                    end</code></td><td>상승 에지에 리셋 상태를 정리하거나 handshake 미정을 검사합니다. AW/W 중복·payload X를 거절하고 실제 수락값을 보관합니다.</td></tr><tr><td>243-251</td><td><code class="teach-fragment">                    if(vif.bvalid &amp;&amp; vif.bready) begin
+                        if(!have_aw || !have_w || vif.bresp !== 2&#x27;b00)
+                            `uvm_fatal(&quot;MON_B&quot;,&quot;Unexpected write response&quot;)
+                        t=axi21_item::type_id::create(&quot;observed_write&quot;);
+                        t.is_write=1; t.addr=wa; t.data=wd; t.strb=ws;
+                        t.resp=vif.bresp;
+                        have_aw=0; have_w=0;
+                        writes++; last_write=t; ap.write(t);
+                    end</code></td><td>실제 B 수락에는 두 선행 채널과 OKAY를 요구하고 새 관찰 쓰기를 발행합니다.</td></tr><tr><td>252-270</td><td><code class="teach-fragment">                    if(vif.arvalid &amp;&amp; vif.arready) begin
+                        if(have_ar || (^vif.araddr) === 1&#x27;bx)
+                            `uvm_fatal(&quot;MON_AR&quot;,&quot;Duplicate or unknown AR&quot;)
+                        ra=vif.araddr; have_ar=1;
+                    end
+                    if(vif.rvalid &amp;&amp; vif.rready) begin
+                        if(!have_ar || vif.rresp !== 2&#x27;b00 ||
+                           (^vif.rdata) === 1&#x27;bx)
+                            `uvm_fatal(&quot;MON_R&quot;,&quot;Unexpected read response&quot;)
+                        t=axi21_item::type_id::create(&quot;observed_read&quot;);
+                        t.is_write=0; t.addr=ra; t.data=vif.rdata;
+                        t.strb=4&#x27;hf; t.resp=vif.rresp;
+                        have_ar=0;
+                        reads++; last_read=t; ap.write(t);
+                    end
+                end
+            end
+        endtask
+    endclass</code></td><td>실제 AR을 보관하고 R 수락에 선행 주소·OKAY·확정 데이터를 요구한 뒤 새 읽기를 발행합니다.</td></tr><tr><td>272-304</td><td><code class="teach-fragment">    class axi21_env extends uvm_env;
+        `uvm_component_utils(axi21_env)
+        axi21_driver drv;
+        axi21_monitor mon;
+        axi21_sequencer sqr;
+        axi21_adapter adapter;
+        axi21_block model;
+        uvm_reg_predictor #(axi21_item) predictor;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction
+        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            drv=axi21_driver::type_id::create(&quot;drv&quot;,this);
+            mon=axi21_monitor::type_id::create(&quot;mon&quot;,this);
+            sqr=axi21_sequencer::type_id::create(&quot;sqr&quot;,this);
+            predictor=uvm_reg_predictor#(axi21_item)::type_id::create(&quot;predictor&quot;,this);
+            adapter=axi21_adapter::type_id::create(&quot;adapter&quot;);
+            model=axi21_block::type_id::create(&quot;model&quot;);
+            model.build();
+        endfunction
+        function void connect_phase(uvm_phase phase);
+            super.connect_phase(phase);
+            drv.seq_item_port.connect(sqr.seq_item_export);
+            model.default_map.set_sequencer(sqr,adapter);
+            model.default_map.set_auto_predict(0);
+            predictor.map=model.default_map;
+            predictor.adapter=adapter;
+            // (변경) 부정 시험에서는 명시적 예측 경로만 끊는다.
+            if (!$test$plusargs(&quot;NO_PREDICT&quot;))
+                mon.ap.connect(predictor.bus_in);
+        endfunction
+    endclass</code></td><td>env가4개 component 및 Adapter·RAL object를 만듭니다. 요청·맵·Predictor를 연결하고 자동 예측은 끄며 부정 인자는 분석 연결만 생략합니다.</td></tr><tr><td>306-337</td><td><code class="teach-fragment">    class axi21_test extends uvm_test;
+        `uvm_component_utils(axi21_test)
+        axi21_env env;
+        virtual axi21_if vif;
+        int unsigned read_checks=0, write_checks=0;
+        bit done=0;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction
+        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            env=axi21_env::type_id::create(&quot;env&quot;,this);
+            if(!uvm_config_db#(virtual axi21_if)::get(this,&quot;&quot;,&quot;vif&quot;,vif))
+                `uvm_fatal(&quot;NO_VIF&quot;,&quot;Test interface missing&quot;)
+        endfunction
+        // (추가) RAL 반환과 실제 버스 거래를 함께 확인한다.
+        task automatic write_expect(uvm_reg rg, bit [31:0] addr,
+                                    bit [31:0] data, bit [31:0] expected);
+            uvm_status_e status;
+            rg.write(status,data,UVM_FRONTDOOR,env.model.default_map);
+            write_checks++;
+            if(status!=UVM_IS_OK || env.mon.writes!=write_checks ||
+               env.mon.last_write==null ||
+               env.mon.last_write.addr!==addr ||
+               env.mon.last_write.data!==data ||
+               env.mon.last_write.strb!==4&#x27;hf)
+                `uvm_fatal(&quot;WRITE&quot;,&quot;Write status or observed transaction mismatch&quot;)
+            // 읽기 전에 확인해야 read prediction이 쓰기 예측 누락을 가리지 않는다.
+            if(rg.get_mirrored_value() !== uvm_reg_data_t&#x27;(expected))
+                `uvm_fatal(&quot;PREDICT_WRITE&quot;,$sformatf(
+                    &quot;addr=%h expected=%h&quot;,addr,expected))
+        endtask</code></td><td>test 구성과 write_expect입니다. 반환 status·독립 관찰 거래·읽기 전 Mirror를 각각 확인합니다.</td></tr><tr><td>339-351</td><td><code class="teach-fragment">        task automatic read_expect(uvm_reg rg, bit [31:0] addr,
+                                   bit [31:0] expected);
+            uvm_status_e status;
+            uvm_reg_data_t value;
+            rg.read(status,value,UVM_FRONTDOOR,env.model.default_map);
+            read_checks++;
+            if(status!=UVM_IS_OK || value!==uvm_reg_data_t&#x27;(expected) ||
+               env.mon.reads!=read_checks || env.mon.last_read==null ||
+               env.mon.last_read.addr!==addr ||
+               env.mon.last_read.data!==expected ||
+               rg.get_mirrored_value()!==uvm_reg_data_t&#x27;(expected))
+                `uvm_fatal(&quot;READ&quot;,$sformatf(&quot;Read mismatch addr=%h&quot;,addr))
+        endtask</code></td><td>read_expect는 실제 반환값·관찰 주소/데이터·Mirror를 함께 기대값과 비교합니다.</td></tr><tr><td>353-373</td><td><code class="teach-fragment">        task run_phase(uvm_phase phase);
+            phase.raise_objection(this);
+            repeat(4) @(negedge vif.clk);
+            vif.resetn=1;
+            @(negedge vif.clk);
+            env.model.reset(); // 모델만 초기화한다. DUT reset은 위에서 수행.
+
+            read_expect(env.model.control,32&#x27;h00,32&#x27;h0);
+            read_expect(env.model.data_in,32&#x27;h10,32&#x27;h0);
+            write_expect(env.model.data_in,32&#x27;h10,32&#x27;h11223344,32&#x27;h11223344);
+            read_expect(env.model.data_in,32&#x27;h10,32&#x27;h11223344);
+            // (추가) 예약 비트는 1을 써도 읽기값과 mirror가 0이어야 한다.
+            write_expect(env.model.control,32&#x27;h00,32&#x27;hFFFFFFFF,32&#x27;h7);
+            read_expect(env.model.control,32&#x27;h00,32&#x27;h7);
+            write_expect(env.model.control,32&#x27;h00,32&#x27;h5,32&#x27;h5);
+            read_expect(env.model.control,32&#x27;h00,32&#x27;h5);
+            read_expect(env.model.version_reg,32&#x27;h18,32&#x27;h00010000);
+            read_expect(env.model.id_reg,32&#x27;h1C,32&#x27;h524D4150);
+            done=1;
+            phase.drop_objection(this);
+        endtask</code></td><td>실제 동기 리셋 뒤 모델을 별도 초기화하고7읽기·3쓰기를 순서대로 실행합니다.</td></tr><tr><td>374-389</td><td><code class="teach-fragment">        function void check_phase(uvm_phase phase);
+            super.check_phase(phase);
+            if(!done || read_checks!=7 || write_checks!=3 ||
+               env.mon.reads!=7 || env.mon.writes!=3 ||
+               env.mon.have_aw || env.mon.have_w || env.mon.have_ar)
+                `uvm_fatal(&quot;COUNTS&quot;,&quot;Incomplete RAL verification&quot;)
+        endfunction
+        function void report_phase(uvm_phase phase);
+            super.report_phase(phase);
+            if (uvm_report_server::get_server().get_severity_count(UVM_ERROR)!=0 ||
+                uvm_report_server::get_server().get_severity_count(UVM_FATAL)!=0)
+                `uvm_fatal(&quot;REPORT&quot;,&quot;UVM error or fatal reported&quot;)
+            `uvm_info(&quot;RESULT&quot;,&quot;PASS CH21 RAL reads=7 writes=3&quot;,UVM_NONE)
+        endfunction
+    endclass
+endpackage</code></td><td>10거래 완료·미결 채널 없음·오류0을 요구한 뒤 RESULT를 출력합니다.</td></tr><tr><td>391-428</td><td><code class="teach-fragment">module tb_axi_uvm_ral;
+    import uvm_pkg::*;
+    import ch21_pkg::*;
+    logic clk=0;
+    always #5 clk=~clk;
+    axi21_if bus(clk);
+    wire wr_en;
+    wire [7:0] wr_offset,rd_offset;
+    wire [31:0] wr_data,rd_data;
+    wire [3:0] wr_strb;
+    wire enable_o,start_pulse_o,clear_pulse_o;
+    wire [1:0] mode_o,irq_status_o;
+    wire [31:0] data_in_o;
+    axi4lite_slave_adapter dut(
+        .s_axi_aclk(clk),.s_axi_aresetn(bus.resetn),
+        .s_axi_awaddr(bus.awaddr),.s_axi_awprot(3&#x27;b000),
+        .s_axi_awvalid(bus.awvalid),.s_axi_awready(bus.awready),
+        .s_axi_wdata(bus.wdata),.s_axi_wstrb(bus.wstrb),
+        .s_axi_wvalid(bus.wvalid),.s_axi_wready(bus.wready),
+        .s_axi_bresp(bus.bresp),.s_axi_bvalid(bus.bvalid),.s_axi_bready(bus.bready),
+        .s_axi_araddr(bus.araddr),.s_axi_arprot(3&#x27;b000),
+        .s_axi_arvalid(bus.arvalid),.s_axi_arready(bus.arready),
+        .s_axi_rdata(bus.rdata),.s_axi_rresp(bus.rresp),
+        .s_axi_rvalid(bus.rvalid),.s_axi_rready(bus.rready),
+        .wr_en(wr_en),.wr_offset(wr_offset),.wr_data(wr_data),
+        .wr_strb(wr_strb),.rd_offset(rd_offset),.rd_data(rd_data)
+    );
+    custom_register_bank bank(
+        .clk(clk),.resetn(bus.resetn),.wr_en(wr_en),
+        .wr_offset(wr_offset),.wr_data(wr_data),.wr_strb(wr_strb),
+        .rd_offset(rd_offset),.rd_data(rd_data),
+        .busy_i(1&#x27;b0),.done_i(1&#x27;b0),.error_i(1&#x27;b0),
+        .irq_done_event_i(1&#x27;b0),.irq_error_event_i(1&#x27;b0),
+        .data_out_i(32&#x27;h12345678),.enable_o(enable_o),
+        .mode_o(mode_o),.start_pulse_o(start_pulse_o),
+        .clear_pulse_o(clear_pulse_o),.data_in_o(data_in_o),
+        .irq_status_o(irq_status_o)
+    );</code></td><td>정적 top에 bus·어댑터 DUT·bank를 연결하고 하드웨어 상태·이벤트를 고정합니다.</td></tr><tr><td>429-440</td><td><code class="teach-fragment">    initial begin
+        // (변경) test 자체도 정확한 경로로 설정한다.
+        uvm_config_db#(virtual axi21_if)::set(null,&quot;uvm_test_top&quot;,&quot;vif&quot;,bus);
+        uvm_config_db#(virtual axi21_if)::set(null,&quot;uvm_test_top.env.drv&quot;,&quot;vif&quot;,bus);
+        uvm_config_db#(virtual axi21_if)::set(null,&quot;uvm_test_top.env.mon&quot;,&quot;vif&quot;,bus);
+        run_test(&quot;axi21_test&quot;);
+    end
+    initial begin
+        #100000;
+        $fatal(1,&quot;CH21 GLOBAL_TIMEOUT&quot;);
+    end
+endmodule</code></td><td>test/drv/mon의 정확한 경로에 vif를 전달하며 run_test와100us watchdog를 시작합니다.</td></tr></tbody></table></details></div>
+</section>
+<section class="section" id="s06"><h2><span class="num">06</span>Ubuntu · Vivado XSIM 실행</h2><div class="codeblock"><div class="codebar"><span>scripts/run_ch21.sh · Bash</span></div><pre tabindex="0"><code>#!/usr/bin/env bash
+# 제21장: Vivado XSIM 내장 UVM 라이브러리 사용.
+set -euo pipefail
+ROOT=&quot;$(cd &quot;$(dirname &quot;${BASH_SOURCE[0]}&quot;)/..&quot; &amp;&amp; pwd)&quot;
+RTL=&quot;${RTL_DIR:-$ROOT/reference_rtl}&quot;
+for f in axi4lite_slave_adapter.v custom_register_bank.v; do
+  if [[ ! -f &quot;$RTL/$f&quot; ]]; then echo &quot;NOT_RUN: missing $RTL/$f&quot; &gt;&amp;2; exit 2; fi
+done
+RTL=&quot;$(realpath &quot;$RTL&quot;)&quot;
+for tool in xvlog xelab xsim; do
+  if ! command -v &quot;$tool&quot; &gt;/dev/null 2&gt;&amp;1; then
+    echo &quot;NOT_RUN: $tool missing; source Vivado settings64.sh&quot; &gt;&amp;2
+    exit 2
+  fi
+done
+mkdir -p &quot;$ROOT/.build/ch21&quot;
+OUT=&quot;$(mktemp -d &quot;$ROOT/.build/ch21/run.XXXXXX&quot;)&quot;
+cd &quot;$OUT&quot;
+xvlog &quot;$RTL/axi4lite_slave_adapter.v&quot; &quot;$RTL/custom_register_bank.v&quot; 2&gt;&amp;1 | tee rtl.log
+xvlog -sv -L uvm &quot;$ROOT/tb/ch21/tb_axi_uvm_ral.sv&quot; 2&gt;&amp;1 | tee tb.log
+xelab -timescale 1ns/1ps -L uvm -debug typical tb_axi_uvm_ral -s ch21_sim 2&gt;&amp;1 | tee elaborate.log
+xsim ch21_sim -runall -onerror quit 2&gt;&amp;1 | tee normal.log
+grep -Eq '\[RESULT\][[:space:]]+PASS CH21 RAL reads=7 writes=3[[:space:]]*$' normal.log
+grep -Eq 'UVM_ERROR[[:space:]]*:[[:space:]]*0[[:space:]]*$' normal.log
+grep -Eq 'UVM_FATAL[[:space:]]*:[[:space:]]*0[[:space:]]*$' normal.log
+rc=0
+xsim ch21_sim -runall -onerror quit -testplusarg NO_PREDICT &gt; negative.log 2&gt;&amp;1 || rc=$?
+grep -Eq 'UVM_FATAL.*\[PREDICT_WRITE\].*addr=00000010 expected=11223344' negative.log
+if grep -Eq 'PASS CH21|CH21 GLOBAL_TIMEOUT' negative.log; then
+  echo &quot;FAIL: unexpected negative result&quot; &gt;&amp;2
+  exit 1
+fi
+echo &quot;PASS CH21 HARNESS (negative exit=$rc)&quot;
+echo &quot;Logs: $OUT&quot;
+</code></pre></div><div class="codeblock"><div class="codebar"><span>Ubuntu · 실습 루트</span></div><pre tabindex="0"><code># Vivado 설치 경로의 settings64.sh를 source한 뒤 실행
+command -v xvlog xelab xsim
+bash scripts/run_ch21.sh</code></pre></div><p>xvlog는 RTL/UVM 소스 분석, xelab은 라이브러리 연결 및 스냅샷 생성, xsim은 정상·부정 시험 실행입니다. AMD UG900에 따라 독립 실행에 -L uvm을 전달합니다. 설치 버전의 UVM/RAL 지원을 확인해야 합니다. 실행 폴더의 normal.log, negative.log를 확인하고 같은 폴더에서 xsim ch21_sim -gui로 AW/W/B/AR/R 신호를 관찰합니다.</p><p>공식 참고: <a href="https://docs.amd.com/r/2023.2-English/ug900-vivado-logic-simulation/Universal-Verification-Methodology-Support">AMD UG900 UVM 지원</a> · <a href="https://github.com/accellera/uvm/blob/master/distrib/src/reg/uvm_reg_predictor.svh">Accellera UVM Predictor</a>.</p>
+<div class="teach-note"><h3>실습 지도 · 예측 실패는 실제 저장 실패와 다를 수 있다</h3><p>NO_PREDICT는 mon.ap 연결만 끊습니다. DUT와 Driver는 그대로이고 읽기/쓰기 거래도 진행합니다. PREDICT_WRITE는 모델 갱신 경로의 부재를 검출하는 전용 진단입니다. 실제 레지스터가 안 써졌다는 결론으로 바로 넘어가지 말고 버스 완료와 모델 연결을 각각 확인합니다.</p><p>전체 레지스터 접근만 지원하므로 supports_byte_enable0입니다. 제15장의 부분 쓰기 시험과 혼동하지 않습니다. 원본 XSIM 정상·부정 실측을 유지하며 이 교수용 제작의 새 RTL/UVM 실행은 <strong>NOT_RUN</strong>입니다.</p><h4>scripts/run_ch21.sh · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-21</td><td><code class="teach-fragment">#!/usr/bin/env bash
+# 제21장: Vivado XSIM 내장 UVM 라이브러리 사용.
+set -euo pipefail
+ROOT=&quot;$(cd &quot;$(dirname &quot;${BASH_SOURCE[0]}&quot;)/..&quot; &amp;&amp; pwd)&quot;
+RTL=&quot;${RTL_DIR:-$ROOT/reference_rtl}&quot;
+for f in axi4lite_slave_adapter.v custom_register_bank.v; do
+  if [[ ! -f &quot;$RTL/$f&quot; ]]; then echo &quot;NOT_RUN: missing $RTL/$f&quot; &gt;&amp;2; exit 2; fi
+done
+RTL=&quot;$(realpath &quot;$RTL&quot;)&quot;
+for tool in xvlog xelab xsim; do
+  if ! command -v &quot;$tool&quot; &gt;/dev/null 2&gt;&amp;1; then
+    echo &quot;NOT_RUN: $tool missing; source Vivado settings64.sh&quot; &gt;&amp;2
+    exit 2
+  fi
+done
+mkdir -p &quot;$ROOT/.build/ch21&quot;
+OUT=&quot;$(mktemp -d &quot;$ROOT/.build/ch21/run.XXXXXX&quot;)&quot;
+cd &quot;$OUT&quot;
+xvlog &quot;$RTL/axi4lite_slave_adapter.v&quot; &quot;$RTL/custom_register_bank.v&quot; 2&gt;&amp;1 | tee rtl.log
+xvlog -sv -L uvm &quot;$ROOT/tb/ch21/tb_axi_uvm_ral.sv&quot; 2&gt;&amp;1 | tee tb.log
+xelab -timescale 1ns/1ps -L uvm -debug typical tb_axi_uvm_ral -s ch21_sim 2&gt;&amp;1 | tee elaborate.log</code></td><td>두 RTL·XSIM 도구를 확인하고 새 폴더에서 전체 UVM/RAL을 분석·연결합니다.</td></tr><tr><td>22-25</td><td><code class="teach-fragment">xsim ch21_sim -runall -onerror quit 2&gt;&amp;1 | tee normal.log
+grep -Eq &#x27;\[RESULT\][[:space:]]+PASS CH21 RAL reads=7 writes=3[[:space:]]*$&#x27; normal.log
+grep -Eq &#x27;UVM_ERROR[[:space:]]*:[[:space:]]*0[[:space:]]*$&#x27; normal.log
+grep -Eq &#x27;UVM_FATAL[[:space:]]*:[[:space:]]*0[[:space:]]*$&#x27; normal.log</code></td><td>정상7읽기·3쓰기 완료 행과 UVM 오류0을 요구합니다.</td></tr><tr><td>26-34</td><td><code class="teach-fragment">rc=0
+xsim ch21_sim -runall -onerror quit -testplusarg NO_PREDICT &gt; negative.log 2&gt;&amp;1 || rc=$?
+grep -Eq &#x27;UVM_FATAL.*\[PREDICT_WRITE\].*addr=00000010 expected=11223344&#x27; negative.log
+if grep -Eq &#x27;PASS CH21|CH21 GLOBAL_TIMEOUT&#x27; negative.log; then
+  echo &quot;FAIL: unexpected negative result&quot; &gt;&amp;2
+  exit 1
+fi
+echo &quot;PASS CH21 HARNESS (negative exit=$rc)&quot;
+echo &quot;Logs: $OUT&quot;</code></td><td>NO_PREDICT를 별도 실행해 주소10·11223344 쓰기 직후 예측 실패와 PASS/timeout 부재를 확인합니다.</td></tr></tbody></table></details></div>
+</section>
+<section class="section" id="s07"><h2><span class="num">07</span>예상 결과와 장애 분석</h2><div class="codeblock"><div class="codebar"><span>예상 정상 및 부정 시험 완료</span></div><pre tabindex="0"><code>[RESULT] PASS CH21 RAL reads=7 writes=3
+UVM_ERROR : 0
+UVM_FATAL : 0
+[PREDICT_WRITE] addr=00000010 expected=11223344
+PASS CH21 HARNESS (negative exit=...)</code></pre></div><table><thead><tr><th>진단</th><th>점검</th></tr></thead><tbody><tr><td>NO_VIF</td><td>Test 및 Driver/Monitor의 config_db 경로</td></tr><tr><td>AW_W / B_TIMEOUT / AR_TIMEOUT / R_TIMEOUT</td><td>실제 채널 수락과 응답</td></tr><tr><td>MON_AW/W/B/AR/R / BUS_X</td><td>관찰 거래 재구성과 X/Z</td></tr><tr><td>WRITE / READ</td><td>실제 주소·데이터·응답·기대값</td></tr><tr><td>PREDICT_WRITE</td><td>자동 예측 설정, 분석 연결, 쓰기 직후 Mirror</td></tr><tr><td>COUNTS / REPORT</td><td>거래 완료와 오류 누계</td></tr></tbody></table><p>정상과 부정 로그는 별도 실행입니다. 예상 결과를 실제 XSIM 로그와 구별합니다. 다음 제22장은 다중 Agent·VIP(검증 지식재산)와 Reset/IRQ의 통합 검증으로 확장합니다.</p>
+<div class="execution-evidence" data-evidence="v59"><h3>2026-11-26 실제 실행 결과</h3><p>Vivado XSIM 2024.2 · 종료 코드 0 · <strong>PASS</strong>. 정상 실행과 정의된 오류 검출 조건을 장별 실행기로 확인했습니다.</p><div class="codeblock"><div class="codebar"><span>저장소 루트 · Bash · 실행 재현 명령</span></div><pre tabindex="0"><code>bash scripts/run_chapter.sh 21</code></pre></div><div class="codeblock"><div class="codebar"><span>실제 로그 발췌 · 예상 출력과 구별</span></div><pre tabindex="0"><code>[RESULT] PASS CH21 RAL reads=7 writes=3
+UVM_ERROR :    0
+UVM_FATAL :    0
+UVM_FATAL [PREDICT_WRITE] addr=00000010 expected=11223344
+UVM_FATAL :    1</code></pre></div><p><a href="https://github.com/Yuul-Jung/system_verilog_uvm_tb/blob/2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708/docs/evidence/v59/README.md#ch21">실행 명령·종료 코드·공개 로그 및 해시 확인</a>. 위의 예상 파형은 코드에서 계산한 도식이며, 실측 파형 이미지는 별도로 수록하지 않았습니다.</p></div>
+
+<div class="teach-note"><h3>예상 문답 · 모델 상태와 실제 접근</h3><p><strong>get_mirrored_value가 AXI 읽기를 발생시키나요?</strong> 현재 모델의 예상값만 반환합니다. 실제 버스 접근은 read(...,UVM_FRONTDOOR,...)입니다.</p><p><strong>모델 reset만 호출하면 회로도 초기화되나요?</strong> 아닙니다. 코드가 먼저 resetn을 실제 클록에 걸쳐 구동하고 이후 model.reset을 따로 호출합니다.</p><p><strong>모든 레지스터 정책을 다뤘나요?</strong> CONTROL·DATA_IN·VERSION·ID 네 개만 모델링합니다. W1P·W1C·이벤트 우선·RO 쓰기·필드별 byte 접근은 현재10거래에 포함하지 않습니다.</p></div>
+</section>
+<div class="chapter-links" id="chapter-links"></div></main></div><footer class="footer">RTL TESTBENCH · SYSTEMVERILOG · UVM · CH21 교수용 v01 · 원본 v04 · PASS</footer><script>window.COURSE={"title":"RTL · SystemVerilog · UVM 교수용 해설서","short_title":"SV UVM TEACH","home_label":"전체 교수용 해설서","chapters":[{"id":"ch01","number":1,"title":"테스트벤치의 첫 실행","file":"ch01_teacher_v02.html"},{"id":"ch02","number":2,"title":"Clock·Reset·이벤트","file":"ch02_teacher_v01.html"},{"id":"ch03","number":3,"title":"반복 자극과 작업 분리","file":"ch03_teacher_v01.html"},{"id":"ch04","number":4,"title":"PASS/FAIL 자동 판정","file":"ch04_teacher_v01.html"},{"id":"ch05","number":5,"title":"검증 자료형과 타입","file":"ch05_teacher_v01.html"},{"id":"ch06","number":6,"title":"배열·큐·패키지","file":"ch06_teacher_v01.html"},{"id":"ch07","number":7,"title":"인터페이스·타이밍 분리","file":"ch07_teacher_v01.html"},{"id":"ch08","number":8,"title":"객체와 제약 기반 입력","file":"ch08_teacher_v01.html"},{"id":"ch09","number":9,"title":"참조 모델·스코어보드","file":"ch09_teacher_v01.html"},{"id":"ch10","number":10,"title":"경계조건·오류 주입","file":"ch10_teacher_v01.html"},{"id":"ch11","number":11,"title":"시간적 속성 검사","file":"ch11_teacher_v01.html"},{"id":"ch12","number":12,"title":"기능 커버리지","file":"ch12_teacher_v01.html"},{"id":"ch13","number":13,"title":"UART 스트림 검증","file":"ch13_teacher_v01.html"},{"id":"ch14","number":14,"title":"FIFO 및 흐름 제어","file":"ch14_teacher_v01.html"},{"id":"ch15","number":15,"title":"AXI4-Lite 레지스터 검증","file":"ch15_teacher_v01.html"},{"id":"ch16","number":16,"title":"MAC·NPU 정수 연산 검증","file":"ch16_teacher_v01.html"},{"id":"ch17","number":17,"title":"최소 UVM 환경","file":"ch17_teacher_v01.html"},{"id":"ch18","number":18,"title":"Sequence에서 Driver까지","file":"ch18_teacher_v01.html"},{"id":"ch19","number":19,"title":"Monitor·Agent·Scoreboard","file":"ch19_teacher_v01.html"},{"id":"ch20","number":20,"title":"Factory·Config·Objection","file":"ch20_teacher_v01.html"},{"id":"ch21","number":21,"title":"UVM 레지스터 추상화","file":"ch21_teacher_v01.html"}]};</script><script src="assets/site.js"></script></body></html>

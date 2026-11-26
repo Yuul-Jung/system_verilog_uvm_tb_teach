@@ -143,6 +143,12 @@
       "number": 20,
       "title": "Factory·Config·Objection",
       "file": "ch20_teacher_v01.html"
+    },
+    {
+      "id": "ch21",
+      "number": 21,
+      "title": "UVM 레지스터 추상화",
+      "file": "ch21_teacher_v01.html"
     }
   ]
 };

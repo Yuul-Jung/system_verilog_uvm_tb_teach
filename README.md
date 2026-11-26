@@ -31,4 +31,5 @@
 - [제18장 · Sequence에서 Driver까지](ch18_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch18_v01.md)
 - [제19장 · Monitor·Agent·Scoreboard](ch19_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch19_v01.md)
 - [제20장 · Factory·Config·Objection](ch20_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch20_v01.md)
+- [제21장 · UVM 레지스터 추상화](ch21_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch21_v01.md)
 <!-- /PUBLISHED -->
