@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v02",
+  "version": "v03",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -17,6 +17,21 @@
       "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
       "source_course_version": "v60",
       "source_tb": "tb/ch01/tb_uart_echo_basics.sv",
+      "rtl_simulation": "NOT_RUN",
+      "original_execution": "EXECUTED_OBSERVATION"
+    },
+    {
+      "id": "ch02",
+      "number": 2,
+      "title": "Clock·Reset·이벤트",
+      "slug": "ch02_teacher",
+      "version": "v01",
+      "source_html": "ch02_clock_reset_events_v04.html",
+      "source_version": "v04",
+      "source_blob": "f5ab9297bacf395c29e4259312598b575b375519",
+      "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
+      "source_course_version": "v60",
+      "source_tb": "tb/ch02/tb_pwm_clock_reset.sv",
       "rtl_simulation": "NOT_RUN",
       "original_execution": "EXECUTED_OBSERVATION"
     }
@@ -36,7 +51,7 @@
       "title": "Clock·Reset·이벤트",
       "source_html": "ch02_clock_reset_events_v04.html",
       "source_version": "v04",
-      "status": "planned"
+      "status": "published"
     },
     {
       "id": "ch03",

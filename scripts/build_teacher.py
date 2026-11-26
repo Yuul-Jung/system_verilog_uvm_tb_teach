@@ -26,6 +26,24 @@ def main():
     name = f"{original['slug']}_{original['version']}.html"
     blob = subprocess.check_output(["git", "rev-parse", f"HEAD:{name}"], cwd=source, text=True).strip()
     notes = json.loads((ROOT / f"content/ch{args.number:02d}_notes.json").read_text())
+    for line_table in notes.pop('__lines__', []):
+        if 'reuse' in line_table:
+            line_table = json.loads((ROOT / line_table['reuse']).read_text())
+        lines = (source / line_table['path']).read_text().splitlines()
+        covered = set()
+        rows = []
+        for span, explanation in line_table['rows']:
+            bounds = [int(v) for v in span.split('-')]
+            start, end = bounds[0], bounds[-1]
+            assert not covered.intersection(range(start, end + 1)), 'overlapping line commentary'
+            covered.update(range(start, end + 1))
+            fragment = '\n'.join(lines[start - 1:end])
+            rows.append(f'<tr><td>{span}</td><td><code class="teach-fragment">{html.escape(fragment)}</code></td><td>{explanation}</td></tr>')
+        assert all(i in covered for i, line in enumerate(lines, 1) if line.strip()), 'missing source line commentary'
+        table = (f'<h4>{html.escape(line_table["path"])} · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary>'
+                 '<table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody>'
+                 + ''.join(rows) + '</tbody></table></details>')
+        notes[line_table['section']] += table
     page = args.base.read_text() if args.base else (source / name).read_text()
     if args.base and args.number == 1:
         page = page.replace('기존 Icarus 관찰 실행 완료', '실행 미검증')
@@ -44,6 +62,7 @@ def main():
                             '<main class="content" id="main-content">' +
                             f'<p>원본 제{args.number:02d}장 · {original["version"]}의 절·그림·전체 코드·실습을 보존한 교수용 해설서입니다.</p>', 1)
     page = re.sub(r'교수용 보충자료 · v\d+', f'교수용 보충자료 · {args.version}', page)
+    page = page.replace('</style>', '.teach-note details table{min-width:680px}.teach-note details th:first-child,.teach-note details td:first-child{min-width:60px;white-space:nowrap}.teach-note details .teach-fragment{min-width:250px}</style>', 1)
     page = re.sub(r'CH(\d+) 교수용 v\d+', rf'CH\1 교수용 {args.version}', page)
     if not args.base:
         page = re.sub(rf'CH{args.number:02d} {original["version"]}',

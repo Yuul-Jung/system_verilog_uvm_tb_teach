@@ -29,6 +29,12 @@
       "number": 1,
       "title": "테스트벤치의 첫 실행",
       "file": "ch01_teacher_v02.html"
+    },
+    {
+      "id": "ch02",
+      "number": 2,
+      "title": "Clock·Reset·이벤트",
+      "file": "ch02_teacher_v01.html"
     }
   ]
 };

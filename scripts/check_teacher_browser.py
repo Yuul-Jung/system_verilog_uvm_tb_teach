@@ -3,6 +3,7 @@
 
 import argparse
 import functools
+import hashlib
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util
 import json
@@ -43,6 +44,7 @@ def main():
             response = page.goto(f"http://127.0.0.1:{server.server_port}/{chapter['slug']}_{chapter['version']}.html")
             page.wait_for_selector('.course-ch-link[aria-current="page"]')
             page.evaluate('document.fonts.ready')
+            page.locator('.teach-note details').evaluate_all("nodes=>nodes.forEach(e=>e.open=true)")
             row = page.evaluate(module.MEASURE)
             row.update(width=width, http=response.status,
                        part=page.locator('.course-part-heading').count() == 1,
@@ -66,6 +68,10 @@ def main():
                     svg.screenshot(path=str(out / f'svg{index}.png'))
                 page.locator('.teach-note').last.scroll_into_view_if_needed()
                 page.screenshot(path=str(out / 'teaching.png'))
+                tables = page.locator('.teach-note details')
+                if tables.count():
+                    tables.first.scroll_into_view_if_needed()
+                    page.screenshot(path=str(out / 'line-commentary.png'))
                 page.locator('.toc-sections a').last.click()
                 row['section_jump'] = page.evaluate('location.hash') == page.locator('.toc-sections a').last.get_attribute('href')
             page.evaluate('scrollTo(0,0)')
@@ -78,7 +84,8 @@ def main():
            or not r['part'] or not r['section_count'] or not r['same_part']
            or r.get('mobile_menu') is False or r.get('section_jump') is False
            or any(d['outside'] or d['collisions'] for d in r['diagrams'])]
-    (out / 'browser.json').write_text(json.dumps(dict(chapter=args.chapter, rows=rows, flagged=len(bad)), ensure_ascii=False, indent=2) + '\n')
+    page_hash = hashlib.sha256((ROOT / f"{chapter['slug']}_{chapter['version']}.html").read_bytes()).hexdigest()
+    (out / 'browser.json').write_text(json.dumps(dict(chapter=args.chapter, page_sha256=page_hash, rows=rows, flagged=len(bad)), ensure_ascii=False, indent=2) + '\n')
     print(f"CH{args.chapter:02d}: browser widths=6 flagged={len(bad)}")
     return 1 if bad else 0
 
