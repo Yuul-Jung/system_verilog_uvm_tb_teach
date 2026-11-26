@@ -113,6 +113,12 @@
       "number": 15,
       "title": "AXI4-Lite 레지스터 검증",
       "file": "ch15_teacher_v01.html"
+    },
+    {
+      "id": "ch16",
+      "number": 16,
+      "title": "MAC·NPU 정수 연산 검증",
+      "file": "ch16_teacher_v01.html"
     }
   ]
 };

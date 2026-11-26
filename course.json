@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v16",
+  "version": "v17",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -229,6 +229,21 @@
       "source_tb": "tb/ch15/tb_axi4lite_registers.sv",
       "rtl_simulation": "NOT_RUN",
       "original_execution": "PASS"
+    },
+    {
+      "id": "ch16",
+      "number": 16,
+      "title": "MAC·NPU 정수 연산 검증",
+      "slug": "ch16_teacher",
+      "version": "v01",
+      "source_html": "ch16_mac_npu_integer_verification_v03.html",
+      "source_version": "v03",
+      "source_blob": "2c80e700449b8dbc5ded2cd67ec2837d2c46e7a1",
+      "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
+      "source_course_version": "v60",
+      "source_tb": "tb/ch16/tb_mac_integer.sv",
+      "rtl_simulation": "NOT_RUN",
+      "original_execution": "PASS"
     }
   ],
   "planned_chapters": [
@@ -358,7 +373,7 @@
       "title": "MAC·NPU 정수 연산 검증",
       "source_html": "ch16_mac_npu_integer_verification_v03.html",
       "source_version": "v03",
-      "status": "planned"
+      "status": "published"
     },
     {
       "id": "ch17",
