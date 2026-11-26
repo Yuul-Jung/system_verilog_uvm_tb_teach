@@ -95,6 +95,12 @@
       "number": 12,
       "title": "기능 커버리지",
       "file": "ch12_teacher_v01.html"
+    },
+    {
+      "id": "ch13",
+      "number": 13,
+      "title": "UART 스트림 검증",
+      "file": "ch13_teacher_v01.html"
     }
   ]
 };

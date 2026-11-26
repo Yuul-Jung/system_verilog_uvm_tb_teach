@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v13",
+  "version": "v14",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -184,6 +184,21 @@
       "source_tb": "tb/ch12/tb_pwm_coverage.sv",
       "rtl_simulation": "NOT_RUN",
       "original_execution": "PASS"
+    },
+    {
+      "id": "ch13",
+      "number": 13,
+      "title": "UART 스트림 검증",
+      "slug": "ch13_teacher",
+      "version": "v01",
+      "source_html": "ch13_uart_stream_verification_v03.html",
+      "source_version": "v03",
+      "source_blob": "dec9f9f19dd29ae6326f426d3ca2a41de599c9e2",
+      "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
+      "source_course_version": "v60",
+      "source_tb": "tb/ch13/tb_uart_stream.sv",
+      "rtl_simulation": "NOT_RUN",
+      "original_execution": "PASS"
     }
   ],
   "planned_chapters": [
@@ -289,7 +304,7 @@
       "title": "UART 스트림 검증",
       "source_html": "ch13_uart_stream_verification_v03.html",
       "source_version": "v03",
-      "status": "planned"
+      "status": "published"
     },
     {
       "id": "ch14",
