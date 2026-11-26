@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v11",
+  "version": "v12",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -154,6 +154,21 @@
       "source_tb": "tb/ch10/tb_pwm_corner_reset_timeout.sv",
       "rtl_simulation": "NOT_RUN",
       "original_execution": "PASS"
+    },
+    {
+      "id": "ch11",
+      "number": 11,
+      "title": "시간적 속성 검사",
+      "slug": "ch11_teacher",
+      "version": "v01",
+      "source_html": "ch11_temporal_assertions_v05.html",
+      "source_version": "v05",
+      "source_blob": "97c9453d30ddc48532bf1988250e62722a818e80",
+      "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
+      "source_course_version": "v60",
+      "source_tb": "tb/ch11/tb_pwm_sva.sv",
+      "rtl_simulation": "NOT_RUN",
+      "original_execution": "PASS"
     }
   ],
   "planned_chapters": [
@@ -243,7 +258,7 @@
       "title": "시간적 속성 검사",
       "source_html": "ch11_temporal_assertions_v05.html",
       "source_version": "v05",
-      "status": "planned"
+      "status": "published"
     },
     {
       "id": "ch12",

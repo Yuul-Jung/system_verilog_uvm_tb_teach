@@ -83,6 +83,12 @@
       "number": 10,
       "title": "경계조건·오류 주입",
       "file": "ch10_teacher_v01.html"
+    },
+    {
+      "id": "ch11",
+      "number": 11,
+      "title": "시간적 속성 검사",
+      "file": "ch11_teacher_v01.html"
     }
   ]
 };
