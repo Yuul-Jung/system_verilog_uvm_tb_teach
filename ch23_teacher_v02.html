@@ -1,0 +1,907 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="제23장 NPU 통합 정답 비교 · 독립 모델과 지연 검증"><title>교수용 해설서 · 제23장 · NPU 통합 정답 비교</title><link rel="stylesheet" href="assets/site.css"><style>.teach-note{margin:18px 0 4px;padding:15px 18px;background:#f8f7fc;border:1px solid #dddaee;border-left:4px solid #4635b1;border-radius:6px;overflow-wrap:anywhere}.teach-note h3{margin:0 0 10px;color:#4635b1}.teach-note h4{margin:14px 0 6px}.teach-note p{margin:8px 0}.teach-note summary{cursor:pointer;font-weight:600;margin:10px 0}.teach-fragment{white-space:pre-wrap;overflow-wrap:anywhere;display:block;min-width:140px}.teach-note table{margin:10px 0}.teach-note td{vertical-align:top}@media(max-width:860px){.teach-note{padding:12px}.teach-note td{min-width:68px}}.teach-note details table{min-width:680px}.teach-note details th:first-child,.teach-note details td:first-child{min-width:60px;white-space:nowrap}.teach-note details .teach-fragment{min-width:250px}</style></head><body data-chapter="ch23"><a class="access-skip" href="#main-content">본문 바로가기</a><button type="button" class="mobile-menu" id="mobile-menu" aria-controls="course-nav" aria-expanded="false">☰ 장·목차</button><div class="shade" id="shade"></div><header class="hero"><div class="hero-inner"><p class="kicker">교수용 해설서 · 제6부 · 실무 회귀 검증</p><h1>제23장 · NPU 통합 정답 비교</h1><p>실제 4뉴런 NPU의 점수·클래스·지연·오류를 독립 참조 모델로 검증합니다.</p><div class="chips"><span class="chip">PART 06 · CHAPTER 23</span><span class="chip">원본 RTL 변경 없음 · v05</span></div></div></header><div class="wrap"><nav class="toc" id="course-nav" aria-label="부·장·절 탐색"></nav><main class="content" id="main-content"><p>원본 제23장 · v05의 절·그림·전체 코드·실습을 보존한 교수용 해설서입니다.</p><section class="section" id="s00"><h2><span class="num">00</span>개요 · 통합 NPU의 정답을 어떻게 확인하는가</h2><p>제23장은 이미 완성된 <code>npu_engine4</code>를 DUT(검증 대상 회로)로 사용합니다. 입력 벡터와 네 뉴런의 가중치를 BRAM 형태의 배열에 적재한 다음, 각 뉴런의 MAC(맥, 곱셈 누산) 결과와 편향을 합산하고 가장 높은 점수를 <code>class_o</code>로 선택하는 실제 동작을 검증합니다. 단순히 결과가 나오는지 확인하는 수준을 넘어 <strong>독립 참조 모델, 지연 시간, 경계 조건, 오류 신호</strong>를 검사합니다.</p><div class="figure-wrap" tabindex="0" style="overflow-x:auto"><svg viewBox="0 0 900 240" style="min-width:640px;width:100%" role="img" aria-label="npu_engine4 입력 저장소에서 4개 npu_dsp_mac_lane으로 누산하고 class_o 및 scores_o로 출력하는 실제 구조"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#4635b1"/></marker></defs><rect x="8" y="8" width="884" height="224" rx="8" fill="#f7f7f5" stroke="#ddd"/><text x="450" y="34" font-size="18" text-anchor="middle" fill="#15171c">npu_engine4 — 실제 RTL 데이터 경로</text><g fill="#edeafa" stroke="#4635b1" stroke-width="2"><rect x="35" y="77" width="174" height="92" rx="5"/><rect x="272" y="65" width="215" height="115" rx="5"/><rect x="545" y="77" width="142" height="92" rx="5"/><rect x="746" y="77" width="128" height="92" rx="5"/></g><g fill="#15171c" text-anchor="middle" font-size="14"><text x="122" y="110">xmem · w0~w3</text><text x="122" y="135">bias0~bias3</text><text x="379" y="94">npu_dsp_mac_lane × 4</text><text x="379" y="119">dsp_multiplier</text><text x="379" y="145">acc0~acc3</text><text x="616" y="110">score0~score3</text><text x="616" y="135">best_class</text><text x="810" y="110">scores_o</text><text x="810" y="135">class_o</text></g><g stroke="#4635b1" stroke-width="2.5" marker-end="url(#arrow)"><path d="M209 123 H272"/><path d="M487 123 H545"/><path d="M687 123 H746"/></g><text x="450" y="209" text-anchor="middle" font-size="13" fill="#4a4f5a">start_i → READ → ISSUE → DRAIN1 → DRAIN2 → done_o (제어 상태)</text></svg></div>
+<div class="teach-note"><h3>교수용 이론 · 통합 결과에는 수치·분류·완료 시점이 있다</h3><p>네 뉴런은 같은 입력 벡터에 서로 다른 가중치를 곱해 더하고 bias를 더합니다. 분류값만 맞으면 다른 뉴런 점수가 틀려도 지나갈 수 있습니다. 그래서164비트 scores_o 안의 네41비트 점수, 최댓값의 class_o, busy/done/error와 완료 지연을 함께 검사합니다.</p><p>그림은 xmem·네 가중치 메모리→네 DSP MAC lane→편향 합→최대값 선택의 데이터 경로로 읽습니다. 제어 상태는 언제 읽고 곱하고 결과를 등록할지 정합니다. 이 장은 module/task 기반 TB이며 앞 장의 UVM Agent·Scoreboard 클래스가 구현된 것으로 설명하지 않습니다.</p></div>
+</section><section class="section" id="s01"><h2><span class="num">01</span>원본 포트와 시간 계약</h2><p><code>npu_engine4</code>의 <code>clk</code>는 상승 에지 동기식이고 <code>resetn</code>은 active-low 동기 리셋입니다. <code>start_i</code>가 유효할 때 <code>length_i</code> 길이의 데이터를 처리합니다. <code>load_ready_o</code>가 1일 때만 <code>x_wr_en</code>, <code>w_wr_en</code>, <code>b_wr_en</code>을 통해 입력·가중치·편향을 적재합니다. <code>scores_o</code>는 41비트 점수 네 개를 묶은 164비트이고, <code>class_o</code>는 2비트 클래스 번호입니다.</p><table><tr><th>신호</th><th>폭</th><th>검증 계약</th></tr><tr><td><code>length_i</code></td><td>7</td><td>1~64, 필요한 주소 데이터가 모두 적재되어야 시작 가능</td></tr><tr><td><code>data_i</code></td><td>16 signed</td><td>입력 벡터와 뉴런별 가중치</td></tr><tr><td><code>bias_i</code></td><td>40 signed</td><td>뉴런별 편향</td></tr><tr><td><code>scores_o</code></td><td>164</td><td>41비트 점수 × 4, 하위 41비트는 뉴런 0</td></tr><tr><td><code>done_o</code></td><td>1</td><td>정상 처리 완료 시 1클록 펄스</td></tr><tr><td><code>error_o</code></td><td>1</td><td>누락된 입력으로 시작하면 오류 펄스</td></tr></table><h3>원본 RTL — 읽기 전용</h3><p>세 모듈을 함께 컴파일합니다. BRAM 및 DSP의 실제 자원 배치는 합성 보고서에서 별도로 확인합니다.</p><div class="codeblock"><div class="codebar"><span>reference_rtl/npu_engine4.v · 전체 코드</span></div><pre tabindex="0"><code>// (추가) 04장 BRAM 구조 + 02장 DSP 레지스터 곱 + 4개 누산기 통합.
+// 12장 최종 경로는 기존 ch07 벡터 닷의 곱 경로를 중복 사용하지 않는다.
+// 메모리 쓰기는 IDLE에서만 허용하며 Reset 시 유효 비트만 지운다.
+module npu_engine4(
+    input wire clk,resetn,start_i,
+    input wire [6:0] length_i,
+    input wire x_wr_en,w_wr_en,b_wr_en,
+    input wire [5:0] addr_i,
+    input wire [1:0] neuron_i,
+    input wire signed [15:0] data_i,
+    input wire signed [39:0] bias_i,
+    output wire load_ready_o,
+    output reg busy_o,done_o,error_o,
+    output reg [1:0] class_o,
+    output reg [163:0] scores_o
+);
+    localparam [2:0] IDLE=0,READ=1,ISSUE=2,DRAIN1=3,DRAIN2=4;
+    reg [2:0] state;
+    reg [6:0] length_q;
+    reg [5:0] index_q;
+    (* ram_style="block" *) reg signed [15:0] xmem[0:63];
+    (* ram_style="block" *) reg signed [15:0] w0[0:63];
+    (* ram_style="block" *) reg signed [15:0] w1[0:63];
+    (* ram_style="block" *) reg signed [15:0] w2[0:63];
+    (* ram_style="block" *) reg signed [15:0] w3[0:63];
+    reg [63:0] x_seen,w0_seen,w1_seen,w2_seen,w3_seen;
+    reg signed [39:0] bias0,bias1,bias2,bias3;
+    reg signed [15:0] x_sample,w_sample0,w_sample1,w_sample2,w_sample3;
+
+    reg input_valid;
+    integer k;
+    always @* begin
+        input_valid=(length_i!=0 &amp;&amp; length_i&lt;=64);
+        for(k=0;k&lt;64;k=k+1)
+            if(k&lt;length_i &amp;&amp;
+               (!x_seen[k] || !w0_seen[k] || !w1_seen[k] ||
+                !w2_seen[k] || !w3_seen[k]))
+                input_valid=0;
+    end
+    wire any_write=x_wr_en||w_wr_en||b_wr_en;
+    wire launch=(state==IDLE)&amp;&amp;start_i&amp;&amp;input_valid&amp;&amp;!any_write;
+    wire mul_valid=(state==ISSUE);
+    assign load_ready_o=resetn&amp;&amp;!busy_o&amp;&amp;!start_i;
+
+    wire signed [39:0] acc0,acc1,acc2,acc3;
+    npu_dsp_mac_lane lane0(.clk(clk),.resetn(resetn),.clear_i(launch),
+        .valid_i(mul_valid),.x_i(x_sample),.w_i(w_sample0),.acc_o(acc0));
+    npu_dsp_mac_lane lane1(.clk(clk),.resetn(resetn),.clear_i(launch),
+        .valid_i(mul_valid),.x_i(x_sample),.w_i(w_sample1),.acc_o(acc1));
+    npu_dsp_mac_lane lane2(.clk(clk),.resetn(resetn),.clear_i(launch),
+        .valid_i(mul_valid),.x_i(x_sample),.w_i(w_sample2),.acc_o(acc2));
+    npu_dsp_mac_lane lane3(.clk(clk),.resetn(resetn),.clear_i(launch),
+        .valid_i(mul_valid),.x_i(x_sample),.w_i(w_sample3),.acc_o(acc3));
+    // 41비트 signed: 40비트 누산값에 Bias를 더할 때 부호 확장 1비트.
+    wire signed [40:0] score0=$signed({acc0[39],acc0})+$signed({bias0[39],bias0});
+    wire signed [40:0] score1=$signed({acc1[39],acc1})+$signed({bias1[39],bias1});
+    wire signed [40:0] score2=$signed({acc2[39],acc2})+$signed({bias2[39],bias2});
+    wire signed [40:0] score3=$signed({acc3[39],acc3})+$signed({bias3[39],bias3});
+    reg [1:0] best_class;
+    reg signed [40:0] best_score;
+    always @*begin
+        best_class=0;best_score=score0;
+        if(score1&gt;best_score)begin best_score=score1;best_class=1;end
+        if(score2&gt;best_score)begin best_score=score2;best_class=2;end
+        if(score3&gt;best_score)begin best_score=score3;best_class=3;end
+    end
+
+    always @(posedge clk)begin
+        if(!resetn)begin
+            state&lt;=IDLE;busy_o&lt;=0;done_o&lt;=0;error_o&lt;=0;
+            class_o&lt;=0;scores_o&lt;=0;length_q&lt;=0;index_q&lt;=0;
+            x_seen&lt;=0;w0_seen&lt;=0;w1_seen&lt;=0;w2_seen&lt;=0;w3_seen&lt;=0;
+            bias0&lt;=0;bias1&lt;=0;bias2&lt;=0;bias3&lt;=0;
+            x_sample&lt;=0;w_sample0&lt;=0;w_sample1&lt;=0;w_sample2&lt;=0;w_sample3&lt;=0;
+        end else begin
+            done_o&lt;=0;error_o&lt;=0;
+            if(load_ready_o)begin
+                if(x_wr_en)begin
+                    xmem[addr_i]&lt;=data_i;x_seen[addr_i]&lt;=1;
+                end
+                if(w_wr_en)case(neuron_i)
+                    0:begin w0[addr_i]&lt;=data_i;w0_seen[addr_i]&lt;=1;end
+                    1:begin w1[addr_i]&lt;=data_i;w1_seen[addr_i]&lt;=1;end
+                    2:begin w2[addr_i]&lt;=data_i;w2_seen[addr_i]&lt;=1;end
+                    3:begin w3[addr_i]&lt;=data_i;w3_seen[addr_i]&lt;=1;end
+                endcase
+                if(b_wr_en)case(neuron_i)
+                    0:bias0&lt;=bias_i;
+                    1:bias1&lt;=bias_i;
+                    2:bias2&lt;=bias_i;
+                    3:bias3&lt;=bias_i;
+                endcase
+            end else if(any_write)error_o&lt;=1;
+            case(state)
+                IDLE:if(start_i)begin
+                    if(!input_valid||any_write)error_o&lt;=1;
+                    else begin
+                        state&lt;=READ;length_q&lt;=length_i;index_q&lt;=0;busy_o&lt;=1;
+                    end
+                end
+                READ:begin
+                    x_sample&lt;=xmem[index_q];
+                    w_sample0&lt;=w0[index_q];w_sample1&lt;=w1[index_q];
+                    w_sample2&lt;=w2[index_q];w_sample3&lt;=w3[index_q];
+                    state&lt;=ISSUE;
+                end
+                ISSUE:begin
+                    if({1'b0,index_q}+7'd1==length_q)state&lt;=DRAIN1;
+                    else begin index_q&lt;=index_q+1'b1;state&lt;=READ;end
+                end
+                DRAIN1:state&lt;=DRAIN2;
+                DRAIN2:begin
+                    scores_o&lt;={score3,score2,score1,score0};
+                    class_o&lt;=best_class;done_o&lt;=1;busy_o&lt;=0;state&lt;=IDLE;
+                end
+                default:begin state&lt;=IDLE;busy_o&lt;=0;error_o&lt;=1;end
+            endcase
+        end
+    end
+endmodule
+</code></pre></div><div class="codeblock"><div class="codebar"><span>reference_rtl/npu_dsp_mac_lane.v · 전체 코드</span></div><pre tabindex="0"><code>// (추가) 02장 등록 DSP 곱을 다음 에지에 누산한다. 곱을 다시 수행하지 않는다.
+module npu_dsp_mac_lane #(
+    parameter integer DATA_WIDTH=16,
+    parameter integer ACC_WIDTH=40
+)(
+    input wire clk,resetn,clear_i,valid_i,
+    input wire signed [DATA_WIDTH-1:0] x_i,w_i,
+    output reg signed [ACC_WIDTH-1:0] acc_o
+);
+    wire signed [2*DATA_WIDTH-1:0] product;
+    wire product_valid;
+    dsp_multiplier #(.A_WIDTH(DATA_WIDTH),.B_WIDTH(DATA_WIDTH)) dsp(
+        .clk(clk),.resetn(resetn),.clear_i(clear_i),
+        .valid_i(valid_i),.a_i(x_i),.b_i(w_i),
+        .product_o(product),.valid_o(product_valid));
+    wire signed [ACC_WIDTH-1:0] product_extended =
+        {{(ACC_WIDTH-2*DATA_WIDTH){product[2*DATA_WIDTH-1]}},product};
+    always @(posedge clk)begin
+        if(!resetn || clear_i)acc_o&lt;=0;
+        else if(product_valid)acc_o&lt;=acc_o+product_extended;
+    end
+    // synthesis translate_off
+    initial if(ACC_WIDTH&lt;2*DATA_WIDTH)$fatal(1,"ACC_WIDTH too small");
+    // synthesis translate_on
+endmodule
+</code></pre></div><div class="codeblock"><div class="codebar"><span>reference_rtl/dsp_multiplier.v · 전체 코드</span></div><pre tabindex="0"><code>`timescale 1ns/1ps
+`default_nettype none
+
+// DSP48E1의 25x18 signed 입력 범위에 맞춘 독립 곱셈 추론 후보.
+// primitive를 직접 생성하지 않으며 실제 DSP 배치는 합성 후 확인한다.
+module dsp_multiplier #(
+    parameter integer A_WIDTH = 16,
+    parameter integer B_WIDTH = 16
+) (
+    input wire clk,
+    input wire resetn,
+    input wire clear_i,
+    input wire valid_i,
+    input wire signed [A_WIDTH-1:0] a_i,
+    input wire signed [B_WIDTH-1:0] b_i,
+    output reg signed [A_WIDTH+B_WIDTH-1:0] product_o,
+    output reg valid_o
+);
+    wire signed [24:0] a_dsp_w;
+    wire signed [17:0] b_dsp_w;
+    (* use_dsp = "yes" *) wire signed [42:0] product_full_w;
+
+    // 작은 정수의 부호를 보존하여 DSP 곱셈 입력 폭까지 확장한다.
+    assign a_dsp_w = {{(25-A_WIDTH){a_i[A_WIDTH-1]}}, a_i};
+    assign b_dsp_w = {{(18-B_WIDTH){b_i[B_WIDTH-1]}}, b_i};
+    assign product_full_w = $signed(a_dsp_w) * $signed(b_dsp_w);
+
+    // P3-01과 같은 동기식 Reset &gt; Clear &gt; Valid 계약이다.
+    // 상승 에지에서 입력을 수락하고 그 에지 직후 곱과 valid_o를 갱신한다.
+    always @(posedge clk) begin
+        if (!resetn) begin
+            product_o &lt;= {(A_WIDTH+B_WIDTH){1'b0}};
+            valid_o &lt;= 1'b0;
+        end else if (clear_i) begin
+            product_o &lt;= {(A_WIDTH+B_WIDTH){1'b0}};
+            valid_o &lt;= 1'b0;
+        end else begin
+            valid_o &lt;= valid_i;
+            if (valid_i) begin
+                // 곱의 전체 유효 폭은 A_WIDTH+B_WIDTH. 버리는 상위 비트는 부호 확장뿐이다.
+                product_o &lt;= product_full_w[A_WIDTH+B_WIDTH-1:0];
+            end
+        end
+    end
+
+    // synthesis translate_off
+    initial begin
+        if (A_WIDTH &lt; 2 || A_WIDTH &gt; 25 || B_WIDTH &lt; 2 || B_WIDTH &gt; 18)
+            $fatal(1, "Require 2&lt;=A_WIDTH&lt;=25 and 2&lt;=B_WIDTH&lt;=18");
+    end
+    // synthesis translate_on
+endmodule
+`default_nettype wire
+</code></pre></div>
+<div class="teach-note"><h3>실제 구조 · 저장·곱·누산·분류의 폭을 따라간다</h3><p>각16비트 signed 입력의 유효 곱은32비트이고 lane은 이를40비트로 부호 확장해 누산합니다. DSP 후보 모듈 안에서는25×18비트 입력과43비트 전체 곱을 쓰지만, 실제16×16 곱의 유효 폭32비트로 결과를 등록합니다. 상위의 중복 부호 확장만 제거하는 경로입니다. use_dsp·ram_style은 합성 의도이며 실제 DSP/BRAM 배치는 합성 결과로 별도 확인해야 합니다.</p><p>주소는6비트라0~63, 길이는7비트라64·65를 표현할 수 있습니다. reset은 RAM 내용 대신 seen 유효 비트를 지우므로 예전 메모리가 남아도 새 연산 입력으로 인정하지 않습니다. bias에는 별도 seen이 없으며 리셋값0도 유효한 편향입니다.</p><h4>핵심 구문 ① · 데이터 폭을 실제 하드웨어 단계와 연결한다</h4><table><thead><tr><th scope="col">경로</th><th scope="col">비트 폭</th><th scope="col">역할</th></tr></thead><tbody><tr><td>xmem / w0~w3</td><td>16 signed</td><td>입력 및 가중치</td></tr><tr><td>a_dsp_w / b_dsp_w</td><td>25 / 18 signed</td><td>DSP 입력 부호 확장</td></tr><tr><td>product_full_w</td><td>43 signed</td><td>확장 입력의 곱</td></tr><tr><td>product_o / product</td><td>32 signed</td><td>유효 16×16 곱 등록</td></tr><tr><td>product_extended / acc_o</td><td>40 signed</td><td>부호 확장 및 누산</td></tr><tr><td>bias0~3</td><td>40 signed</td><td>편향</td></tr><tr><td>score0~3</td><td>41 signed</td><td>누산+편향</td></tr><tr><td>scores_o</td><td>164 packed</td><td>네 결과의 비트 묶음</td></tr></tbody></table><p>16비트 signed -32768은 0x8000입니다. -32768×-32768은 0x40000000(1,073,741,824)으로 signed32에서 양수입니다. -32768×32767은 -1,073,709,056이며 32비트 표현은 0xC0008000입니다. 40비트 확장 후 0xFFC0008000으로 상위8비트를 부호와 같은 1로 채웁니다. 64회 누산 범위는 signed40 안에 있지만 편향까지 더하면 signed40 범위를 넘을 수 있습니다.</p><p>다섯 RAM의 논리 용량은 5×64×16=5120비트(640바이트), 유효 지도는 5×64=320비트입니다. 이는 RTL 선언의 논리 저장량이지 합성된 BRAM 블록 수가 아닙니다.</p><h4>reference_rtl/npu_engine4.v · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-6</td><td><code class="teach-fragment">// (추가) 04장 BRAM 구조 + 02장 DSP 레지스터 곱 + 4개 누산기 통합.
+// 12장 최종 경로는 기존 ch07 벡터 닷의 곱 경로를 중복 사용하지 않는다.
+// 메모리 쓰기는 IDLE에서만 허용하며 Reset 시 유효 비트만 지운다.
+module npu_engine4(
+    input wire clk,resetn,start_i,
+    input wire [6:0] length_i,</code></td><td>npu_engine4는 클록·리셋·시작과 7비트 길이를 받습니다. 길이64를 표현하려면 6비트가 아닌 7비트가 필요합니다.</td></tr><tr><td>7-16</td><td><code class="teach-fragment">    input wire x_wr_en,w_wr_en,b_wr_en,
+    input wire [5:0] addr_i,
+    input wire [1:0] neuron_i,
+    input wire signed [15:0] data_i,
+    input wire signed [39:0] bias_i,
+    output wire load_ready_o,
+    output reg busy_o,done_o,error_o,
+    output reg [1:0] class_o,
+    output reg [163:0] scores_o
+);</code></td><td>세 적재 enable, 6비트 주소, 2비트 뉴런 번호를 사용합니다. 데이터는 signed16, 편향은 signed40, 출력은 네 signed41 점수를 묶은 164비트와 2비트 분류입니다.</td></tr><tr><td>17-20</td><td><code class="teach-fragment">    localparam [2:0] IDLE=0,READ=1,ISSUE=2,DRAIN1=3,DRAIN2=4;
+    reg [2:0] state;
+    reg [6:0] length_q;
+    reg [5:0] index_q;</code></td><td>5개 FSM 상태를 3비트로 표현합니다. length_q는 수락한 길이, index_q는 현재 주소입니다. 실행 중 외부 length_i가 변해도 length_q를 사용합니다.</td></tr><tr><td>21-25</td><td><code class="teach-fragment">    (* ram_style=&quot;block&quot; *) reg signed [15:0] xmem[0:63];
+    (* ram_style=&quot;block&quot; *) reg signed [15:0] w0[0:63];
+    (* ram_style=&quot;block&quot; *) reg signed [15:0] w1[0:63];
+    (* ram_style=&quot;block&quot; *) reg signed [15:0] w2[0:63];
+    (* ram_style=&quot;block&quot; *) reg signed [15:0] w3[0:63];</code></td><td>입력 RAM 하나와 가중치 RAM 네 개를 각각 64×16비트로 선언합니다. 논리 저장량은 총5120비트이며 ram_style은 BRAM 추론 의도이지 실제 자원 배치 결과가 아닙니다.</td></tr><tr><td>26-28</td><td><code class="teach-fragment">    reg [63:0] x_seen,w0_seen,w1_seen,w2_seen,w3_seen;
+    reg signed [39:0] bias0,bias1,bias2,bias3;
+    reg signed [15:0] x_sample,w_sample0,w_sample1,w_sample2,w_sample3;</code></td><td>각 RAM에 주소별 유효 비트 64개를 둡니다. 편향은 별도 40비트 레지스터, x_sample과 w_sample은 동기 읽기 결과입니다.</td></tr><tr><td>30-39</td><td><code class="teach-fragment">    reg input_valid;
+    integer k;
+    always @* begin
+        input_valid=(length_i!=0 &amp;&amp; length_i&lt;=64);
+        for(k=0;k&lt;64;k=k+1)
+            if(k&lt;length_i &amp;&amp;
+               (!x_seen[k] || !w0_seen[k] || !w1_seen[k] ||
+                !w2_seen[k] || !w3_seen[k]))
+                input_valid=0;
+    end</code></td><td>input_valid는 길이가1~64이고 사용 주소 k&lt;length_i의 입력 및 네 가중치가 모두 적재되었을 때 참입니다. 이 조합 반복문은 64개의 조건 검사를 기술하며, 64클록 반복 실행을 의미하지 않습니다.</td></tr><tr><td>40-43</td><td><code class="teach-fragment">    wire any_write=x_wr_en||w_wr_en||b_wr_en;
+    wire launch=(state==IDLE)&amp;&amp;start_i&amp;&amp;input_valid&amp;&amp;!any_write;
+    wire mul_valid=(state==ISSUE);
+    assign load_ready_o=resetn&amp;&amp;!busy_o&amp;&amp;!start_i;</code></td><td>any_write는 세 적재 요청의 OR입니다. launch는 IDLE·start·유효 입력·동시 쓰기 없음의 조건입니다. mul_valid는 ISSUE에서만 1입니다. load_ready는 reset 해제·busy0·start0 조건입니다.</td></tr><tr><td>45-47</td><td><code class="teach-fragment">    wire signed [39:0] acc0,acc1,acc2,acc3;
+    npu_dsp_mac_lane lane0(.clk(clk),.resetn(resetn),.clear_i(launch),
+        .valid_i(mul_valid),.x_i(x_sample),.w_i(w_sample0),.acc_o(acc0));</code></td><td>lane0은 공통 x_sample과 w_sample0을 받아 signed40 acc0을 만듭니다. launch가 clear_i로 연결되어 새 실행의 누산을 초기화합니다.</td></tr><tr><td>48-53</td><td><code class="teach-fragment">    npu_dsp_mac_lane lane1(.clk(clk),.resetn(resetn),.clear_i(launch),
+        .valid_i(mul_valid),.x_i(x_sample),.w_i(w_sample1),.acc_o(acc1));
+    npu_dsp_mac_lane lane2(.clk(clk),.resetn(resetn),.clear_i(launch),
+        .valid_i(mul_valid),.x_i(x_sample),.w_i(w_sample2),.acc_o(acc2));
+    npu_dsp_mac_lane lane3(.clk(clk),.resetn(resetn),.clear_i(launch),
+        .valid_i(mul_valid),.x_i(x_sample),.w_i(w_sample3),.acc_o(acc3));</code></td><td>lane1~3도 같은 x_sample과 각자의 w_sample을 받습니다. 네 곱과 누산은 같은 클록에 병렬 진행하며 네 개 뉴런을 순차 반복하지 않습니다.</td></tr><tr><td>54-58</td><td><code class="teach-fragment">    // 41비트 signed: 40비트 누산값에 Bias를 더할 때 부호 확장 1비트.
+    wire signed [40:0] score0=$signed({acc0[39],acc0})+$signed({bias0[39],bias0});
+    wire signed [40:0] score1=$signed({acc1[39],acc1})+$signed({bias1[39],bias1});
+    wire signed [40:0] score2=$signed({acc2[39],acc2})+$signed({bias2[39],bias2});
+    wire signed [40:0] score3=$signed({acc3[39],acc3})+$signed({bias3[39],bias3});</code></td><td>각 acc와 bias의 bit39를 복제해 41비트로 확장한 뒤 $signed로 해석합니다. 두 signed40의 합이 signed41에 들어갑니다. 예: -3은 확장 후에도 -3입니다.</td></tr><tr><td>59-66</td><td><code class="teach-fragment">    reg [1:0] best_class;
+    reg signed [40:0] best_score;
+    always @*begin
+        best_class=0;best_score=score0;
+        if(score1&gt;best_score)begin best_score=score1;best_class=1;end
+        if(score2&gt;best_score)begin best_score=score2;best_class=2;end
+        if(score3&gt;best_score)begin best_score=score3;best_class=3;end
+    end</code></td><td>best_score를 실제 score0으로 초기화하고 score1~3을 순서대로 엄격한 &gt;로 비교합니다. 동점이면 앞선 낮은 번호가 유지됩니다. 모든 점수가 음수여도 실제 최대를 고릅니다.</td></tr><tr><td>68-75</td><td><code class="teach-fragment">    always @(posedge clk)begin
+        if(!resetn)begin
+            state&lt;=IDLE;busy_o&lt;=0;done_o&lt;=0;error_o&lt;=0;
+            class_o&lt;=0;scores_o&lt;=0;length_q&lt;=0;index_q&lt;=0;
+            x_seen&lt;=0;w0_seen&lt;=0;w1_seen&lt;=0;w2_seen&lt;=0;w3_seen&lt;=0;
+            bias0&lt;=0;bias1&lt;=0;bias2&lt;=0;bias3&lt;=0;
+            x_sample&lt;=0;w_sample0&lt;=0;w_sample1&lt;=0;w_sample2&lt;=0;w_sample3&lt;=0;
+        end else begin</code></td><td>동기 reset은 상태·결과·길이·주소·seen·편향·읽기 샘플을 초기화합니다. xmem과 w0~w3 자체에는 reset 대입이 없으므로 RAM을 전부 지우는 동작은 아닙니다.</td></tr><tr><td>76-80</td><td><code class="teach-fragment">            done_o&lt;=0;error_o&lt;=0;
+            if(load_ready_o)begin
+                if(x_wr_en)begin
+                    xmem[addr_i]&lt;=data_i;x_seen[addr_i]&lt;=1;
+                end</code></td><td>매 정상 에지에서 done/error를 기본0으로 예약합니다. 적재 허용 상태에서 x_wr_en이 참이면 입력 RAM과 해당 seen bit를 함께 갱신합니다.</td></tr><tr><td>81-86</td><td><code class="teach-fragment">                if(w_wr_en)case(neuron_i)
+                    0:begin w0[addr_i]&lt;=data_i;w0_seen[addr_i]&lt;=1;end
+                    1:begin w1[addr_i]&lt;=data_i;w1_seen[addr_i]&lt;=1;end
+                    2:begin w2[addr_i]&lt;=data_i;w2_seen[addr_i]&lt;=1;end
+                    3:begin w3[addr_i]&lt;=data_i;w3_seen[addr_i]&lt;=1;end
+                endcase</code></td><td>neuron_i 0~3의 case가 쓰기 대상 가중치 RAM을 선택합니다. 선택되지 않은 RAM의 저장값은 유지됩니다.</td></tr><tr><td>87-93</td><td><code class="teach-fragment">                if(b_wr_en)case(neuron_i)
+                    0:bias0&lt;=bias_i;
+                    1:bias1&lt;=bias_i;
+                    2:bias2&lt;=bias_i;
+                    3:bias3&lt;=bias_i;
+                endcase
+            end else if(any_write)error_o&lt;=1;</code></td><td>편향 역시 neuron_i에 따라 갱신합니다. 적재 불허 상태에서 any_write가 참이면 error를1로 예약하지만 RAM 쓰기 분기는 실행하지 않습니다.</td></tr><tr><td>94-100</td><td><code class="teach-fragment">            case(state)
+                IDLE:if(start_i)begin
+                    if(!input_valid||any_write)error_o&lt;=1;
+                    else begin
+                        state&lt;=READ;length_q&lt;=length_i;index_q&lt;=0;busy_o&lt;=1;
+                    end
+                end</code></td><td>IDLE의 start 요청에서 input_valid가 거짓이거나 쓰기가 동시면 거부합니다. 정상은 길이를 저장하고 index0·busy1·READ로 진입합니다.</td></tr><tr><td>101-106</td><td><code class="teach-fragment">                READ:begin
+                    x_sample&lt;=xmem[index_q];
+                    w_sample0&lt;=w0[index_q];w_sample1&lt;=w1[index_q];
+                    w_sample2&lt;=w2[index_q];w_sample3&lt;=w3[index_q];
+                    state&lt;=ISSUE;
+                end</code></td><td>READ 상승 에지에서 index_q의 입력과 네 가중치를 sample 레지스터에 읽습니다. 같은 에지 뒤 state가 ISSUE가 됩니다.</td></tr><tr><td>107-110</td><td><code class="teach-fragment">                ISSUE:begin
+                    if({1&#x27;b0,index_q}+7&#x27;d1==length_q)state&lt;=DRAIN1;
+                    else begin index_q&lt;=index_q+1&#x27;b1;state&lt;=READ;end
+                end</code></td><td>ISSUE에서 multiplier가 sample을 수락합니다. {1&#x27;b0,index_q}+7&#x27;d1로 주소를 7비트로 확장하여 63+1도64로 비교합니다. 마지막 주소면 DRAIN1, 아니면 index 증가 후 READ입니다.</td></tr><tr><td>111-115</td><td><code class="teach-fragment">                DRAIN1:state&lt;=DRAIN2;
+                DRAIN2:begin
+                    scores_o&lt;={score3,score2,score1,score0};
+                    class_o&lt;=best_class;done_o&lt;=1;busy_o&lt;=0;state&lt;=IDLE;
+                end</code></td><td>DRAIN1에서 마지막 등록 곱을 누산할 시간을 확보합니다. DRAIN2에서 score3~0을 한 벡터로 등록하고 class·done·busy·state를 갱신합니다.</td></tr><tr><td>116-120</td><td><code class="teach-fragment">                default:begin state&lt;=IDLE;busy_o&lt;=0;error_o&lt;=1;end
+            endcase
+        end
+    end
+endmodule</code></td><td>예상하지 않은 state에서는 IDLE 복귀·busy0·error1을 예약합니다. 정상 상태의 case와 순차 블록을 닫습니다.</td></tr></tbody></table></details><h4>reference_rtl/npu_dsp_mac_lane.v · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-9</td><td><code class="teach-fragment">// (추가) 02장 등록 DSP 곱을 다음 에지에 누산한다. 곱을 다시 수행하지 않는다.
+module npu_dsp_mac_lane #(
+    parameter integer DATA_WIDTH=16,
+    parameter integer ACC_WIDTH=40
+)(
+    input wire clk,resetn,clear_i,valid_i,
+    input wire signed [DATA_WIDTH-1:0] x_i,w_i,
+    output reg signed [ACC_WIDTH-1:0] acc_o
+);</code></td><td>lane의 기본 DATA_WIDTH16, ACC_WIDTH40입니다. 입력과 누산 출력은 signed로 선언합니다. clear_i는 새 실행의 초기화입니다.</td></tr><tr><td>10-15</td><td><code class="teach-fragment">    wire signed [2*DATA_WIDTH-1:0] product;
+    wire product_valid;
+    dsp_multiplier #(.A_WIDTH(DATA_WIDTH),.B_WIDTH(DATA_WIDTH)) dsp(
+        .clk(clk),.resetn(resetn),.clear_i(clear_i),
+        .valid_i(valid_i),.a_i(x_i),.b_i(w_i),
+        .product_o(product),.valid_o(product_valid));</code></td><td>product 폭은 2×DATA_WIDTH로 기본32입니다. dsp_multiplier의 등록 출력과 product_valid를 연결합니다. 여기서 곱을 다시 계산하지 않습니다.</td></tr><tr><td>16-17</td><td><code class="teach-fragment">    wire signed [ACC_WIDTH-1:0] product_extended =
+        {{(ACC_WIDTH-2*DATA_WIDTH){product[2*DATA_WIDTH-1]}},product};</code></td><td>기본 폭에서 product[31]을 8회 복제하여 40비트로 부호 확장합니다. 양수는 상위8비트0, 음수는 FF입니다.</td></tr><tr><td>18-21</td><td><code class="teach-fragment">    always @(posedge clk)begin
+        if(!resetn || clear_i)acc_o&lt;=0;
+        else if(product_valid)acc_o&lt;=acc_o+product_extended;
+    end</code></td><td>상승 에지에 reset 또는 clear가 우선하고, 그렇지 않으면 이전에 등록된 product_valid가1일 때만 누산합니다. 새 곱과 누산은 NBA 때문에 한 에지 차이가 납니다.</td></tr><tr><td>22-25</td><td><code class="teach-fragment">    // synthesis translate_off
+    initial if(ACC_WIDTH&lt;2*DATA_WIDTH)$fatal(1,&quot;ACC_WIDTH too small&quot;);
+    // synthesis translate_on
+endmodule</code></td><td>ACC_WIDTH가 곱 폭보다 작으면 시뮬레이션에서 Fatal을 발생시키는 조건입니다. 폭이 충분하다는 것만으로 임의 길이의 누산 오버플로까지 방지하는 것은 아닙니다.</td></tr></tbody></table></details><h4>reference_rtl/dsp_multiplier.v · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-5</td><td><code class="teach-fragment">`timescale 1ns/1ps
+`default_nettype none
+
+// DSP48E1의 25x18 signed 입력 범위에 맞춘 독립 곱셈 추론 후보.
+// primitive를 직접 생성하지 않으며 실제 DSP 배치는 합성 후 확인한다.</code></td><td>1ns/1ps 시간 단위를 지정하고 암묵 net 생성을 막습니다. DSP48E1에 맞춘 추론 후보이며 실제 DSP 사용 여부는 합성 보고서가 필요합니다.</td></tr><tr><td>6-18</td><td><code class="teach-fragment">module dsp_multiplier #(
+    parameter integer A_WIDTH = 16,
+    parameter integer B_WIDTH = 16
+) (
+    input wire clk,
+    input wire resetn,
+    input wire clear_i,
+    input wire valid_i,
+    input wire signed [A_WIDTH-1:0] a_i,
+    input wire signed [B_WIDTH-1:0] b_i,
+    output reg signed [A_WIDTH+B_WIDTH-1:0] product_o,
+    output reg valid_o
+);</code></td><td>기본 입력 폭16·16, 출력 폭32 및 valid를 선언합니다. reset·clear·valid는 별도 제어 입력입니다.</td></tr><tr><td>19-21</td><td><code class="teach-fragment">    wire signed [24:0] a_dsp_w;
+    wire signed [17:0] b_dsp_w;
+    (* use_dsp = &quot;yes&quot; *) wire signed [42:0] product_full_w;</code></td><td>DSP 후보 입력은 signed25·18, 전체 곱은 signed43입니다. use_dsp 속성은 합성 도구에 의도를 전달합니다.</td></tr><tr><td>23-26</td><td><code class="teach-fragment">    // 작은 정수의 부호를 보존하여 DSP 곱셈 입력 폭까지 확장한다.
+    assign a_dsp_w = {{(25-A_WIDTH){a_i[A_WIDTH-1]}}, a_i};
+    assign b_dsp_w = {{(18-B_WIDTH){b_i[B_WIDTH-1]}}, b_i};
+    assign product_full_w = $signed(a_dsp_w) * $signed(b_dsp_w);</code></td><td>기본 A는 부호 비트9회, B는2회 복제하여 25/18비트로 확장합니다. $signed로 곱을 signed로 해석합니다.</td></tr><tr><td>28-36</td><td><code class="teach-fragment">    // P3-01과 같은 동기식 Reset &gt; Clear &gt; Valid 계약이다.
+    // 상승 에지에서 입력을 수락하고 그 에지 직후 곱과 valid_o를 갱신한다.
+    always @(posedge clk) begin
+        if (!resetn) begin
+            product_o &lt;= {(A_WIDTH+B_WIDTH){1&#x27;b0}};
+            valid_o &lt;= 1&#x27;b0;
+        end else if (clear_i) begin
+            product_o &lt;= {(A_WIDTH+B_WIDTH){1&#x27;b0}};
+            valid_o &lt;= 1&#x27;b0;</code></td><td>상승 에지에서 동기 reset이 최우선, clear가 다음입니다. 두 경우 곱 레지스터와 valid를 0으로 초기화합니다.</td></tr><tr><td>37-44</td><td><code class="teach-fragment">        end else begin
+            valid_o &lt;= valid_i;
+            if (valid_i) begin
+                // 곱의 전체 유효 폭은 A_WIDTH+B_WIDTH. 버리는 상위 비트는 부호 확장뿐이다.
+                product_o &lt;= product_full_w[A_WIDTH+B_WIDTH-1:0];
+            end
+        end
+    end</code></td><td>valid_o에 valid_i를 등록하고 유효 입력일 때만 product_full_w의 하위 A_WIDTH+B_WIDTH 비트를 저장합니다. 16×16의 실제 곱은32비트로 표현 가능하므로 잘라내는 상위11비트는 중복 부호 확장입니다. valid0이면 이전 product는 유지되지만 누산 대상이 아닙니다.</td></tr><tr><td>46-53</td><td><code class="teach-fragment">    // synthesis translate_off
+    initial begin
+        if (A_WIDTH &lt; 2 || A_WIDTH &gt; 25 || B_WIDTH &lt; 2 || B_WIDTH &gt; 18)
+            $fatal(1, &quot;Require 2&lt;=A_WIDTH&lt;=25 and 2&lt;=B_WIDTH&lt;=18&quot;);
+    end
+    // synthesis translate_on
+endmodule
+`default_nettype wire</code></td><td>지원 입력 폭 A 2~25, B 2~18을 시뮬레이션에서 검사합니다. 종료 시 default_nettype wire로 복원합니다.</td></tr></tbody></table></details></div>
+</section><section class="section" id="s02"><h2><span class="num">02</span>독립 정수 모델과 분류</h2><p>뉴런 <code>n</code>의 정답은 <strong>score[n] = bias[n] + Σ(x[k] × w[n][k])</strong>입니다. 예를 들어 입력이 [1, −1]이고 뉴런 0의 가중치가 [1, 1]이면 점수는 0입니다. 같은 입력에 뉴런 1의 가중치가 [1, −1]이면 점수는 2입니다. 모델은 DUT 내부 <code>acc0~acc3</code>를 참조하지 않고 TB의 <code>model_x</code>, <code>model_w</code>, <code>model_bias</code>만으로 계산합니다.</p><p>최댓값을 찾을 때 원본은 <code>&gt;</code>만 사용합니다. 따라서 동점이면 먼저 발견한 낮은 뉴런 번호가 유지됩니다. 모든 점수는 부호 있는 41비트로 비교하며 <code>scores_o[n*41+:41]</code>을 각각 확인합니다. 16비트 입력의 곱은 32비트, 누산기는 40비트, 편향 포함 최종 점수는 41비트입니다. TB에서는 64비트 signed 정수로 독립 계산 후 41비트로 비교합니다. 최대 길이에서 −32768 × −32768 × 64는 68,719,476,736이며 32비트에 담을 수 없습니다. 40비트 최대 양수 편향을 더하면 618,475,290,623이 됩니다. 이는 41비트 signed 범위에 포함됩니다.</p>
+<div class="teach-note"><h3>수치 판서 · 네 점수를 먼저 계산한 뒤 최대를 고른다</h3><p>가중치는 뉴런 순서대로[1,1]·[1,-1]·[-1,1]·[-1,-1]입니다. 입력[1,1]의 점수는[2,0,0,-2]라class0이고, [1,-1]이면[0,2,-2,0]이라class1입니다. 입력 부호를 나머지 두 조합으로 바꾸면 각각class2·3이 됩니다.</p><p>편향[-3,5,-7,10]을 넣은[1,1] 시험은[-1,5,-7,8]로class3입니다. 길이1에서는[-2,6,-8,9]가 됩니다. 점수0부터 best를 시작하고 엄격한 &gt;만 쓰므로 동점이면 낮은 번호가 유지됩니다. 모든 점수가 음수여도0과 비교해 임의 선택하지 않고 실제 score0에서 시작합니다.</p><p>최대 길이에서(-32768)²×64=68,719,476,736입니다. 여기에2^39-1=549,755,813,887을 더하면618,475,290,623입니다. 다른 lane의(-32768×32767)×64-2^39는-618,473,193,472입니다. 둘 다41비트 signed 범위[-2^40,2^40-1] 안이며32비트 계산은 넘칩니다. scores_o[n*41+:41]은 n=0일 때[40:0], n=1일 때[81:41]입니다.</p><h4>핵심 구문 ② · 독립 정답 계산과 점수 패킹</h4><table><thead><tr><th scope="col">입력</th><th scope="col">score0</th><th scope="col">score1</th><th scope="col">score2</th><th scope="col">score3</th><th scope="col">class</th></tr></thead><tbody><tr><td>[1,1]</td><td>2</td><td>0</td><td>0</td><td>-2</td><td>0</td></tr><tr><td>[1,-1]</td><td>0</td><td>2</td><td>-2</td><td>0</td><td>1</td></tr><tr><td>[-1,1]</td><td>0</td><td>-2</td><td>2</td><td>0</td><td>2</td></tr><tr><td>[-1,-1]</td><td>-2</td><td>0</td><td>0</td><td>2</td><td>3</td></tr><tr><td>[1,1]+bias</td><td>-1</td><td>5</td><td>-7</td><td>8</td><td>3</td></tr><tr><td>[1]+bias</td><td>-2</td><td>6</td><td>-8</td><td>9</td><td>3</td></tr><tr><td>[0], bias0</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr></tbody></table><p>편향은 [-3,5,-7,10]입니다. 예를 들어 lane2의 길이2 계산은 (-1×1)+(1×1)-7 → -7입니다. 편향을 누락하면 0이 되므로 class만 비교하면 놓칠 수 있는 오류입니다.</p><table><thead><tr><th scope="col">뉴런 n</th><th scope="col">n*41</th><th scope="col">실제 scores_o 범위</th></tr></thead><tbody><tr><td>0</td><td>0</td><td>[40:0]</td></tr><tr><td>1</td><td>41</td><td>[81:41]</td></tr><tr><td>2</td><td>82</td><td>[122:82]</td></tr><tr><td>3</td><td>123</td><td>[163:123]</td></tr></tbody></table><p><code>scores_o&lt;={score3,score2,score1,score0}</code>는 네 점수를 비트로 연결합니다. <code>$signed(scores_o[n*41+:41])</code>는 시작 위치부터 41비트를 꺼내 signed로 해석합니다. 예: -1의 41비트 표현은 0x1FFFFFFFFFF입니다. signed 비교를 하지 않으면 음수 비트열을 큰 양수로 오해할 수 있습니다.</p><h4>최대 길이64의 네 점수</h4><table><thead><tr><th scope="col">lane</th><th scope="col">곱 ×64</th><th scope="col">편향</th><th scope="col">최종 점수</th></tr></thead><tbody><tr><td>0</td><td>68,719,476,736</td><td>549,755,813,887</td><td>618,475,290,623</td></tr><tr><td>1</td><td>-68,717,379,584</td><td>-549,755,813,888</td><td>-618,473,193,472</td></tr><tr><td>2</td><td>0</td><td>0</td><td>0</td></tr><tr><td>3</td><td>68,719,476,736</td><td>0</td><td>68,719,476,736</td></tr></tbody></table><p>signed40 범위는 -549,755,813,888~549,755,813,887입니다. lane0/1의 최종값은 이 범위를 벗어나지만 signed41 범위 -1,099,511,627,776~1,099,511,627,775 안에 있습니다. 실제 TB는 네 점수를 모델과 비교하고 0/1의 극값은 상수로도 비교합니다.</p></div>
+</section><section class="section" id="s03"><h2><span class="num">03</span>파이프라인과 경계조건</h2><p>원본의 상태 전이는 <code>IDLE → READ → ISSUE → ... → DRAIN1 → DRAIN2 → IDLE</code>입니다. <code>READ</code>에서 메모리 값을 레지스터로 읽고, <code>ISSUE</code>에서 곱셈 입력을 등록합니다. 마지막 입력 이후 두 개의 drain 상태를 거쳐 누산 결과가 <code>scores_o</code>에 기록됩니다. 시작을 수락한 상승 에지 다음부터 <code>done_o</code>가 관찰되는 에지까지는 <strong>2×length+2 클록</strong>입니다. 시작 수락 상승 에지를 E0으로 정의합니다. 이후 READ와 ISSUE가 각각 length회, DRAIN1과 DRAIN2가 각각 1회 실행됩니다. DRAIN2 에지 직후 done_o가 1이 됩니다. 이는 이 RTL 구현의 계약이지 모든 NPU에 공통되는 공식은 아닙니다.</p><table><tr><th>에지 (length=2)</th><th>에지 직전 상태</th><th>에지 직후 동작</th></tr><tr><td>E0</td><td>IDLE</td><td>READ 진입, busy_o=1, 누산기 초기화</td></tr><tr><td>E1</td><td>READ</td><td>주소 0 샘플 등록</td></tr><tr><td>E2</td><td>ISSUE</td><td>주소 0 곱 등록</td></tr><tr><td>E3</td><td>READ</td><td>주소 1 샘플 등록, 주소 0 곱 누산</td></tr><tr><td>E4</td><td>ISSUE</td><td>주소 1 곱 등록</td></tr><tr><td>E5</td><td>DRAIN1</td><td>마지막 곱 누산</td></tr><tr><td>E6</td><td>DRAIN2</td><td>점수/클래스 등록, done_o=1, busy_o=0</td></tr><tr><td>E7</td><td>IDLE</td><td>done_o=0</td></tr></table><p>길이 1은 4클록, 길이 2는 6클록, 길이 64는 130클록입니다.</p><p>정상 길이 1·2·64, 네 클래스, 편향 변경과 실제 동점을 확인합니다. 편향 시험은 네 뉴런 모두에 0이 아닌 값을 넣고 뉴런 0·2에는 음수를 넣어, 뉴런별 편향 덧셈과 41비트 부호 확장을 각각 확인합니다. 길이 0, 미적재 길이 3, 리셋 뒤 길이 1을 각각 거부하고 결과 보존과 오류 펄스를 비교합니다. 길이 65는 64개 주소를 모두 적재한 뒤 시험합니다. 미적재 주소가 남아 있으면 길이 검사와 무관하게 거부되므로, 최대 길이 검사만의 효과를 확인할 수 없기 때문입니다. 연산 중 쓰기는 메모리를 바꾸지 않고 <code>error_o</code> 한 클록 펄스만 발생하는지도 확인합니다. 데이터 누락 오류는 MAC 정답 오류와 구분합니다.</p>
+<div class="teach-note"><h3>타이밍 판서 · 마지막 곱이 누산될 시간을 남긴다</h3><p>E0에서 launch가 각 lane의 곱·누산 상태를 비우고 READ로 진입합니다. length2의 E1은주소0 읽기, E2는곱0 등록, E3은주소1 읽기와 이전 곱0 누산, E4는곱1 등록, E5는마지막 곱1 누산, E6은점수·class·done 등록입니다. 같은 에지에 새 곱을 만들었다고 누산기가 그 값을 바로 쓰지는 않습니다.</p><p>지연은 시작 수락을 제외한2L+2클록이므로 L1=4클록40ns, L2=6클록60ns, L64=130클록1300ns입니다. TB는 상승 에지마다1ns 뒤 출력의 NBA 갱신을 비교합니다. E7의done0까지 확인하여 완료가 한 클록 펄스인지 검사합니다.</p><p>거부 시험의 전제도 독립적으로 세워야 합니다. 길이65는64개 주소가 모두 적재된 뒤 실행하므로 미적재 조건에 가려지지 않습니다. busy 쓰기에는 먼저 실제busy1·load_ready0을 요구하고 원래 입력의 예상 점수를 유지해야 합니다.</p><h4>핵심 구문 ③ · 상승 에지별 파이프라인 의존성</h4><table><thead><tr><th scope="col">에지</th><th scope="col">에지 전 state</th><th scope="col">이번 에지의 동작</th><th scope="col">에지 뒤 곱 valid</th><th scope="col">에지 뒤 acc (lane0, x=[1,1], w=[1,1])</th></tr></thead><tbody><tr><td>E0</td><td>IDLE</td><td>launch, clear, 길이 저장</td><td>0</td><td>0</td></tr><tr><td>E1</td><td>READ</td><td>주소0 샘플 등록</td><td>0</td><td>0</td></tr><tr><td>E2</td><td>ISSUE</td><td>곱0 등록, index1</td><td>1</td><td>0</td></tr><tr><td>E3</td><td>READ</td><td>주소1 샘플 등록, 곱0 누산</td><td>0</td><td>1</td></tr><tr><td>E4</td><td>ISSUE</td><td>곱1 등록</td><td>1</td><td>1</td></tr><tr><td>E5</td><td>DRAIN1</td><td>곱1 누산</td><td>0</td><td>2</td></tr><tr><td>E6</td><td>DRAIN2</td><td>최종 점수·class·done 등록</td><td>0</td><td>2</td></tr><tr><td>E7</td><td>IDLE</td><td>done 기본0</td><td>0</td><td>2</td></tr></tbody></table><p>비차단 대입의 우변은 해당 에지의 이전 값을 읽습니다. E2에 product가 등록되어도 lane의 always는 이전 product_valid=0을 보므로 그 에지에 더하지 않습니다. E3에 이전 등록 곱을 더합니다. 마지막 곱도 E5까지 기다려야 E6에서 완성된 acc+ bias를 결과에 등록할 수 있습니다.</p><p>길이 L에서 READ/ISSUE가 각각 L회, DRAIN1/2가 각각1회이므로 시작 에지 E0 이후 완료는 2L+2클록입니다. TB의 #1은 상승 에지의 NBA 이후 값을 확인하기 위한 1ns 지연입니다. 완료까지 L=1은40ns, L=2는60ns, L=64는1300ns이며 이 값은 코드 계약 계산입니다.</p></div>
+</section><section class="section" id="s04"><h2><span class="num">04</span>스냅샷과 현행 설계의 시간 계약 구분</h2><h3>입력 길이 2의 상승 에지별 시간 계약</h3><div class="figure-wrap" tabindex="0" style="overflow-x:auto"><svg viewBox="0 0 900 245" role="img" aria-label="기존 NPU 스냅샷의 E0 시작 수락부터 E6 완료까지의 교육용 타이밍 도식" style="min-width:760px;width:100%"><g font-size="14" fill="#15171c"><text x="180" y="22" text-anchor="middle">E0</text><rect x="130" y="38" width="100" height="35" fill="#edeafa" stroke="#4635b1"/><text x="180" y="60" text-anchor="middle" font-size="13">IDLE</text><path d="M180 78 V205" stroke="#dddfd8" stroke-dasharray="3 4"/><text x="284" y="22" text-anchor="middle">E1</text><rect x="234" y="38" width="100" height="35" fill="#edeafa" stroke="#4635b1"/><text x="284" y="60" text-anchor="middle" font-size="13">READ</text><path d="M284 78 V205" stroke="#dddfd8" stroke-dasharray="3 4"/><text x="388" y="22" text-anchor="middle">E2</text><rect x="338" y="38" width="100" height="35" fill="#edeafa" stroke="#4635b1"/><text x="388" y="60" text-anchor="middle" font-size="13">ISSUE</text><path d="M388 78 V205" stroke="#dddfd8" stroke-dasharray="3 4"/><text x="492" y="22" text-anchor="middle">E3</text><rect x="442" y="38" width="100" height="35" fill="#edeafa" stroke="#4635b1"/><text x="492" y="60" text-anchor="middle" font-size="13">READ</text><path d="M492 78 V205" stroke="#dddfd8" stroke-dasharray="3 4"/><text x="596" y="22" text-anchor="middle">E4</text><rect x="546" y="38" width="100" height="35" fill="#edeafa" stroke="#4635b1"/><text x="596" y="60" text-anchor="middle" font-size="13">ISSUE</text><path d="M596 78 V205" stroke="#dddfd8" stroke-dasharray="3 4"/><text x="700" y="22" text-anchor="middle">E5</text><rect x="650" y="38" width="100" height="35" fill="#edeafa" stroke="#4635b1"/><text x="700" y="60" text-anchor="middle" font-size="13">DRAIN1</text><path d="M700 78 V205" stroke="#dddfd8" stroke-dasharray="3 4"/><text x="804" y="22" text-anchor="middle">E6</text><rect x="754" y="38" width="100" height="35" fill="#edeafa" stroke="#4635b1"/><text x="804" y="60" text-anchor="middle" font-size="13">DRAIN2</text><path d="M804 78 V205" stroke="#dddfd8" stroke-dasharray="3 4"/><text x="10" y="59">에지 직전 state</text><text x="10" y="104">busy_o</text><text x="10" y="147">done_o</text><text x="10" y="190">mul_valid</text></g><g stroke="#4635b1" stroke-width="2.5" fill="none"><path d="M130 112 H180 V92 H804 V112 H858"/><path d="M130 155 H804 V135 H858"/><path d="M130 198 H284 V178 H388 V198 H492 V178 H596 V198 H858"/></g><text x="450" y="232" text-anchor="middle" font-size="13" fill="#4a4f5a">개념 파형 · busy/done은 에지 직후 갱신, mul_valid는 ISSUE 구간 · 실측 아님</text></svg></div><p>시작 수락 에지 E0에서 완료 에지 E6까지 6클록입니다. 일반 길이 L에 대한 스냅샷 지연은 2L+2입니다.</p><table><tr><th>구분</th><th>완료 상태</th><th>시작 수락 이후 지연</th></tr><tr><td>이 장의 독립 배포 RTL</td><td>DRAIN2</td><td>2L+2</td></tr><tr><td>현행 NPU 설계 제2장 · 통합 NPU Top</td><td>CMP2 (DRAIN2 → CMP1 → CMP2)</td><td>2L+4</td></tr></table><p>현행 설계는 비교 경로가 두 단계로 분리되어 있습니다. 이 실습은 기존 스냅샷의 계약을 검사하므로 현행 엔진을 대신 넣으면 TB의 완료 시점 계약도 함께 변경해야 합니다. 두 설계의 동작 검증 결과는 서로 대체할 수 없습니다.</p>
+<div class="teach-note"><h3>스냅샷 계약 · 같은 이름의 최신 엔진도 지연은 다를 수 있다</h3><p>이 장 스냅샷은 DRAIN2에서 조합 비교 결과를 등록하여2L+2입니다. 원본이 설명하는 현행 설계의 CMP1·CMP2 추가는2L+4 계약입니다. 현행 RTL로 교체한 뒤 기존 TB가 LATENCY로 실패한다면 먼저 목표 사양과 기준 커밋을 확인해야 합니다. 지연 차이를 숨겨 통과시키는 것은 검증이 아닙니다.</p><p>수업에서는 length2 상태 표의 각 에지 옆에 메모리 샘플·곱 레지스터·누산기·출력의 소유 값을 나란히 적습니다. ‘두 drain’이 관습적인 기다림이 아니라 실제 마지막 곱과 누산·점수 등록의 의존성임을 확인할 수 있습니다.</p><h4>핵심 구문 ④ · 길이와 주소, 실행 수락 조건</h4><table><thead><tr><th scope="col">조건</th><th scope="col">실제 표현</th><th scope="col">의미</th></tr></thead><tbody><tr><td>주소63의 다음 수</td><td>{1'b0,index_q}+7'd1</td><td>63+1=64를 7비트로 유지</td></tr><tr><td>유효 길이</td><td>length_i!=0 &amp;&amp; length_i&lt;=64</td><td>0·65는 거부</td></tr><tr><td>유효 데이터</td><td>k&lt;length_i 및 모든 seen[k]</td><td>필요 주소의 다섯 RAM 적재 확인</td></tr><tr><td>시작 수락</td><td>state==IDLE &amp;&amp; start_i &amp;&amp; input_valid &amp;&amp; !any_write</td><td>새 실행과 누산 초기화</td></tr><tr><td>적재 허용</td><td>resetn &amp;&amp; !busy_o &amp;&amp; !start_i</td><td>실행 중/시작과 동시 쓰기 차단</td></tr></tbody></table><p>길이65 시험을 하기 전에 64개 주소를 전부 적재하는 이유는 유효 데이터 누락과 길이 오류를 구분하기 위해서입니다. bias에는 seen이 없으므로 초기0도 유효합니다. 스냅샷의 DRAIN2 등록 경로와 현행 엔진의 비교 파이프라인은 별개이며, 여기서는 고정 원본 커밋의 2L+2 계약만 검증합니다.</p></div>
+</section><section class="section" id="s05"><h2><span class="num">05</span>전체 SystemVerilog 테스트벤치</h2><p>아래 코드는 별도 참조 배열을 만들고 8개의 정상 연산과 4개의 거부 시나리오를 자동 검사합니다. <code>$fatal</code>이 실행되면 시뮬레이션은 실패합니다. 원본 NPU/DSP 모듈은 변경하지 않습니다.</p><div class="codeblock"><div class="codebar"><span>tb/ch23/tb_npu_integrated.sv · SystemVerilog · 신규 TB · 전체 코드</span></div><pre tabindex="0"><code>`timescale 1ns/1ps
+// 제23장: 원본 npu_engine4 + DSP lane + multiplier 통합 검증.
+// 정답은 DUT 내부 누산기가 아니라 독립 integer 참조 모델로 계산한다.
+module tb_npu_integrated;
+    reg clk=0, resetn=0, start_i=0;
+    reg [6:0] length_i=0;
+    reg x_wr_en=0, w_wr_en=0, b_wr_en=0;
+    reg [5:0] addr_i=0;
+    reg [1:0] neuron_i=0;
+    reg signed [15:0] data_i=0;
+    reg signed [39:0] bias_i=0;
+    wire load_ready_o, busy_o, done_o, error_o;
+    wire [1:0] class_o;
+    wire [163:0] scores_o;
+
+    // 원본 포트와 폭을 그대로 연결한다.
+    npu_engine4 dut (
+        .clk(clk), .resetn(resetn), .start_i(start_i),
+        .length_i(length_i), .x_wr_en(x_wr_en),
+        .w_wr_en(w_wr_en), .b_wr_en(b_wr_en),
+        .addr_i(addr_i), .neuron_i(neuron_i),
+        .data_i(data_i), .bias_i(bias_i),
+        .load_ready_o(load_ready_o), .busy_o(busy_o),
+        .done_o(done_o), .error_o(error_o),
+        .class_o(class_o), .scores_o(scores_o)
+    );
+    always #5 clk=~clk;
+
+    // TB 전용 입력/가중치/편향 복제본: DUT 내부 메모리 참조 금지.
+    integer model_x[0:63];
+    integer model_w[0:3][0:63];
+    reg signed [39:0] model_bias[0:3];
+    reg signed [40:0] expected[0:3];
+    integer i,j,cycles,tests=0;
+    reg [1:0] expected_class;
+    reg signed [40:0] best;
+
+    task automatic load_x(input [5:0] addr, input signed [15:0] value);
+        begin
+            @(negedge clk);
+            if (load_ready_o !== 1'b1) $fatal(1,"FAIL LOAD_X_READY");
+            addr_i=addr; data_i=value; x_wr_en=1;
+            @(negedge clk);
+            x_wr_en=0; model_x[addr]=value;
+        end
+    endtask
+
+    task automatic load_w(input [1:0] neuron, input [5:0] addr,
+                          input signed [15:0] value);
+        begin
+            @(negedge clk);
+            if (load_ready_o !== 1'b1) $fatal(1,"FAIL LOAD_W_READY");
+            neuron_i=neuron; addr_i=addr; data_i=value; w_wr_en=1;
+            @(negedge clk);
+            w_wr_en=0; model_w[neuron][addr]=value;
+        end
+    endtask
+
+    task automatic load_bias(input [1:0] neuron,
+                             input signed [39:0] value);
+        begin
+            @(negedge clk);
+            if (load_ready_o !== 1'b1) $fatal(1,"FAIL LOAD_BIAS_READY");
+            neuron_i=neuron; bias_i=value; b_wr_en=1;
+            @(negedge clk);
+            b_wr_en=0; model_bias[neuron]=value;
+        end
+    endtask
+
+    // 4개 뉴런의 signed 곱-누산 + bias를 별도로 계산한다.
+    // 동점이면 낮은 뉴런 번호를 선택한다(원본의 &gt; 비교 계약).
+    task automatic calculate(input integer len);
+        integer n,k;
+        longint signed acc;
+        begin
+            for(n=0;n&lt;4;n=n+1) begin
+                acc=$signed(model_bias[n]);
+                for(k=0;k&lt;len;k=k+1)
+                    acc=acc+$signed(model_x[k])*$signed(model_w[n][k]);
+                expected[n]=acc[40:0];
+            end
+            expected_class=0;
+            best=expected[0];
+            for(n=1;n&lt;4;n=n+1)
+                if(expected[n]&gt;best) begin
+                    best=expected[n];
+                    expected_class=n;
+                end
+        end
+    endtask
+
+    // 시작 에지를 0으로 세고 done_o가 올라오는 에지까지 측정.
+    // 원본 FSM: READ/ISSUE 각각 len회, DRAIN1/2 이후 done.
+    // done 관측 지연: 2*len+2 클록(시작 에지 제외).
+    task automatic execute(input integer len);
+        integer n;
+        begin
+            calculate(len);
+            @(negedge clk);
+            if(load_ready_o !== 1'b1) $fatal(1,"FAIL NOT_IDLE");
+            length_i=len; start_i=1;
+            @(posedge clk);
+            #1;
+            if(busy_o !== 1'b1 || done_o !== 1'b0 || error_o !== 1'b0)
+                $fatal(1,"FAIL BUSY_START");
+            @(negedge clk);
+            start_i=0;
+            cycles=0;
+            while(done_o !== 1'b1) begin
+                @(posedge clk);
+                #1;
+                cycles=cycles+1;
+                if(done_o !== 1'b1 &amp;&amp; (busy_o !== 1'b1 || load_ready_o !== 1'b0 || error_o !== 1'b0))
+                    $fatal(1,"FAIL BUSY_CONTRACT");
+                if(cycles&gt;2*len+10) $fatal(1,"FAIL DONE_TIMEOUT");
+            end
+            if(cycles != 2*len+2)
+                $fatal(1,"FAIL LATENCY got=%0d expected=%0d",cycles,2*len+2);
+            if(busy_o !== 1'b0 || error_o !== 1'b0 ||
+               class_o !== expected_class)
+                $fatal(1,"FAIL STATUS_CLASS got=%0d expected=%0d",
+                       class_o,expected_class);
+            for(n=0;n&lt;4;n=n+1)
+                if($signed(scores_o[n*41+:41]) !== expected[n])
+                    $fatal(1,"FAIL SCORE neuron=%0d got=%0d expected=%0d",
+                           n,$signed(scores_o[n*41+:41]),expected[n]);
+            tests=tests+1;
+            $display("CHECK len=%0d cycles=%0d class=%0d",len,cycles,class_o);
+            @(posedge clk);
+            #1;
+            if(done_o !== 1'b0) $fatal(1,"FAIL DONE_NOT_PULSE");
+        end
+    endtask
+
+    // (추가) 거부된 시작은 결과를 보존하고 error_o만 1클록 발생시킨다.
+    task automatic reject_start(input integer len);
+        reg [163:0] old_scores;
+        reg [1:0] old_class;
+        begin
+            @(negedge clk);
+            old_scores=scores_o; old_class=class_o;
+            length_i=len; start_i=1;
+            @(posedge clk); #1;
+            if(error_o !== 1'b1 || busy_o !== 1'b0 || done_o !== 1'b0 ||
+               scores_o !== old_scores || class_o !== old_class)
+                $fatal(1,"FAIL REJECT len=%0d",len);
+            @(negedge clk); start_i=0;
+            @(posedge clk); #1;
+            if(error_o !== 1'b0 || load_ready_o !== 1'b1)
+                $fatal(1,"FAIL REJECT_RECOVERY len=%0d",len);
+            $display("REJECT len=%0d",len);
+        end
+    endtask
+
+    initial begin
+        #1000000;
+        $fatal(1,"FAIL GLOBAL_TIMEOUT");
+    end
+
+    initial begin
+        $dumpfile("ch23_npu_integrated.vcd");
+        $dumpvars(0,tb_npu_integrated);
+        repeat(5) @(negedge clk);
+        resetn=1;
+        // 길이 2, 음수 가중치, 네 클래스의 독립 정답 비교.
+        for(i=0;i&lt;4;i=i+1) begin
+            model_bias[i]=0;
+            load_w(i,0,(i&amp;2)?-16'sd1:16'sd1);
+            load_w(i,1,(i&amp;1)?-16'sd1:16'sd1);
+        end
+        for(j=0;j&lt;4;j=j+1) begin
+            load_x(0,(j&amp;2)?-16'sd1:16'sd1);
+            load_x(1,(j&amp;1)?-16'sd1:16'sd1);
+            execute(2);
+            if(class_o !== j[1:0]) $fatal(1,"FAIL CLASS_CASE %0d",j);
+        end
+        // 편향은 누산 결과에 더해지며 뉴런 3이 우승한다.
+        load_x(0,16'sd1); load_x(1,16'sd1);
+        // (추가) 네 lane의 bias 경로를 모두 0이 아닌 값으로 사용한다.
+        // 음수 bias는 41비트 부호 확장, 뉴런 2 bias는 덧셈 누락을 검출한다.
+        load_bias(0,-40'sd3);
+        load_bias(1,40'sd5);
+        load_bias(2,-40'sd7);
+        load_bias(3,40'sd10);
+        execute(2);
+        if(class_o !== 2'd3) $fatal(1,"FAIL BIAS_CLASS");
+        // 길이 1: 남은 유효 가중치에 대한 결과만 비교.
+        execute(1);
+        // (추가) 연산 중 쓰기는 메모리를 바꾸지 않고 error_o 한 클록만 발생.
+        calculate(1);
+        @(negedge clk);
+        if(load_ready_o !== 1'b1) $fatal(1,"FAIL BUSY_WRITE_IDLE");
+        length_i=1; start_i=1;
+        @(negedge clk);
+        start_i=0;
+        if(busy_o !== 1'b1 || load_ready_o !== 1'b0)
+            $fatal(1,"FAIL BUSY_WRITE_PRECONDITION");
+        addr_i=0; data_i=16'sd7; x_wr_en=1;
+        @(posedge clk); #1;
+        if(error_o !== 1'b1 || busy_o !== 1'b1)
+            $fatal(1,"FAIL BUSY_WRITE_ERROR");
+        @(negedge clk);
+        x_wr_en=0;
+        cycles=0;
+        while(done_o !== 1'b1) begin
+            @(posedge clk); #1;
+            cycles=cycles+1;
+            if(cycles&gt;10) $fatal(1,"FAIL BUSY_WRITE_DONE_TIMEOUT");
+        end
+        if(class_o !== expected_class || error_o !== 1'b0)
+            $fatal(1,"FAIL BUSY_WRITE_RESULT");
+        for(i=0;i&lt;4;i=i+1)
+            if($signed(scores_o[i*41+:41]) !== expected[i])
+                $fatal(1,"FAIL BUSY_WRITE_SCORE neuron=%0d",i);
+        $display("BUSY_WRITE rejected error_pulse=1 result_kept=1");
+        // (추가) 길이 0, 미적재 주소를 각각 거부.
+        reject_start(0);
+        reject_start(3);
+
+        // (추가) 네 점수가 모두 0인 실제 동점: 가장 낮은 번호 0.
+        for(i=0;i&lt;4;i=i+1) load_bias(i,40'sd0);
+        load_x(0,16'sd0);
+        execute(1);
+        if(class_o !== 2'd0) $fatal(1,"FAIL TIE");
+
+        // (추가) 최대 길이 64, signed 16비트 양 끝, signed 40비트 bias.
+        // -32768 × -32768 × 64의 누산은 32비트 범위를 초과한다.
+        for(j=0;j&lt;64;j=j+1) begin
+            load_x(j,16'sh8000);
+            load_w(0,j,16'sh8000);
+            load_w(1,j,16'sh7fff);
+            load_w(2,j,16'sd0);
+            load_w(3,j,16'sh8000);
+        end
+        load_bias(0,40'sh7fffffffff);
+        load_bias(1,40'sh8000000000);
+        execute(64);
+        if(class_o !== 2'd0 ||
+           $signed(scores_o[0+:41]) !== 41'sd618475290623 ||
+           $signed(scores_o[41+:41]) !== -41'sd618473193472)
+            $fatal(1,"FAIL EXTREME_SCORE");
+        // (변경) 64개 주소가 모두 적재된 뒤 길이 65를 시험해야
+        // 미적재 검사가 아닌 최대 길이 검사만으로 거부됨을 확인할 수 있다.
+        reject_start(65);
+
+        // (추가) reset은 유효 비트를 지운다. 기존 RAM 값은 사용 불가.
+        @(negedge clk); resetn=0;
+        @(posedge clk); #1;
+        if(busy_o !== 1'b0 || done_o !== 1'b0 || error_o !== 1'b0 ||
+           scores_o !== 164'd0 || class_o !== 2'd0)
+            $fatal(1,"FAIL RESET");
+        @(negedge clk); resetn=1;
+        reject_start(1);
+        $display("PASS CH23 cases=%0d rejected=4",tests);
+        $finish;
+    end
+endmodule
+</code></pre></div><h3>코드 풀이 — 핵심 구문</h3><p><code>calculate()</code>는 입력과 가중치를 독립 배열에서 읽어 기대 점수와 클래스를 계산합니다. <code>execute()</code>는 시작 신호를 한 클록 제시하고 <code>done_o</code>까지의 클록을 셉니다. <code>$signed(scores_o[n*41+:41]) !== expected[n]</code>는 실제 점수와 독립 모델을 4상태 비교합니다. <code>load_x()</code>와 <code>load_w()</code>는 <code>load_ready_o</code>를 확인해 유효한 적재만 수행합니다.</p>
+<div class="teach-note"><h3>전체 코드 · 독립 입력 사본으로 기대값을 만든다</h3><p>load_x/w/bias task는 공개 적재 포트를 구동하고 성공한 절차 뒤 TB model 배열을 갱신합니다. calculate는 이 사본만 읽으며 DUT의 xmem·acc를 참조하지 않습니다. 64비트 longint로 합을 계산한 뒤41비트로 비교합니다. 같은 내부 값을 읽어 정답처럼 쓰는 자기 비교를 피합니다.</p><p>cases8은 네 클래스4+편향1+길이1 한 번+실제0동점1+최대길이1의 execute 호출 수입니다. 별도 busy 쓰기 실행은 tests를 늘리지 않습니다. reject_start 호출은0·미적재3·전체적재후65·reset후1 네 번이며 출력의 rejected=4는 이 시나리오에 맞춘 고정 문구입니다. 별도 거부 카운터가 있는 것처럼 설명하지 않습니다.</p><h4>핵심 구문 ⑤ · 검증 모델의 독립성과 완료 검사</h4><table><thead><tr><th scope="col">실제 구문</th><th scope="col">역할</th></tr></thead><tbody><tr><td><code>acc=$signed(model_bias[n])</code></td><td>뉴런마다 64비트 모델을 편향으로 초기화</td></tr><tr><td><code>acc=acc+$signed(model_x[k])*$signed(model_w[n][k])</code></td><td>요청 사본으로 곱과 합 계산</td></tr><tr><td><code>expected[n]=acc[40:0]</code></td><td>지원 범위 안의 점수를 41비트로 저장</td></tr><tr><td><code>if(cycles != 2*len+2)</code></td><td>정확한 완료 지연 요구</td></tr><tr><td><code>$signed(scores_o[n*41+:41]) !== expected[n]</code></td><td>네 개 실제 출력과 독립 모델 비교</td></tr><tr><td><code>if(done_o !== 1'b0)</code></td><td>정상 execute 다음 에지의 done 해제 확인</td></tr></tbody></table><p>class만 비교하면 네 점수에 동일한 오차가 더해져도 통과할 수 있습니다. 점수 비교와 class 비교, 지연 비교를 함께 요구해야 합니다. 모델 자체도 원본 의도와 같아야 하므로 고정 극값 두 개를 추가로 검사합니다.</p><table><thead><tr><th scope="col">시험</th><th scope="col">execute 횟수</th><th scope="col">기타</th></tr></thead><tbody><tr><td>네 부호 조합</td><td>4</td><td>각 class 0~3</td></tr><tr><td>편향 길이2/길이1</td><td>2</td><td>비영 편향 전체</td></tr><tr><td>busy 쓰기</td><td>0</td><td>별도 정상 진행 결과 비교</td></tr><tr><td>실제 0 동점</td><td>1</td><td>class0</td></tr><tr><td>최대 길이64</td><td>1</td><td>130클록/극값</td></tr><tr><td>거부 시작</td><td>0</td><td>0,3,65,reset 후1의 4회 호출</td></tr></tbody></table><h4>검증 증거의 범위 · busy 쓰기와 동점</h4><p>원본 RTL은 busy 동안 쓰기 분기를 실행하지 않으며 error_o를 기본0으로 예약했다가 금지 쓰기가 있으면1로 설정합니다. 하지만 현재 TB의 busy 쓰기 자극은 길이1의 READ 에지에 들어갑니다. 해당 에지의 읽기 샘플은 이전 RAM 값을 취하므로 잘못된 동시 RAM 쓰기가 있어도 현재 실행 결과만으로는 영구 저장 변경을 반드시 검출하지 못합니다. 다음 재실행 전 실제 RAM 보존을 별도로 시험하는 검증은 이 장에 없습니다. error는 쓰기 에지의1과 완료 시0을 검사하지만 그 사이 모든 에지에서 정확히 한 클록만 1인지 직접 단언하지 않습니다. 따라서 출력의 <code>error_pulse=1 result_kept=1</code> 문구를 더 넓은 검증의 증거로 해석하지 않습니다.</p><p>또한 네 점수0의 동점은 실제 시험입니다. 모든 점수가 음수인 경우의 최대값 선택은 코드 구조로 설명할 수 있지만 별도 all-negative 시험을 수행했다고 주장하지 않습니다. 원본 학습안내서의 시험 코드는 그대로 유지합니다.</p><h4>tb/ch23/tb_npu_integrated.sv · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-9</td><td><code class="teach-fragment">`timescale 1ns/1ps
+// 제23장: 원본 npu_engine4 + DSP lane + multiplier 통합 검증.
+// 정답은 DUT 내부 누산기가 아니라 독립 integer 참조 모델로 계산한다.
+module tb_npu_integrated;
+    reg clk=0, resetn=0, start_i=0;
+    reg [6:0] length_i=0;
+    reg x_wr_en=0, w_wr_en=0, b_wr_en=0;
+    reg [5:0] addr_i=0;
+    reg [1:0] neuron_i=0;</code></td><td>시간 단위1ns와 정밀도1ps를 사용합니다. 클록·리셋·시작·길이·적재 enable·주소·뉴런 번호는 TB 자극입니다.</td></tr><tr><td>10-14</td><td><code class="teach-fragment">    reg signed [15:0] data_i=0;
+    reg signed [39:0] bias_i=0;
+    wire load_ready_o, busy_o, done_o, error_o;
+    wire [1:0] class_o;
+    wire [163:0] scores_o;</code></td><td>data_i는 signed16, bias_i는 signed40이며 scores_o는 164비트 packed 벡터입니다. 각 부분을 signed로 해석해야 음수 점수를 바르게 비교합니다.</td></tr><tr><td>16-27</td><td><code class="teach-fragment">    // 원본 포트와 폭을 그대로 연결한다.
+    npu_engine4 dut (
+        .clk(clk), .resetn(resetn), .start_i(start_i),
+        .length_i(length_i), .x_wr_en(x_wr_en),
+        .w_wr_en(w_wr_en), .b_wr_en(b_wr_en),
+        .addr_i(addr_i), .neuron_i(neuron_i),
+        .data_i(data_i), .bias_i(bias_i),
+        .load_ready_o(load_ready_o), .busy_o(busy_o),
+        .done_o(done_o), .error_o(error_o),
+        .class_o(class_o), .scores_o(scores_o)
+    );
+    always #5 clk=~clk;</code></td><td>원본 DUT의 모든 공개 포트를 연결하고 5ns마다 클록을 반전하여 10ns 주기를 만듭니다.</td></tr><tr><td>29-36</td><td><code class="teach-fragment">    // TB 전용 입력/가중치/편향 복제본: DUT 내부 메모리 참조 금지.
+    integer model_x[0:63];
+    integer model_w[0:3][0:63];
+    reg signed [39:0] model_bias[0:3];
+    reg signed [40:0] expected[0:3];
+    integer i,j,cycles,tests=0;
+    reg [1:0] expected_class;
+    reg signed [40:0] best;</code></td><td>model_x/w는 signed32 integer 배열, model_bias는 signed40, expected/best는 signed41입니다. 모델은 실제 적재 자극의 독립 사본을 쓰며 DUT 내부 RAM이나 누산기를 읽지 않습니다.</td></tr><tr><td>38-46</td><td><code class="teach-fragment">    task automatic load_x(input [5:0] addr, input signed [15:0] value);
+        begin
+            @(negedge clk);
+            if (load_ready_o !== 1&#x27;b1) $fatal(1,&quot;FAIL LOAD_X_READY&quot;);
+            addr_i=addr; data_i=value; x_wr_en=1;
+            @(negedge clk);
+            x_wr_en=0; model_x[addr]=value;
+        end
+    endtask</code></td><td>load_x는 하강 에지에 load_ready가 정확히1인지 확인하고 주소와 값을 구동합니다. 다음 하강 에지에 enable을 내리고 모델 사본을 갱신합니다. DUT는 사이의 상승 에지에 값을 저장합니다.</td></tr><tr><td>48-57</td><td><code class="teach-fragment">    task automatic load_w(input [1:0] neuron, input [5:0] addr,
+                          input signed [15:0] value);
+        begin
+            @(negedge clk);
+            if (load_ready_o !== 1&#x27;b1) $fatal(1,&quot;FAIL LOAD_W_READY&quot;);
+            neuron_i=neuron; addr_i=addr; data_i=value; w_wr_en=1;
+            @(negedge clk);
+            w_wr_en=0; model_w[neuron][addr]=value;
+        end
+    endtask</code></td><td>load_w는 뉴런 번호와 주소를 함께 받아 대상 가중치를 선택합니다. 적재 절차 뒤 model_w[neuron][addr]에 동일한 요청값을 기록합니다.</td></tr><tr><td>59-68</td><td><code class="teach-fragment">    task automatic load_bias(input [1:0] neuron,
+                             input signed [39:0] value);
+        begin
+            @(negedge clk);
+            if (load_ready_o !== 1&#x27;b1) $fatal(1,&quot;FAIL LOAD_BIAS_READY&quot;);
+            neuron_i=neuron; bias_i=value; b_wr_en=1;
+            @(negedge clk);
+            b_wr_en=0; model_bias[neuron]=value;
+        end
+    endtask</code></td><td>load_bias는 40비트 signed 값과 뉴런 번호를 전달합니다. bias에는 주소가 필요하지 않습니다. 모델 사본 역시 별도 저장합니다.</td></tr><tr><td>70-77</td><td><code class="teach-fragment">    // 4개 뉴런의 signed 곱-누산 + bias를 별도로 계산한다.
+    // 동점이면 낮은 뉴런 번호를 선택한다(원본의 &gt; 비교 계약).
+    task automatic calculate(input integer len);
+        integer n,k;
+        longint signed acc;
+        begin
+            for(n=0;n&lt;4;n=n+1) begin
+                acc=$signed(model_bias[n]);</code></td><td>calculate는 len을 입력받고 뉴런별 signed64 longint acc를 편향으로 초기화합니다. 이 변수는 TB 정답 계산용입니다.</td></tr><tr><td>78-81</td><td><code class="teach-fragment">                for(k=0;k&lt;len;k=k+1)
+                    acc=acc+$signed(model_x[k])*$signed(model_w[n][k]);
+                expected[n]=acc[40:0];
+            end</code></td><td>각 입력과 가중치의 signed 곱을 64비트 누산 식에서 더하고 결과 하위41비트를 expected에 저장합니다. 현재 지원 범위에서 실제 합은 41비트 안에 있으므로 정보 손실이 없습니다.</td></tr><tr><td>82-90</td><td><code class="teach-fragment">            expected_class=0;
+            best=expected[0];
+            for(n=1;n&lt;4;n=n+1)
+                if(expected[n]&gt;best) begin
+                    best=expected[n];
+                    expected_class=n;
+                end
+        end
+    endtask</code></td><td>expected[0]부터 시작하여 더 큰 점수가 있을 때만 best와 expected_class를 변경합니다. 4개 점수의 동점 우선순위를 구현합니다.</td></tr><tr><td>92-98</td><td><code class="teach-fragment">    // 시작 에지를 0으로 세고 done_o가 올라오는 에지까지 측정.
+    // 원본 FSM: READ/ISSUE 각각 len회, DRAIN1/2 이후 done.
+    // done 관측 지연: 2*len+2 클록(시작 에지 제외).
+    task automatic execute(input integer len);
+        integer n;
+        begin
+            calculate(len);</code></td><td>execute는 시작 에지를 0으로 세는 계약으로 독립 기대값을 먼저 계산합니다. DUT 진행 중 그 내부 상태를 정답으로 읽지 않습니다.</td></tr><tr><td>99-108</td><td><code class="teach-fragment">            @(negedge clk);
+            if(load_ready_o !== 1&#x27;b1) $fatal(1,&quot;FAIL NOT_IDLE&quot;);
+            length_i=len; start_i=1;
+            @(posedge clk);
+            #1;
+            if(busy_o !== 1&#x27;b1 || done_o !== 1&#x27;b0 || error_o !== 1&#x27;b0)
+                $fatal(1,&quot;FAIL BUSY_START&quot;);
+            @(negedge clk);
+            start_i=0;
+            cycles=0;</code></td><td>하강 에지에 ready를 확인하고 len/start를 구동합니다. 시작 상승 에지1ns 뒤 busy1·done0·error0을 요구한 뒤 하강 에지에 start를 내리고 cycles를0으로 초기화합니다.</td></tr><tr><td>109-116</td><td><code class="teach-fragment">            while(done_o !== 1&#x27;b1) begin
+                @(posedge clk);
+                #1;
+                cycles=cycles+1;
+                if(done_o !== 1&#x27;b1 &amp;&amp; (busy_o !== 1&#x27;b1 || load_ready_o !== 1&#x27;b0 || error_o !== 1&#x27;b0))
+                    $fatal(1,&quot;FAIL BUSY_CONTRACT&quot;);
+                if(cycles&gt;2*len+10) $fatal(1,&quot;FAIL DONE_TIMEOUT&quot;);
+            end</code></td><td>완료가 정확히1이 될 때까지 매 상승 에지1ns 뒤 cycles를 증가시킵니다. 진행 중 busy1·ready0·error0을 요구하고 2L+10을 초과하면 timeout입니다.</td></tr><tr><td>117-122</td><td><code class="teach-fragment">            if(cycles != 2*len+2)
+                $fatal(1,&quot;FAIL LATENCY got=%0d expected=%0d&quot;,cycles,2*len+2);
+            if(busy_o !== 1&#x27;b0 || error_o !== 1&#x27;b0 ||
+               class_o !== expected_class)
+                $fatal(1,&quot;FAIL STATUS_CLASS got=%0d expected=%0d&quot;,
+                       class_o,expected_class);</code></td><td>최종 cycles가 정확히2L+2인지, busy0·error0·class 일치인지 확인합니다. timeout 이내라도 완료가 너무 빠르거나 늦으면 LATENCY 오류입니다.</td></tr><tr><td>123-126</td><td><code class="teach-fragment">            for(n=0;n&lt;4;n=n+1)
+                if($signed(scores_o[n*41+:41]) !== expected[n])
+                    $fatal(1,&quot;FAIL SCORE neuron=%0d got=%0d expected=%0d&quot;,
+                           n,$signed(scores_o[n*41+:41]),expected[n]);</code></td><td>n*41+:41은 뉴런별 41비트 범위를 선택합니다. part-select 자체는 unsigned이므로 $signed로 해석한 뒤 expected[n]과 !==로 비교합니다. X/Z도 오류입니다.</td></tr><tr><td>127-133</td><td><code class="teach-fragment">            tests=tests+1;
+            $display(&quot;CHECK len=%0d cycles=%0d class=%0d&quot;,len,cycles,class_o);
+            @(posedge clk);
+            #1;
+            if(done_o !== 1&#x27;b0) $fatal(1,&quot;FAIL DONE_NOT_PULSE&quot;);
+        end
+    endtask</code></td><td>정상 execute의 tests를 증가시키고 CHECK 메시지를 기록합니다. 다음 상승 에지1ns 뒤 done0을 확인하여 완료 펄스를 검사합니다.</td></tr><tr><td>135-142</td><td><code class="teach-fragment">    // (추가) 거부된 시작은 결과를 보존하고 error_o만 1클록 발생시킨다.
+    task automatic reject_start(input integer len);
+        reg [163:0] old_scores;
+        reg [1:0] old_class;
+        begin
+            @(negedge clk);
+            old_scores=scores_o; old_class=class_o;
+            length_i=len; start_i=1;</code></td><td>reject_start는 이전 전체 점수와 class를 보관하고 len/start를 제시합니다. 이전 성공 결과를 보존해야 한다는 거부 계약을 검사합니다.</td></tr><tr><td>143-153</td><td><code class="teach-fragment">            @(posedge clk); #1;
+            if(error_o !== 1&#x27;b1 || busy_o !== 1&#x27;b0 || done_o !== 1&#x27;b0 ||
+               scores_o !== old_scores || class_o !== old_class)
+                $fatal(1,&quot;FAIL REJECT len=%0d&quot;,len);
+            @(negedge clk); start_i=0;
+            @(posedge clk); #1;
+            if(error_o !== 1&#x27;b0 || load_ready_o !== 1&#x27;b1)
+                $fatal(1,&quot;FAIL REJECT_RECOVERY len=%0d&quot;,len);
+            $display(&quot;REJECT len=%0d&quot;,len);
+        end
+    endtask</code></td><td>수락 에지1ns 뒤 error1·busy0·done0·결과 유지 여부를 확인합니다. start를 내린 다음 에지에서 error0·ready1을 검사합니다. 거부 건수 변수는 따로 증가시키지 않습니다.</td></tr><tr><td>155-164</td><td><code class="teach-fragment">    initial begin
+        #1000000;
+        $fatal(1,&quot;FAIL GLOBAL_TIMEOUT&quot;);
+    end
+
+    initial begin
+        $dumpfile(&quot;ch23_npu_integrated.vcd&quot;);
+        $dumpvars(0,tb_npu_integrated);
+        repeat(5) @(negedge clk);
+        resetn=1;</code></td><td>1,000,000ns=1ms 전역 watchdog와 VCD 기록을 설정합니다. 초기 5하강 에지를 기다려 동기 reset을 거친 뒤 resetn을1로 해제합니다.</td></tr><tr><td>165-170</td><td><code class="teach-fragment">        // 길이 2, 음수 가중치, 네 클래스의 독립 정답 비교.
+        for(i=0;i&lt;4;i=i+1) begin
+            model_bias[i]=0;
+            load_w(i,0,(i&amp;2)?-16&#x27;sd1:16&#x27;sd1);
+            load_w(i,1,(i&amp;1)?-16&#x27;sd1:16&#x27;sd1);
+        end</code></td><td>i&amp;2와 i&amp;1은 뉴런 번호의 두 비트를 확인합니다. 각 뉴런 가중치를 [1,1],[1,-1],[-1,1],[-1,-1]로 적재합니다. 모델 편향은 초기0입니다.</td></tr><tr><td>171-176</td><td><code class="teach-fragment">        for(j=0;j&lt;4;j=j+1) begin
+            load_x(0,(j&amp;2)?-16&#x27;sd1:16&#x27;sd1);
+            load_x(1,(j&amp;1)?-16&#x27;sd1:16&#x27;sd1);
+            execute(2);
+            if(class_o !== j[1:0]) $fatal(1,&quot;FAIL CLASS_CASE %0d&quot;,j);
+        end</code></td><td>j의 두 비트로 네 입력 부호 조합을 만들고 execute(2)로 모든 점수와 분류를 검사합니다. 추가로 class_o가 j의 하위2비트인지 확인합니다.</td></tr><tr><td>177-188</td><td><code class="teach-fragment">        // 편향은 누산 결과에 더해지며 뉴런 3이 우승한다.
+        load_x(0,16&#x27;sd1); load_x(1,16&#x27;sd1);
+        // (추가) 네 lane의 bias 경로를 모두 0이 아닌 값으로 사용한다.
+        // 음수 bias는 41비트 부호 확장, 뉴런 2 bias는 덧셈 누락을 검출한다.
+        load_bias(0,-40&#x27;sd3);
+        load_bias(1,40&#x27;sd5);
+        load_bias(2,-40&#x27;sd7);
+        load_bias(3,40&#x27;sd10);
+        execute(2);
+        if(class_o !== 2&#x27;d3) $fatal(1,&quot;FAIL BIAS_CLASS&quot;);
+        // 길이 1: 남은 유효 가중치에 대한 결과만 비교.
+        execute(1);</code></td><td>입력 [1,1]과 편향 [-3,5,-7,10]을 적재합니다. 길이2의 class3과 길이1의 독립 점수를 검사합니다. 모든 lane에 비영 편향이 들어갑니다.</td></tr><tr><td>189-198</td><td><code class="teach-fragment">        // (추가) 연산 중 쓰기는 메모리를 바꾸지 않고 error_o 한 클록만 발생.
+        calculate(1);
+        @(negedge clk);
+        if(load_ready_o !== 1&#x27;b1) $fatal(1,&quot;FAIL BUSY_WRITE_IDLE&quot;);
+        length_i=1; start_i=1;
+        @(negedge clk);
+        start_i=0;
+        if(busy_o !== 1&#x27;b1 || load_ready_o !== 1&#x27;b0)
+            $fatal(1,&quot;FAIL BUSY_WRITE_PRECONDITION&quot;);
+        addr_i=0; data_i=16&#x27;sd7; x_wr_en=1;</code></td><td>별도 길이1 연산의 기대값을 먼저 만들고 시작합니다. busy1·ready0이 실제로 성립한 뒤 xmem 주소0에 값7 쓰기를 시도합니다. 모델은 갱신하지 않습니다.</td></tr><tr><td>199-204</td><td><code class="teach-fragment">        @(posedge clk); #1;
+        if(error_o !== 1&#x27;b1 || busy_o !== 1&#x27;b1)
+            $fatal(1,&quot;FAIL BUSY_WRITE_ERROR&quot;);
+        @(negedge clk);
+        x_wr_en=0;
+        cycles=0;</code></td><td>쓰기 시도 상승 에지1ns 뒤 error1·busy1을 확인하고 다음 하강 에지에 x_wr_en을 내립니다. 이후 완료 대기 cycles를0으로 둡니다.</td></tr><tr><td>205-215</td><td><code class="teach-fragment">        while(done_o !== 1&#x27;b1) begin
+            @(posedge clk); #1;
+            cycles=cycles+1;
+            if(cycles&gt;10) $fatal(1,&quot;FAIL BUSY_WRITE_DONE_TIMEOUT&quot;);
+        end
+        if(class_o !== expected_class || error_o !== 1&#x27;b0)
+            $fatal(1,&quot;FAIL BUSY_WRITE_RESULT&quot;);
+        for(i=0;i&lt;4;i=i+1)
+            if($signed(scores_o[i*41+:41]) !== expected[i])
+                $fatal(1,&quot;FAIL BUSY_WRITE_SCORE neuron=%0d&quot;,i);
+        $display(&quot;BUSY_WRITE rejected error_pulse=1 result_kept=1&quot;);</code></td><td>최대10회 대기하여 완료 결과의 class·네 점수·error0을 확인합니다. 이 경로는 execute가 아니므로 tests를 늘리지 않습니다. 직후 모든 에지의 error 펄스 길이나 RAM 재읽기를 별도 검사한 것은 아닙니다.</td></tr><tr><td>216-224</td><td><code class="teach-fragment">        // (추가) 길이 0, 미적재 주소를 각각 거부.
+        reject_start(0);
+        reject_start(3);
+
+        // (추가) 네 점수가 모두 0인 실제 동점: 가장 낮은 번호 0.
+        for(i=0;i&lt;4;i=i+1) load_bias(i,40&#x27;sd0);
+        load_x(0,16&#x27;sd0);
+        execute(1);
+        if(class_o !== 2&#x27;d0) $fatal(1,&quot;FAIL TIE&quot;);</code></td><td>길이0과 미적재 주소를 포함한 길이3을 거부합니다. 편향 네 개와 x[0]을0으로 만들고 execute(1)에서 네 점수0 및 class0의 실제 동점을 확인합니다.</td></tr><tr><td>226-234</td><td><code class="teach-fragment">        // (추가) 최대 길이 64, signed 16비트 양 끝, signed 40비트 bias.
+        // -32768 × -32768 × 64의 누산은 32비트 범위를 초과한다.
+        for(j=0;j&lt;64;j=j+1) begin
+            load_x(j,16&#x27;sh8000);
+            load_w(0,j,16&#x27;sh8000);
+            load_w(1,j,16&#x27;sh7fff);
+            load_w(2,j,16&#x27;sd0);
+            load_w(3,j,16&#x27;sh8000);
+        end</code></td><td>64개 주소에 x=-32768, lane0/3 w=-32768, lane1 w=32767, lane2 w=0을 적재합니다. 16&#x27;sh8000은 signed16의 최솟값입니다.</td></tr><tr><td>235-241</td><td><code class="teach-fragment">        load_bias(0,40&#x27;sh7fffffffff);
+        load_bias(1,40&#x27;sh8000000000);
+        execute(64);
+        if(class_o !== 2&#x27;d0 ||
+           $signed(scores_o[0+:41]) !== 41&#x27;sd618475290623 ||
+           $signed(scores_o[41+:41]) !== -41&#x27;sd618473193472)
+            $fatal(1,&quot;FAIL EXTREME_SCORE&quot;);</code></td><td>lane0에는 최대 signed40, lane1에는 최소 signed40 편향을 적재합니다. execute(64)의 네 점수·분류·지연 검사에 더해 두 극값을 명시적인 41비트 상수로 대조합니다.</td></tr><tr><td>242-244</td><td><code class="teach-fragment">        // (변경) 64개 주소가 모두 적재된 뒤 길이 65를 시험해야
+        // 미적재 검사가 아닌 최대 길이 검사만으로 거부됨을 확인할 수 있다.
+        reject_start(65);</code></td><td>64개 주소를 모두 채운 뒤 길이65를 거부합니다. 미적재 상태가 아니라 최대 길이 위반에 대한 시험입니다.</td></tr><tr><td>246-253</td><td><code class="teach-fragment">        // (추가) reset은 유효 비트를 지운다. 기존 RAM 값은 사용 불가.
+        @(negedge clk); resetn=0;
+        @(posedge clk); #1;
+        if(busy_o !== 1&#x27;b0 || done_o !== 1&#x27;b0 || error_o !== 1&#x27;b0 ||
+           scores_o !== 164&#x27;d0 || class_o !== 2&#x27;d0)
+            $fatal(1,&quot;FAIL RESET&quot;);
+        @(negedge clk); resetn=1;
+        reject_start(1);</code></td><td>실제 reset 에지 뒤 상태와 결과가 0인지 확인하고 reset을 해제합니다. 재적재 없이 길이1을 시작해 유효 비트 초기화 계약을 확인합니다.</td></tr><tr><td>254-257</td><td><code class="teach-fragment">        $display(&quot;PASS CH23 cases=%0d rejected=4&quot;,tests);
+        $finish;
+    end
+endmodule</code></td><td>정상 execute 횟수 tests와 고정 문구 rejected=4를 출력합니다. 네 reject_start 호출은 각각 Fatal 조건을 확인해야 이 지점에 도달합니다. $finish 자체가 성공 판정은 아닙니다.</td></tr></tbody></table></details></div>
+</section><section class="section" id="s06"><h2><span class="num">06</span>실행과 예상 출력</h2><p>Ubuntu 터미널에서 <code>bash scripts/run_ch23.sh</code>를 실행합니다. 스크립트는 Icarus Verilog(아이베릴로그, RTL 시뮬레이터)를 이용해 원본 <code>npu_engine4</code>, <code>npu_dsp_mac_lane</code>, <code>dsp_multiplier</code>와 TB를 컴파일합니다. 원본 RTL은 읽기 전용이며 파형과 로그는 <code>.build/ch23</code>에 저장합니다.</p><div class="codeblock"><div class="codebar"><span>scripts/run_ch23.sh · Bash · 신규 실행 스크립트 · 전체 코드</span></div><pre tabindex="0"><code>#!/usr/bin/env bash
+# 제23장: 원본 NPU/DSP RTL을 읽기 전용으로 컴파일하고 결과를 .build에 저장.
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." &amp;&amp; pwd)"
+RTL="${RTL_DIR:-$ROOT/reference_rtl}"
+if ! command -v iverilog &gt;/dev/null 2&gt;&amp;1 || ! command -v vvp &gt;/dev/null 2&gt;&amp;1; then
+  echo "NOT_RUN: iverilog 또는 vvp 없음" &gt;&amp;2
+  exit 2
+fi
+for name in npu_engine4.v npu_dsp_mac_lane.v dsp_multiplier.v; do
+  if [[ ! -f "$RTL/$name" ]]; then
+    echo "NOT_RUN: RTL 파일 없음: $RTL/$name" &gt;&amp;2
+    exit 2
+  fi
+done
+mkdir -p "$ROOT/.build/ch23"
+cd "$ROOT/.build/ch23"
+iverilog -g2012 -s tb_npu_integrated -o sim \
+  "$RTL/npu_engine4.v" "$RTL/npu_dsp_mac_lane.v" \
+  "$RTL/dsp_multiplier.v" "$ROOT/tb/ch23/tb_npu_integrated.sv"
+vvp sim | tee simulation.log
+grep -q '^PASS CH23 cases=8 rejected=4$' simulation.log
+</code></pre></div><h3>예상 출력 — 실제 실행 로그 아님</h3><div class="codeblock"><div class="codebar"><span>예상 출력 · text · 전체 코드</span></div><pre tabindex="0"><code>CHECK len=2 cycles=6 class=0
+CHECK len=2 cycles=6 class=1
+CHECK len=2 cycles=6 class=2
+CHECK len=2 cycles=6 class=3
+CHECK len=2 cycles=6 class=3
+CHECK len=1 cycles=4 class=3
+BUSY_WRITE rejected error_pulse=1 result_kept=1
+REJECT len=0
+REJECT len=3
+CHECK len=1 cycles=4 class=0
+CHECK len=64 cycles=130 class=0
+REJECT len=65
+REJECT len=1
+PASS CH23 cases=8 rejected=4
+</code></pre></div><p>위 출력은 개정 TB를 Icarus Verilog 12.0으로 실행한 출력에서 VCD 안내 행과 시뮬레이터 종료 행을 뺀 것입니다. <code>iverilog</code> 또는 <code>vvp</code>가 없으면 스크립트는 <code>NOT_RUN</code>으로 종료합니다.</p>
+<div class="execution-evidence" data-evidence="v59"><h3>2026-11-26 실제 실행 결과</h3><p>Icarus Verilog 12.0 · 종료 코드 0 · <strong>PASS</strong>. v05의 TB(편향 4종, 연산 중 쓰기, 전체 적재 후 길이 65 거부)를 같은 도구로 다시 실행한 결과입니다. 정상 실행과 정의된 오류 검출 조건을 장별 실행기로 확인했습니다.</p><div class="codeblock"><div class="codebar"><span>저장소 루트 · Bash · 실행 재현 명령</span></div><pre tabindex="0"><code>bash scripts/run_chapter.sh 23</code></pre></div><div class="codeblock"><div class="codebar"><span>실제 로그 발췌 · 예상 출력과 구별</span></div><pre tabindex="0"><code>BUSY_WRITE rejected error_pulse=1 result_kept=1
+REJECT len=0
+REJECT len=3
+REJECT len=65
+REJECT len=1
+PASS CH23 cases=8 rejected=4</code></pre></div><p><a href="https://github.com/Yuul-Jung/system_verilog_uvm_tb/blob/2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708/docs/evidence/POST_RUN_CHANGES_v59.md">개정 TB 재실행 기록과 로그 해시 확인</a> · <a href="https://github.com/Yuul-Jung/system_verilog_uvm_tb/blob/2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708/docs/evidence/v59/README.md#ch23">이전 TB의 v59 증거</a>. 위의 예상 파형은 코드에서 계산한 도식이며, 실측 파형 이미지는 별도로 수록하지 않았습니다.</p></div>
+
+<div class="teach-note"><h3>실습 지도 · 최신 v05 증거와 이전 실행을 구별한다</h3><p>v05는 모든 lane의 비영 편향·음수 부호 확장, 연산 중 쓰기, 전체 적재 후65거부를 포함합니다. 현재 보존 재실행 링크와 과거 v59 증거를 모두 유지하되 현재 TB의 근거는 v05 재실행으로 읽습니다. 원본의 예상 상태도와 실측 로그도 구별합니다.</p><p>세 의존 RTL과 TB를 함께 컴파일해야 합니다. 이 제작에서 새 RTL_SIM·합성·보드 검증은 <strong>NOT_RUN</strong>이며 원본 Icarus12.0 PASS를 새 실행으로 표시하지 않습니다. 교수용 수치와 구조·전체 코드 보존은 별도로 검사합니다.</p><h4>scripts/run_ch23.sh · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-5</td><td><code class="teach-fragment">#!/usr/bin/env bash
+# 제23장: 원본 NPU/DSP RTL을 읽기 전용으로 컴파일하고 결과를 .build에 저장.
+set -euo pipefail
+ROOT=&quot;$(cd &quot;$(dirname &quot;${BASH_SOURCE[0]}&quot;)/..&quot; &amp;&amp; pwd)&quot;
+RTL=&quot;${RTL_DIR:-$ROOT/reference_rtl}&quot;</code></td><td>Bash 실패·미정 변수·파이프 실패를 감지하고 ROOT 및 RTL_DIR을 결정합니다.</td></tr><tr><td>6-9</td><td><code class="teach-fragment">if ! command -v iverilog &gt;/dev/null 2&gt;&amp;1 || ! command -v vvp &gt;/dev/null 2&gt;&amp;1; then
+  echo &quot;NOT_RUN: iverilog 또는 vvp 없음&quot; &gt;&amp;2
+  exit 2
+fi</code></td><td>iverilog와 vvp가 없으면 NOT_RUN/exit2로 종료합니다. 도구 미설치는 PASS가 아닙니다.</td></tr><tr><td>10-15</td><td><code class="teach-fragment">for name in npu_engine4.v npu_dsp_mac_lane.v dsp_multiplier.v; do
+  if [[ ! -f &quot;$RTL/$name&quot; ]]; then
+    echo &quot;NOT_RUN: RTL 파일 없음: $RTL/$name&quot; &gt;&amp;2
+    exit 2
+  fi
+done</code></td><td>세 RTL 파일의 존재를 각각 검사합니다. 원본 파일은 수정하지 않습니다.</td></tr><tr><td>16-20</td><td><code class="teach-fragment">mkdir -p &quot;$ROOT/.build/ch23&quot;
+cd &quot;$ROOT/.build/ch23&quot;
+iverilog -g2012 -s tb_npu_integrated -o sim \
+  &quot;$RTL/npu_engine4.v&quot; &quot;$RTL/npu_dsp_mac_lane.v&quot; \
+  &quot;$RTL/dsp_multiplier.v&quot; &quot;$ROOT/tb/ch23/tb_npu_integrated.sv&quot;</code></td><td>장별 .build/ch23으로 이동해 -g2012로 세 RTL과 SV TB를 컴파일합니다. -s는 top 모듈, -o sim은 실행 파일입니다.</td></tr><tr><td>21-22</td><td><code class="teach-fragment">vvp sim | tee simulation.log
+grep -q &#x27;^PASS CH23 cases=8 rejected=4$&#x27; simulation.log</code></td><td>vvp 실행 로그를 tee로 저장하고 정확한 PASS 행을 grep으로 검사합니다. 8은 execute 수, 4는 거부 시나리오 수의 고정 문구입니다. pipefail은 실행 실패를 반영합니다.</td></tr></tbody></table></details></div>
+</section><section class="section" id="s07"><h2><span class="num">07</span>검증·장애 분석</h2><table><tr><th>실패 지점</th><th>원인 분석</th></tr><tr><td><code>FAIL LOAD_X_READY</code></td><td>start_i가 1이거나 busy_o가 1인 상태에서 적재 요청</td></tr><tr><td><code>FAIL SCORE</code></td><td>signed 확장, 가중치 순서, 누산기, bias, 점수 비트 슬라이스 확인</td></tr><tr><td><code>FAIL CLASS_CASE</code></td><td>최대 점수 선택 및 동점 시 낮은 번호 우선 규칙 확인</td></tr><tr><td><code>FAIL LATENCY</code></td><td>READ/ISSUE 반복 횟수와 DRAIN1/DRAIN2 시점 확인</td></tr><tr><td><code>FAIL BUSY_WRITE_ERROR</code></td><td>연산 중 쓰기에서 <code>load_ready_o</code> 차단과 <code>error_o</code> 펄스 확인</td></tr><tr><td><code>FAIL REJECT</code></td><td>길이 0·65, 길이 3의 미적재 주소 또는 리셋 이후 <code>x_seen/w*_seen</code> 확인</td></tr><tr><td><code>FAIL GLOBAL_TIMEOUT</code></td><td>클록, resetn, start_i, done_o 상태 및 파형 점검</td></tr></table><p><strong>검증 상태:</strong> 원본 포트·상태·비트 폭·참조 SHA 대조 및 HTML 링크 정적 검사. Icarus Verilog 실제 실행에서 cases=8, rejected=4를 확인했습니다. 아래 실측 증거와 현재 검증 보고서를 참고합니다.</p>
+<div class="teach-note"><h3>예상 문답 · 정답과 거부 정책</h3><p><strong>class가 맞으면 점수도 맞지 않나요?</strong> 네 점수에 같은 오차가 더해지면 순위는 유지될 수 있습니다. 각 점수41비트를 모두 비교해야 편향·부호·누산 오류를 찾을 수 있습니다.</p><p><strong>리셋 후 같은 RAM으로 바로 실행할 수 있나요?</strong> seen이0이 되어 입력·가중치를 다시 적재해야 합니다. 실제 RAM을 전부0으로 지우는 설계는 아닙니다.</p><p><strong>연산 중 쓰기 오류는 계산도 취소하나요?</strong> 현재 시험은 금지 쓰기 시 error1과 진행 중 연산의 원래 결과 유지 및 완료 시 error0을 확인합니다. 정확한 펄스 길이와 RAM 영구 보존의 독립 시험은 별도입니다. 모든 프로세서의 공통 오류 정책으로 일반화하지 않습니다.</p><h4>추가 교수용 문답</h4><p><strong>왜 32비트 곱을 40비트로 늘리나요?</strong> 곱 자체는 32비트지만 최대 64회 더하면 32비트 합의 범위를 넘어갑니다. 음수는 상위 비트에 부호 비트를 복제합니다.</p><p><strong>41비트 점수에서 40비트 편향을 그냥 더하면 안 되나요?</strong> 합을 표현할 비트 폭과 signed 해석을 명시해야 합니다. 실제 극값은 40비트로 표현할 수 없으므로 두 피연산자를 41비트 signed로 확장한 뒤 더합니다.</p><p><strong>2L+2는 모든 NPU의 지연인가요?</strong> 아닙니다. 현재 READ/ISSUE/DRAIN1/DRAIN2 구조의 계약입니다. 비교기를 추가로 파이프라인화하면 지연 계약이 달라집니다.</p><p><strong>busy 쓰기 시험이 RAM 불변까지 입증하나요?</strong> 현재 실행의 결과 유지와 error 관찰을 확인합니다. 영구 RAM 보존을 독립적으로 검증하려면 금지 쓰기 뒤 재적재 없이 같은 입력으로 다시 실행해 점수를 비교하는 등 추가 시험이 필요합니다.</p></div>
+</section><div class="chapter-links" id="chapter-links"></div></main></div><footer class="footer">RTL TESTBENCH · SYSTEMVERILOG · UVM · CH23 교수용 v02 · 원본 v05 · PASS</footer><script>window.COURSE={"title":"RTL · SystemVerilog · UVM 교수용 해설서","short_title":"SV UVM TEACH","home_label":"전체 교수용 해설서","chapters":[{"id":"ch01","number":1,"title":"테스트벤치의 첫 실행","file":"ch01_teacher_v02.html"},{"id":"ch02","number":2,"title":"Clock·Reset·이벤트","file":"ch02_teacher_v01.html"},{"id":"ch03","number":3,"title":"반복 자극과 작업 분리","file":"ch03_teacher_v01.html"},{"id":"ch04","number":4,"title":"PASS/FAIL 자동 판정","file":"ch04_teacher_v01.html"},{"id":"ch05","number":5,"title":"검증 자료형과 타입","file":"ch05_teacher_v01.html"},{"id":"ch06","number":6,"title":"배열·큐·패키지","file":"ch06_teacher_v01.html"},{"id":"ch07","number":7,"title":"인터페이스·타이밍 분리","file":"ch07_teacher_v01.html"},{"id":"ch08","number":8,"title":"객체와 제약 기반 입력","file":"ch08_teacher_v01.html"},{"id":"ch09","number":9,"title":"참조 모델·스코어보드","file":"ch09_teacher_v01.html"},{"id":"ch10","number":10,"title":"경계조건·오류 주입","file":"ch10_teacher_v01.html"},{"id":"ch11","number":11,"title":"시간적 속성 검사","file":"ch11_teacher_v01.html"},{"id":"ch12","number":12,"title":"기능 커버리지","file":"ch12_teacher_v01.html"},{"id":"ch13","number":13,"title":"UART 스트림 검증","file":"ch13_teacher_v01.html"},{"id":"ch14","number":14,"title":"FIFO 및 흐름 제어","file":"ch14_teacher_v01.html"},{"id":"ch15","number":15,"title":"AXI4-Lite 레지스터 검증","file":"ch15_teacher_v02.html"},{"id":"ch16","number":16,"title":"MAC·NPU 정수 연산 검증","file":"ch16_teacher_v01.html"},{"id":"ch17","number":17,"title":"최소 UVM 환경","file":"ch17_teacher_v01.html"},{"id":"ch18","number":18,"title":"Sequence에서 Driver까지","file":"ch18_teacher_v02.html"},{"id":"ch19","number":19,"title":"Monitor·Agent·Scoreboard","file":"ch19_teacher_v02.html"},{"id":"ch20","number":20,"title":"Factory·Config·Objection","file":"ch20_teacher_v02.html"},{"id":"ch21","number":21,"title":"UVM 레지스터 추상화","file":"ch21_teacher_v02.html"},{"id":"ch22","number":22,"title":"다중 Agent·VIP","file":"ch22_teacher_v02.html"},{"id":"ch23","number":23,"title":"NPU 통합 정답 비교","file":"ch23_teacher_v02.html"},{"id":"ch24","number":24,"title":"회귀·CI·검증 보고","file":"ch24_teacher_v01.html"}]};</script><script src="assets/site.js"></script></body></html>
