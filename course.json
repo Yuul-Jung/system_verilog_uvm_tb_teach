@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v04",
+  "version": "v05",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -49,6 +49,21 @@
       "source_tb": "tb/ch03/tb_pwm_reusable_stimulus.sv",
       "rtl_simulation": "NOT_RUN",
       "original_execution": "EXECUTED_OBSERVATION"
+    },
+    {
+      "id": "ch04",
+      "number": 4,
+      "title": "PASS/FAIL 자동 판정",
+      "slug": "ch04_teacher",
+      "version": "v01",
+      "source_html": "ch04_pass_fail_automation_v05.html",
+      "source_version": "v05",
+      "source_blob": "03f3eed8fae6583baf29517cc025eeb00433162c",
+      "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
+      "source_course_version": "v60",
+      "source_tb": "tb/ch04/tb_pwm_pass_fail.sv",
+      "rtl_simulation": "NOT_RUN",
+      "original_execution": "PASS"
     }
   ],
   "planned_chapters": [
@@ -82,7 +97,7 @@
       "title": "PASS/FAIL 자동 판정",
       "source_html": "ch04_pass_fail_automation_v05.html",
       "source_version": "v05",
-      "status": "planned"
+      "status": "published"
     },
     {
       "id": "ch05",

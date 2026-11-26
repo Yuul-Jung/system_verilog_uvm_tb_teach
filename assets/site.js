@@ -41,6 +41,12 @@
       "number": 3,
       "title": "반복 자극과 작업 분리",
       "file": "ch03_teacher_v01.html"
+    },
+    {
+      "id": "ch04",
+      "number": 4,
+      "title": "PASS/FAIL 자동 판정",
+      "file": "ch04_teacher_v01.html"
     }
   ]
 };
