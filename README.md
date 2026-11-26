@@ -27,4 +27,5 @@
 - [제14장 · FIFO 및 흐름 제어](ch14_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch14_v01.md)
 - [제15장 · AXI4-Lite 레지스터 검증](ch15_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch15_v01.md)
 - [제16장 · MAC·NPU 정수 연산 검증](ch16_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch16_v01.md)
+- [제17장 · 최소 UVM 환경](ch17_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch17_v01.md)
 <!-- /PUBLISHED -->

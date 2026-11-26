@@ -119,6 +119,12 @@
       "number": 16,
       "title": "MAC·NPU 정수 연산 검증",
       "file": "ch16_teacher_v01.html"
+    },
+    {
+      "id": "ch17",
+      "number": 17,
+      "title": "최소 UVM 환경",
+      "file": "ch17_teacher_v01.html"
     }
   ]
 };

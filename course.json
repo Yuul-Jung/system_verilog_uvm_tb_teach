@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v17",
+  "version": "v18",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -244,6 +244,21 @@
       "source_tb": "tb/ch16/tb_mac_integer.sv",
       "rtl_simulation": "NOT_RUN",
       "original_execution": "PASS"
+    },
+    {
+      "id": "ch17",
+      "number": 17,
+      "title": "최소 UVM 환경",
+      "slug": "ch17_teacher",
+      "version": "v01",
+      "source_html": "ch17_minimal_uvm_environment_v04.html",
+      "source_version": "v04",
+      "source_blob": "0d1615e5c0f08d1010e0b48e60c24bc0e8070029",
+      "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
+      "source_course_version": "v60",
+      "source_tb": "tb/ch17/tb_pwm_uvm.sv",
+      "rtl_simulation": "NOT_RUN",
+      "original_execution": "PASS"
     }
   ],
   "planned_chapters": [
@@ -381,7 +396,7 @@
       "title": "최소 UVM 환경",
       "source_html": "ch17_minimal_uvm_environment_v04.html",
       "source_version": "v04",
-      "status": "planned"
+      "status": "published"
     },
     {
       "id": "ch18",
