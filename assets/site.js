@@ -166,7 +166,7 @@
       "id": "ch24",
       "number": 24,
       "title": "회귀·CI·검증 보고",
-      "file": "ch24_teacher_v01.html"
+      "file": "ch24_teacher_v02.html"
     }
   ]
 };
