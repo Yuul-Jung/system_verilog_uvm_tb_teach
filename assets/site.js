@@ -136,7 +136,7 @@
       "id": "ch19",
       "number": 19,
       "title": "Monitor·Agent·Scoreboard",
-      "file": "ch19_teacher_v01.html"
+      "file": "ch19_teacher_v02.html"
     },
     {
       "id": "ch20",
