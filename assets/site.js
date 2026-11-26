@@ -142,7 +142,7 @@
       "id": "ch20",
       "number": 20,
       "title": "Factory·Config·Objection",
-      "file": "ch20_teacher_v01.html"
+      "file": "ch20_teacher_v02.html"
     },
     {
       "id": "ch21",
