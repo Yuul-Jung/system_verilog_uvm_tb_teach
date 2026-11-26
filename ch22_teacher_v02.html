@@ -1,0 +1,1997 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="제22장 AXI4-Lite·IRQ·Reset 다중 Agent와 교육용 VIP-style UVM 검증"><title>교수용 해설서 · 제22장 · 다중 Agent·VIP · UVM 검증 학습안내서</title><link rel="stylesheet" href="assets/site.css"><style>.teach-note{margin:18px 0 4px;padding:15px 18px;background:#f8f7fc;border:1px solid #dddaee;border-left:4px solid #4635b1;border-radius:6px;overflow-wrap:anywhere}.teach-note h3{margin:0 0 10px;color:#4635b1}.teach-note h4{margin:14px 0 6px}.teach-note p{margin:8px 0}.teach-note summary{cursor:pointer;font-weight:600;margin:10px 0}.teach-fragment{white-space:pre-wrap;overflow-wrap:anywhere;display:block;min-width:140px}.teach-note table{margin:10px 0}.teach-note td{vertical-align:top}@media(max-width:860px){.teach-note{padding:12px}.teach-note td{min-width:68px}}.teach-note details table{min-width:680px}.teach-note details th:first-child,.teach-note details td:first-child{min-width:60px;white-space:nowrap}.teach-note details .teach-fragment{min-width:250px}</style></head><body data-chapter="ch22"><a class="access-skip" href="#main-content">본문 바로가기</a><button type="button" class="mobile-menu" id="mobile-menu" aria-controls="course-nav" aria-expanded="false">☰ 장·목차</button><div class="shade" id="shade"></div><header class="hero"><div class="hero-inner"><p class="kicker">교수용 해설서 · 제6부 · 실무 회귀 검증</p><h1>제22장 · 다중 Agent·VIP</h1><p>AXI4-Lite 버스와 Reset·IRQ를 별도 Agent로 구성해 Virtual Sequence로 통합 검증합니다.</p><div class="chips"><span class="chip">PART 06 · CHAPTER 22</span><span class="chip">19개 AXI 거래 · IRQ 충돌 검증</span><span class="chip">기존 RTL 변경 없음</span></div></div></header><div class="wrap"><nav class="toc" id="course-nav" aria-label="부·장·절 탐색"></nav><main class="content" id="main-content"><p>원본 제22장 · v05의 절·그림·전체 코드·실습을 보존한 교수용 해설서입니다.</p>
+<section class="section" id="s00"><h2><span class="num">00</span>개요 · 다중 Agent와 하드웨어 이벤트</h2><p>제21장은 RAL 접근과 독립 Monitor/Predictor를 연결했습니다. 제22장은 버스 Agent(에이전트, 재사용 검증 구성 단위)와 Reset/IRQ Agent를 나누고 Virtual Sequence(버추얼 시퀀스, 다중 거래 제어)를 사용합니다. VIP(Verification IP, 검증 지식재산)는 여기서 직접 작성한 교육용 VIP-style 구성으로, AMD 상용 AXI VIP가 아닙니다.</p><p><strong>설계 개념 연계:</strong> 제15·21장과 동일한 범용 AXI/RMAP 스냅샷입니다. amd_soc_p2 03.2장 IRQ·AXI, 04.2장 03~04절 및 10.3장 레지스터 사양과 개념 연계하며 현행 PWM/IRQ IP의 동일 RTL로 확인된 것은 아닙니다.</p><div class="codeblock"><div class="codebar"><span>Ubuntu · 실습 폴더</span></div><pre tabindex="0"><code>mkdir -p ch22_lab/reference_rtl ch22_lab/tb/ch22 ch22_lab/scripts
+cd ch22_lab</code></pre></div><table><thead><tr><th>파일</th><th>역할</th></tr></thead><tbody><tr><td>reference_rtl/axi4lite_slave_adapter.v</td><td>AXI 어댑터</td></tr><tr><td>reference_rtl/custom_register_bank.v</td><td>레지스터 및 IRQ 상태</td></tr><tr><td>tb/ch22/tb_axi_multiagent_irq.sv</td><td>두 Agent 및 독립 검증</td></tr><tr><td>scripts/run_ch22.sh</td><td>XSIM 정상·부정 실행</td></tr></tbody></table><p>01절·05절·06절의 전체 코드를 지정한 경로에 저장합니다.</p>
+<div class="teach-note"><h3>교수용 이론 · 버스 밖에서 일어나는 상태 변화도 검증한다</h3><p>IRQ(Interrupt Request, 인터럽트 요청) 상태는 CPU의 버스 쓰기와 하드웨어 이벤트 양쪽에서 바뀝니다. 버스 시험만으로는 두 입력이 겹칠 때 우선순위를 확인하기 어렵습니다. 그래서 AXI Agent와 Reset/IRQ Agent를 나누고 상위 Virtual Sequence가 둘을 조정합니다.</p><p>VIP(Verification IP, 재사용 검증 구성)는 여기서 직접 작성한 교육용 구조입니다. 상용 AMD AXI VIP의 라이선스·기능·규격 적합성 시험을 수행한 결과로 설명하지 않습니다. RAL을 쓰던 제21장과 달리 이번 상위 시퀀스는 직접 버스 거래를 만들고 별도 Scoreboard로 상태를 확인합니다.</p></div>
+</section>
+<section class="section" id="s01"><h2><span class="num">01</span>원본 RTL 전체</h2><div class="codeblock"><div class="codebar"><span>reference_rtl/axi4lite_slave_adapter.v · Verilog</span></div><pre tabindex="0"><code>module axi4lite_slave_adapter #(
+    parameter integer C_S_AXI_ADDR_WIDTH = 32
+)(
+    input  wire                          s_axi_aclk,
+    input  wire                          s_axi_aresetn,
+
+    // AXI4-Lite Write Address Channel
+    input  wire [C_S_AXI_ADDR_WIDTH-1:0] s_axi_awaddr,
+    input  wire [2:0]                    s_axi_awprot,
+    input  wire                          s_axi_awvalid,
+    output wire                          s_axi_awready,
+
+    // AXI4-Lite Write Data Channel
+    input  wire [31:0]                   s_axi_wdata,
+    input  wire [3:0]                    s_axi_wstrb,
+    input  wire                          s_axi_wvalid,
+    output wire                          s_axi_wready,
+
+    // AXI4-Lite Write Response Channel
+    output reg  [1:0]                    s_axi_bresp,
+    output reg                           s_axi_bvalid,
+    input  wire                          s_axi_bready,
+
+    // AXI4-Lite Read Address Channel
+    input  wire [C_S_AXI_ADDR_WIDTH-1:0] s_axi_araddr,
+    input  wire [2:0]                    s_axi_arprot,
+    input  wire                          s_axi_arvalid,
+    output wire                          s_axi_arready,
+
+    // AXI4-Lite Read Data Channel
+    output reg  [31:0]                   s_axi_rdata,
+    output reg  [1:0]                    s_axi_rresp,
+    output reg                           s_axi_rvalid,
+    input  wire                          s_axi_rready,
+
+    // Bus-independent register access interface
+    output wire                          wr_en,
+    output wire [7:0]                    wr_offset,
+    output wire [31:0]                   wr_data,
+    output wire [3:0]                    wr_strb,
+
+    output wire [7:0]                    rd_offset,
+    input  wire [31:0]                   rd_data
+);
+
+// AXI response code used by this basic slave.
+localparam [1:0] AXI_RESP_OKAY = 2'b00;
+
+// Write Address and Write Data are independent AXI channels.
+// Each channel is buffered separately until both are available.
+reg                          aw_stored;
+reg [C_S_AXI_ADDR_WIDTH-1:0] awaddr_stored;
+reg                          w_stored;
+reg [31:0]                   wdata_stored;
+reg [3:0]                    wstrb_stored;
+
+wire write_commit;
+
+// Single-outstanding-write policy:
+// Do not accept a new write while a response is pending.
+assign s_axi_awready =
+    s_axi_aresetn &amp;&amp; !aw_stored &amp;&amp; !s_axi_bvalid;
+
+assign s_axi_wready =
+    s_axi_aresetn &amp;&amp; !w_stored &amp;&amp; !s_axi_bvalid;
+
+// Register-bank write occurs only after BOTH address and data
+// channels have completed their independent handshakes.
+assign write_commit =
+    aw_stored &amp;&amp; w_stored &amp;&amp; !s_axi_bvalid;
+
+assign wr_en     = write_commit;
+assign wr_offset = awaddr_stored[7:0];
+assign wr_data   = wdata_stored;
+assign wr_strb   = wstrb_stored;
+
+// Read side accepts one address only when no previous R response
+// is waiting for the master.
+assign s_axi_arready =
+    s_axi_aresetn &amp;&amp; !s_axi_rvalid;
+
+// custom_register_bank read path is combinational.
+// The address presented during AR handshake selects rd_data.
+assign rd_offset = s_axi_araddr[7:0];
+
+// AWPROT / ARPROT are not used by this educational register slave.
+wire unused_prot;
+assign unused_prot = ^{s_axi_awprot, s_axi_arprot};
+
+always @(posedge s_axi_aclk) begin
+    if (!s_axi_aresetn) begin
+        aw_stored     &lt;= 1'b0;
+        awaddr_stored &lt;= {C_S_AXI_ADDR_WIDTH{1'b0}};
+        w_stored      &lt;= 1'b0;
+        wdata_stored  &lt;= 32'h0000_0000;
+        wstrb_stored  &lt;= 4'b0000;
+        s_axi_bresp   &lt;= AXI_RESP_OKAY;
+        s_axi_bvalid  &lt;= 1'b0;
+    end else begin
+        // Capture Write Address independently.
+        if (s_axi_awready &amp;&amp; s_axi_awvalid) begin
+            aw_stored     &lt;= 1'b1;
+            awaddr_stored &lt;= s_axi_awaddr;
+        end
+
+        // Capture Write Data independently.
+        if (s_axi_wready &amp;&amp; s_axi_wvalid) begin
+            w_stored     &lt;= 1'b1;
+            wdata_stored &lt;= s_axi_wdata;
+            wstrb_stored &lt;= s_axi_wstrb;
+        end
+
+        // Once both parts exist, pulse wr_en through write_commit
+        // and create the AXI B response.
+        if (write_commit) begin
+            aw_stored    &lt;= 1'b0;
+            w_stored     &lt;= 1'b0;
+            s_axi_bresp  &lt;= AXI_RESP_OKAY;
+            s_axi_bvalid &lt;= 1'b1;
+        end else if (s_axi_bvalid &amp;&amp; s_axi_bready) begin
+            s_axi_bvalid &lt;= 1'b0;
+        end
+    end
+end
+
+always @(posedge s_axi_aclk) begin
+    if (!s_axi_aresetn) begin
+        s_axi_rdata  &lt;= 32'h0000_0000;
+        s_axi_rresp  &lt;= AXI_RESP_OKAY;
+        s_axi_rvalid &lt;= 1'b0;
+    end else begin
+        // Capture the selected register value at AR handshake.
+        if (s_axi_arready &amp;&amp; s_axi_arvalid) begin
+            s_axi_rdata  &lt;= rd_data;
+            s_axi_rresp  &lt;= AXI_RESP_OKAY;
+            s_axi_rvalid &lt;= 1'b1;
+        end else if (s_axi_rvalid &amp;&amp; s_axi_rready) begin
+            s_axi_rvalid &lt;= 1'b0;
+        end
+    end
+end
+
+endmodule
+</code></pre></div><div class="codeblock"><div class="codebar"><span>reference_rtl/custom_register_bank.v · Verilog</span></div><pre tabindex="0"><code>module custom_register_bank (
+    input  wire        clk,
+    input  wire        resetn,
+
+    // Bus-independent register access interface.
+    // SoC 12 will connect this interface to AXI4-Lite.
+    input  wire        wr_en,
+    input  wire [7:0]  wr_offset,
+    input  wire [31:0] wr_data,
+    input  wire [3:0]  wr_strb,
+
+    input  wire [7:0]  rd_offset,
+    output reg  [31:0] rd_data,
+
+    // Hardware status / event inputs
+    input  wire        busy_i,
+    input  wire        done_i,
+    input  wire        error_i,
+    input  wire        irq_done_event_i,
+    input  wire        irq_error_event_i,
+    input  wire [31:0] data_out_i,
+
+    // Control outputs
+    output reg         enable_o,
+    output reg  [1:0]  mode_o,
+    output reg         start_pulse_o,
+    output reg         clear_pulse_o,
+    output reg  [31:0] data_in_o,
+    output reg  [1:0]  irq_status_o
+);
+
+localparam [7:0] REG_CONTROL    = 8'h00;
+localparam [7:0] REG_STATUS     = 8'h04;
+localparam [7:0] REG_COMMAND    = 8'h08;
+localparam [7:0] REG_IRQ_STATUS = 8'h0C;
+localparam [7:0] REG_DATA_IN    = 8'h10;
+localparam [7:0] REG_DATA_OUT   = 8'h14;
+localparam [7:0] REG_VERSION    = 8'h18;
+localparam [7:0] REG_ID         = 8'h1C;
+
+localparam [31:0] VERSION_VALUE = 32'h0001_0000;
+localparam [31:0] ID_VALUE      = 32'h524D_4150; // ASCII &quot;RMAP&quot;
+
+integer byte_index;
+
+always @(posedge clk) begin
+    if (!resetn) begin
+        enable_o      &lt;= 1'b0;
+        mode_o        &lt;= 2'b00;
+        start_pulse_o &lt;= 1'b0;
+        clear_pulse_o &lt;= 1'b0;
+        data_in_o     &lt;= 32'h0000_0000;
+        irq_status_o  &lt;= 2'b00;
+    end else begin
+        // W1P pulses are one clock wide by default.
+        start_pulse_o &lt;= 1'b0;
+        clear_pulse_o &lt;= 1'b0;
+
+        // Hardware events set IRQ status.
+        // Event set has priority over software clear in the same cycle.
+        if (irq_done_event_i) begin
+            irq_status_o[0] &lt;= 1'b1;
+        end else if (
+            wr_en &amp;&amp;
+            (wr_offset == REG_IRQ_STATUS) &amp;&amp;
+            wr_strb[0] &amp;&amp;
+            wr_data[0]
+        ) begin
+            irq_status_o[0] &lt;= 1'b0;
+        end
+
+        if (irq_error_event_i) begin
+            irq_status_o[1] &lt;= 1'b1;
+        end else if (
+            wr_en &amp;&amp;
+            (wr_offset == REG_IRQ_STATUS) &amp;&amp;
+            wr_strb[0] &amp;&amp;
+            wr_data[1]
+        ) begin
+            irq_status_o[1] &lt;= 1'b0;
+        end
+
+        if (wr_en) begin
+            case (wr_offset)
+                REG_CONTROL: begin
+                    if (wr_strb[0]) begin
+                        enable_o &lt;= wr_data[0];
+                        mode_o   &lt;= wr_data[2:1];
+                    end
+                end
+
+                REG_COMMAND: begin
+                    if (wr_strb[0]) begin
+                        start_pulse_o &lt;= wr_data[0];
+                        clear_pulse_o &lt;= wr_data[1];
+                    end
+                end
+
+                REG_DATA_IN: begin
+                    // Byte-enable write using WSTRB-equivalent strobes.
+                    for (byte_index = 0; byte_index &lt; 4; byte_index = byte_index + 1) begin
+                        if (wr_strb[byte_index]) begin
+                            data_in_o[byte_index*8 +: 8] &lt;=
+                                wr_data[byte_index*8 +: 8];
+                        end
+                    end
+                end
+
+                default: begin
+                    // RO / reserved / unmapped writes have no effect.
+                end
+            endcase
+        end
+    end
+end
+
+always @(*) begin
+    case (rd_offset)
+        REG_CONTROL: begin
+            rd_data = {29'h0, mode_o, enable_o};
+        end
+
+        REG_STATUS: begin
+            rd_data = {29'h0, error_i, done_i, busy_i};
+        end
+
+        REG_COMMAND: begin
+            // W1P command register has no retained state.
+            rd_data = 32'h0000_0000;
+        end
+
+        REG_IRQ_STATUS: begin
+            rd_data = {30'h0, irq_status_o};
+        end
+
+        REG_DATA_IN: begin
+            rd_data = data_in_o;
+        end
+
+        REG_DATA_OUT: begin
+            rd_data = data_out_i;
+        end
+
+        REG_VERSION: begin
+            rd_data = VERSION_VALUE;
+        end
+
+        REG_ID: begin
+            rd_data = ID_VALUE;
+        end
+
+        default: begin
+            rd_data = 32'h0000_0000;
+        end
+    endcase
+end
+
+endmodule
+</code></pre></div><p>AW/W 수락 다음 상승 에지에 bank가 wr_en을 읽어 쓰기를 반영합니다. IRQ_STATUS의 bit 0은 done, bit 1은 error이며 각 비트에서 하드웨어 이벤트 set이 소프트웨어 W1C(Write One to Clear, 1 쓰기 해제)보다 우선합니다. IRQ 읽기는 AR 수락 시점의 조합 읽기값을 캡처합니다. B/R 응답 시점과 실제 레지스터 상태 변경 시점을 혼동하지 않습니다.</p>
+<div class="teach-note"><h3>회로 판서 · W1C와 이벤트는 같은 저장 비트의 두 입력이다</h3><p>bank RTL은 IRQ bit마다 if(event) set, else if(유효 W1C) clear 순서입니다. 같은 에지에 둘 다1이면 set이 선택됩니다. 버스 응답 B가 늦게 수락되더라도 실제 상태 변화는 bank가 wr_en을 샘플링한 에지에 일어납니다. IRQ 모델을 B 완료 시점에 갱신하면 그 사이의 상태를 잘못 예측합니다.</p><h4>reference_rtl/axi4lite_slave_adapter.v · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-5</td><td><code class="teach-fragment">module axi4lite_slave_adapter #(
+    parameter integer C_S_AXI_ADDR_WIDTH = 32
+)(
+    input  wire                          s_axi_aclk,
+    input  wire                          s_axi_aresetn,</code></td><td>모듈 매개변수는 AXI 주소 폭(기본32비트)입니다. s_axi_aclk에서 상태를 갱신하고 s_axi_aresetn은 낮을 때 리셋됩니다.</td></tr><tr><td>7-11</td><td><code class="teach-fragment">    // AXI4-Lite Write Address Channel
+    input  wire [C_S_AXI_ADDR_WIDTH-1:0] s_axi_awaddr,
+    input  wire [2:0]                    s_axi_awprot,
+    input  wire                          s_axi_awvalid,
+    output wire                          s_axi_awready,</code></td><td>AW(Write Address, 쓰기 주소): 주소·보호 속성·valid는 마스터가 보내고 ready는 슬레이브가 반환합니다. 주소만 독립적으로 수락합니다.</td></tr><tr><td>13-17</td><td><code class="teach-fragment">    // AXI4-Lite Write Data Channel
+    input  wire [31:0]                   s_axi_wdata,
+    input  wire [3:0]                    s_axi_wstrb,
+    input  wire                          s_axi_wvalid,
+    output wire                          s_axi_wready,</code></td><td>W(Write Data, 쓰기 데이터): 32비트 데이터와 4비트 strobe를 받습니다. strobe 한 비트는 8비트 바이트 하나를 선택합니다.</td></tr><tr><td>19-22</td><td><code class="teach-fragment">    // AXI4-Lite Write Response Channel
+    output reg  [1:0]                    s_axi_bresp,
+    output reg                           s_axi_bvalid,
+    input  wire                          s_axi_bready,</code></td><td>B(Write Response, 쓰기 응답): bresp는 응답 코드, bvalid는 유효 응답, bready는 마스터의 수락 준비입니다.</td></tr><tr><td>24-28</td><td><code class="teach-fragment">    // AXI4-Lite Read Address Channel
+    input  wire [C_S_AXI_ADDR_WIDTH-1:0] s_axi_araddr,
+    input  wire [2:0]                    s_axi_arprot,
+    input  wire                          s_axi_arvalid,
+    output wire                          s_axi_arready,</code></td><td>AR(Read Address, 읽기 주소): AW와 별개로 읽기 주소를 수락합니다.</td></tr><tr><td>30-34</td><td><code class="teach-fragment">    // AXI4-Lite Read Data Channel
+    output reg  [31:0]                   s_axi_rdata,
+    output reg  [1:0]                    s_axi_rresp,
+    output reg                           s_axi_rvalid,
+    input  wire                          s_axi_rready,</code></td><td>R(Read Data, 읽기 데이터): 읽은 32비트 값과 응답 코드를 유지하고 마스터 ready를 기다립니다.</td></tr><tr><td>36-44</td><td><code class="teach-fragment">    // Bus-independent register access interface
+    output wire                          wr_en,
+    output wire [7:0]                    wr_offset,
+    output wire [31:0]                   wr_data,
+    output wire [3:0]                    wr_strb,
+
+    output wire [7:0]                    rd_offset,
+    input  wire [31:0]                   rd_data
+);</code></td><td>bank는 AXI 전체를 알 필요 없이 쓰기 enable·offset·data·strobe와 읽기 offset·data만 사용합니다. 출력·입력 방향이 bank 관점과 반대인 포트도 확인합니다.</td></tr><tr><td>46-55</td><td><code class="teach-fragment">// AXI response code used by this basic slave.
+localparam [1:0] AXI_RESP_OKAY = 2&#x27;b00;
+
+// Write Address and Write Data are independent AXI channels.
+// Each channel is buffered separately until both are available.
+reg                          aw_stored;
+reg [C_S_AXI_ADDR_WIDTH-1:0] awaddr_stored;
+reg                          w_stored;
+reg [31:0]                   wdata_stored;
+reg [3:0]                    wstrb_stored;</code></td><td>OKAY는 2&#x27;b00입니다. aw_stored와 w_stored는 주소·데이터가 각각 보관되었다는 플래그이고 뒤의 저장 변수는 실제 payload입니다.</td></tr><tr><td>57-65</td><td><code class="teach-fragment">wire write_commit;
+
+// Single-outstanding-write policy:
+// Do not accept a new write while a response is pending.
+assign s_axi_awready =
+    s_axi_aresetn &amp;&amp; !aw_stored &amp;&amp; !s_axi_bvalid;
+
+assign s_axi_wready =
+    s_axi_aresetn &amp;&amp; !w_stored &amp;&amp; !s_axi_bvalid;</code></td><td>주소를 아직 받지 않고 응답도 없을 때 AWREADY를 올립니다. WREADY도 자신의 저장 여부만 독립적으로 봅니다. resetn이 0이면 둘 다 차단합니다.</td></tr><tr><td>67-75</td><td><code class="teach-fragment">// Register-bank write occurs only after BOTH address and data
+// channels have completed their independent handshakes.
+assign write_commit =
+    aw_stored &amp;&amp; w_stored &amp;&amp; !s_axi_bvalid;
+
+assign wr_en     = write_commit;
+assign wr_offset = awaddr_stored[7:0];
+assign wr_data   = wdata_stored;
+assign wr_strb   = wstrb_stored;</code></td><td>두 저장 플래그가 1이고 B 응답이 없으면 write_commit이 참입니다. wr_en은 그 결과, wr_offset은 저장 주소의 하위 8비트입니다. 예: 주소 0x10 → offset 0x10. 현재 실습은 이 범위의 주소만 사용합니다.</td></tr><tr><td>77-88</td><td><code class="teach-fragment">// Read side accepts one address only when no previous R response
+// is waiting for the master.
+assign s_axi_arready =
+    s_axi_aresetn &amp;&amp; !s_axi_rvalid;
+
+// custom_register_bank read path is combinational.
+// The address presented during AR handshake selects rd_data.
+assign rd_offset = s_axi_araddr[7:0];
+
+// AWPROT / ARPROT are not used by this educational register slave.
+wire unused_prot;
+assign unused_prot = ^{s_axi_awprot, s_axi_arprot};</code></td><td>이전 R 응답이 없을 때만 AR을 받습니다. rd_offset은 현재 AR 주소 하위 8비트이며 bank는 이를 조합 해석합니다. unused_prot는 보호 속성을 소비할 뿐 권한 검사를 구현하지 않습니다.</td></tr><tr><td>90-99</td><td><code class="teach-fragment">always @(posedge s_axi_aclk) begin
+    if (!s_axi_aresetn) begin
+        aw_stored     &lt;= 1&#x27;b0;
+        awaddr_stored &lt;= {C_S_AXI_ADDR_WIDTH{1&#x27;b0}};
+        w_stored      &lt;= 1&#x27;b0;
+        wdata_stored  &lt;= 32&#x27;h0000_0000;
+        wstrb_stored  &lt;= 4&#x27;b0000;
+        s_axi_bresp   &lt;= AXI_RESP_OKAY;
+        s_axi_bvalid  &lt;= 1&#x27;b0;
+    end else begin</code></td><td>상승 에지에서 동기 리셋합니다. 저장 플래그, 데이터, B 응답을 초기화합니다. 주소폭만큼 0을 반복한 연결식이 주소 초기값입니다.</td></tr><tr><td>100-104</td><td><code class="teach-fragment">        // Capture Write Address independently.
+        if (s_axi_awready &amp;&amp; s_axi_awvalid) begin
+            aw_stored     &lt;= 1&#x27;b1;
+            awaddr_stored &lt;= s_axi_awaddr;
+        end</code></td><td>AWREADY와 AWVALID가 동시에 참인 상승 에지에서 주소를 저장합니다. 이후 live AWADDR가 바뀌어도 저장값으로 쓰기를 처리합니다.</td></tr><tr><td>106-111</td><td><code class="teach-fragment">        // Capture Write Data independently.
+        if (s_axi_wready &amp;&amp; s_axi_wvalid) begin
+            w_stored     &lt;= 1&#x27;b1;
+            wdata_stored &lt;= s_axi_wdata;
+            wstrb_stored &lt;= s_axi_wstrb;
+        end</code></td><td>W도 독립 수락하여 데이터와 바이트 선택을 함께 저장합니다. AW와 W가 반드시 같은 에지일 필요가 없습니다.</td></tr><tr><td>113-122</td><td><code class="teach-fragment">        // Once both parts exist, pulse wr_en through write_commit
+        // and create the AXI B response.
+        if (write_commit) begin
+            aw_stored    &lt;= 1&#x27;b0;
+            w_stored     &lt;= 1&#x27;b0;
+            s_axi_bresp  &lt;= AXI_RESP_OKAY;
+            s_axi_bvalid &lt;= 1&#x27;b1;
+        end else if (s_axi_bvalid &amp;&amp; s_axi_bready) begin
+            s_axi_bvalid &lt;= 1&#x27;b0;
+        end</code></td><td>두 저장 플래그가 이전 에지에서 모두 참이 되면 다음 에지에 bank 쓰기와 BVALID 등록이 일어납니다. BREADY와 BVALID가 함께 참이면 응답을 내립니다. 새 commit과 기존 B 소비는 이 구조에서 별개입니다.</td></tr><tr><td>123-124</td><td><code class="teach-fragment">    end
+end</code></td><td>쓰기 순차 절차를 닫습니다. 읽기 절차와 병렬 동작합니다.</td></tr><tr><td>126-130</td><td><code class="teach-fragment">always @(posedge s_axi_aclk) begin
+    if (!s_axi_aresetn) begin
+        s_axi_rdata  &lt;= 32&#x27;h0000_0000;
+        s_axi_rresp  &lt;= AXI_RESP_OKAY;
+        s_axi_rvalid &lt;= 1&#x27;b0;</code></td><td>읽기 응답의 데이터·코드·valid를 동기 리셋합니다.</td></tr><tr><td>131-139</td><td><code class="teach-fragment">    end else begin
+        // Capture the selected register value at AR handshake.
+        if (s_axi_arready &amp;&amp; s_axi_arvalid) begin
+            s_axi_rdata  &lt;= rd_data;
+            s_axi_rresp  &lt;= AXI_RESP_OKAY;
+            s_axi_rvalid &lt;= 1&#x27;b1;
+        end else if (s_axi_rvalid &amp;&amp; s_axi_rready) begin
+            s_axi_rvalid &lt;= 1&#x27;b0;
+        end</code></td><td>AR 수락 에지에 조합 bank rd_data를 저장하고 RVALID를 올립니다. 이후 AR 주소가 변해도 저장한 RDATA는 유지됩니다. RREADY가 참인 에지에서 RVALID를 내립니다.</td></tr><tr><td>140-143</td><td><code class="teach-fragment">    end
+end
+
+endmodule</code></td><td>읽기 순차 절차와 모듈 정의를 닫습니다.</td></tr></tbody></table></details><h4>reference_rtl/custom_register_bank.v · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-13</td><td><code class="teach-fragment">module custom_register_bank (
+    input  wire        clk,
+    input  wire        resetn,
+
+    // Bus-independent register access interface.
+    // SoC 12 will connect this interface to AXI4-Lite.
+    input  wire        wr_en,
+    input  wire [7:0]  wr_offset,
+    input  wire [31:0] wr_data,
+    input  wire [3:0]  wr_strb,
+
+    input  wire [7:0]  rd_offset,
+    output reg  [31:0] rd_data,</code></td><td>bank는 clk와 resetn, 주소·데이터·strobe 기반 단순 쓰기와 조합 읽기 인터페이스를 받습니다. AXI 채널 자체는 외부 adapter가 처리합니다.</td></tr><tr><td>15-21</td><td><code class="teach-fragment">    // Hardware status / event inputs
+    input  wire        busy_i,
+    input  wire        done_i,
+    input  wire        error_i,
+    input  wire        irq_done_event_i,
+    input  wire        irq_error_event_i,
+    input  wire [31:0] data_out_i,</code></td><td>회로 상태와 이벤트 입력입니다. STATUS는 상태 입력을 읽고 IRQ는 이벤트를 기억합니다. DATA_OUT은 외부 회로에서 온 값입니다.</td></tr><tr><td>23-30</td><td><code class="teach-fragment">    // Control outputs
+    output reg         enable_o,
+    output reg  [1:0]  mode_o,
+    output reg         start_pulse_o,
+    output reg         clear_pulse_o,
+    output reg  [31:0] data_in_o,
+    output reg  [1:0]  irq_status_o
+);</code></td><td>CONTROL의 enable·mode, COMMAND의 펄스, DATA_IN 저장값, IRQ 상태를 실제 출력으로 노출합니다.</td></tr><tr><td>32-39</td><td><code class="teach-fragment">localparam [7:0] REG_CONTROL    = 8&#x27;h00;
+localparam [7:0] REG_STATUS     = 8&#x27;h04;
+localparam [7:0] REG_COMMAND    = 8&#x27;h08;
+localparam [7:0] REG_IRQ_STATUS = 8&#x27;h0C;
+localparam [7:0] REG_DATA_IN    = 8&#x27;h10;
+localparam [7:0] REG_DATA_OUT   = 8&#x27;h14;
+localparam [7:0] REG_VERSION    = 8&#x27;h18;
+localparam [7:0] REG_ID         = 8&#x27;h1C;</code></td><td>8개 32비트 주소의 offset은 0x00부터 0x1C까지 4바이트 간격입니다. 현재 시험의 주요 접근 대상은 CONTROL(00), IRQ_STATUS(0C), DATA_IN(10), VERSION(18), ID(1C)입니다.</td></tr><tr><td>41-44</td><td><code class="teach-fragment">localparam [31:0] VERSION_VALUE = 32&#x27;h0001_0000;
+localparam [31:0] ID_VALUE      = 32&#x27;h524D_4150; // ASCII &quot;RMAP&quot;
+
+integer byte_index;</code></td><td>VERSION과 ID는 상수입니다. 0x524D4150은 R/M/A/P의 ASCII 코드(52/4D/41/50)를 나열한 32비트 값입니다. byte_index는 DATA_IN 바이트 선택 반복 변수입니다.</td></tr><tr><td>46-54</td><td><code class="teach-fragment">always @(posedge clk) begin
+    if (!resetn) begin
+        enable_o      &lt;= 1&#x27;b0;
+        mode_o        &lt;= 2&#x27;b00;
+        start_pulse_o &lt;= 1&#x27;b0;
+        clear_pulse_o &lt;= 1&#x27;b0;
+        data_in_o     &lt;= 32&#x27;h0000_0000;
+        irq_status_o  &lt;= 2&#x27;b00;
+    end else begin</code></td><td>resetn=0인 상승 에지에서 실제 저장 상태와 펄스를 0으로 초기화합니다. Scoreboard의 기대값 초기화는 별도 검증 절차입니다.</td></tr><tr><td>55-58</td><td><code class="teach-fragment">        // W1P pulses are one clock wide by default.
+        start_pulse_o &lt;= 1&#x27;b0;
+        clear_pulse_o &lt;= 1&#x27;b0;
+</code></td><td>COMMAND 펄스는 정상 에지마다 기본값 0으로 예약합니다. 같은 에지에 유효한 COMMAND 쓰기가 있으면 뒤의 대입이 선택된 펄스를 1로 설정할 수 있습니다.</td></tr><tr><td>59-70</td><td><code class="teach-fragment">        // Hardware events set IRQ status.
+        // Event set has priority over software clear in the same cycle.
+        if (irq_done_event_i) begin
+            irq_status_o[0] &lt;= 1&#x27;b1;
+        end else if (
+            wr_en &amp;&amp;
+            (wr_offset == REG_IRQ_STATUS) &amp;&amp;
+            wr_strb[0] &amp;&amp;
+            wr_data[0]
+        ) begin
+            irq_status_o[0] &lt;= 1&#x27;b0;
+        end</code></td><td>IRQ bit0은 done 이벤트가 우선입니다. 이벤트가 없을 때만 주소·strobe[0]·wr_data[0] 조건으로 W1C(Write One to Clear, 1을 쓰면 해제)를 수행합니다.</td></tr><tr><td>72-81</td><td><code class="teach-fragment">        if (irq_error_event_i) begin
+            irq_status_o[1] &lt;= 1&#x27;b1;
+        end else if (
+            wr_en &amp;&amp;
+            (wr_offset == REG_IRQ_STATUS) &amp;&amp;
+            wr_strb[0] &amp;&amp;
+            wr_data[1]
+        ) begin
+            irq_status_o[1] &lt;= 1&#x27;b0;
+        end</code></td><td>IRQ bit1도 error 이벤트를 우선 처리합니다. irq_error_event_i가 1이면 같은 에지의 W1C clear를 무시합니다. 두 IRQ 비트는 독립적으로 판정합니다.</td></tr><tr><td>83-90</td><td><code class="teach-fragment">        if (wr_en) begin
+            case (wr_offset)
+                REG_CONTROL: begin
+                    if (wr_strb[0]) begin
+                        enable_o &lt;= wr_data[0];
+                        mode_o   &lt;= wr_data[2:1];
+                    end
+                end</code></td><td>CONTROL 첫 바이트가 선택되면 enable_o에는 bit0, mode_o에는 bits[2:1]만 저장합니다. 이 장에서 0x5를 쓰면 enable=1, mode=2입니다.</td></tr><tr><td>92-97</td><td><code class="teach-fragment">                REG_COMMAND: begin
+                    if (wr_strb[0]) begin
+                        start_pulse_o &lt;= wr_data[0];
+                        clear_pulse_o &lt;= wr_data[1];
+                    end
+                end</code></td><td>COMMAND bit0·bit1은 일회성 펄스를 발생시킵니다. 이번 시험의 접근 주소에는 COMMAND가 없으므로 기능 검증 범위와 구별합니다.</td></tr><tr><td>99-107</td><td><code class="teach-fragment">                REG_DATA_IN: begin
+                    // Byte-enable write using WSTRB-equivalent strobes.
+                    for (byte_index = 0; byte_index &lt; 4; byte_index = byte_index + 1) begin
+                        if (wr_strb[byte_index]) begin
+                            data_in_o[byte_index*8 +: 8] &lt;=
+                                wr_data[byte_index*8 +: 8];
+                        end
+                    end
+                end</code></td><td>DATA_IN은 strobe에 따라 바이트별 갱신합니다. byte_index*8 +: 8은 [7:0], [15:8], [23:16], [31:24]를 차례로 선택합니다. 이 장의 DATA_IN 쓰기는 F, IRQ 무효 쓰기는 0입니다.</td></tr><tr><td>109-115</td><td><code class="teach-fragment">                default: begin
+                    // RO / reserved / unmapped writes have no effect.
+                end
+            endcase
+        end
+    end
+end</code></td><td>나머지 주소 쓰기는 무시하고 순차 블록을 닫습니다. 이 장의 읽기 전용 레지스터 시험은 읽기만 수행하므로 RO 쓰기 무시 동작까지 입증하지 않습니다.</td></tr><tr><td>117-121</td><td><code class="teach-fragment">always @(*) begin
+    case (rd_offset)
+        REG_CONTROL: begin
+            rd_data = {29&#x27;h0, mode_o, enable_o};
+        end</code></td><td>CONTROL 읽기는 29비트 0, mode 2비트, enable 1비트를 연결합니다. 이번 쓰기값 5는 {29&#x27;h0,2&#x27;b10,1&#x27;b1}로 읽힙니다.</td></tr><tr><td>123-130</td><td><code class="teach-fragment">        REG_STATUS: begin
+            rd_data = {29&#x27;h0, error_i, done_i, busy_i};
+        end
+
+        REG_COMMAND: begin
+            // W1P command register has no retained state.
+            rd_data = 32&#x27;h0000_0000;
+        end</code></td><td>STATUS는 실제 입력 상태 3비트를 연결하고, COMMAND는 저장 상태가 없으므로 0을 돌려줍니다.</td></tr><tr><td>132-138</td><td><code class="teach-fragment">        REG_IRQ_STATUS: begin
+            rd_data = {30&#x27;h0, irq_status_o};
+        end
+
+        REG_DATA_IN: begin
+            rd_data = data_in_o;
+        end</code></td><td>IRQ는 저장된 두 비트, DATA_IN은 저장된 32비트를 반환합니다.</td></tr><tr><td>140-150</td><td><code class="teach-fragment">        REG_DATA_OUT: begin
+            rd_data = data_out_i;
+        end
+
+        REG_VERSION: begin
+            rd_data = VERSION_VALUE;
+        end
+
+        REG_ID: begin
+            rd_data = ID_VALUE;
+        end</code></td><td>DATA_OUT은 외부 입력, VERSION과 ID는 상수를 반환합니다. 읽기 데이터의 출처가 서로 다름을 구별합니다.</td></tr><tr><td>152-158</td><td><code class="teach-fragment">        default: begin
+            rd_data = 32&#x27;h0000_0000;
+        end
+    endcase
+end
+
+endmodule</code></td><td>미매핑 주소는 0을 돌려주며 조합 case를 닫습니다. 전체 주소 오류 응답을 제공하는 설계는 아닙니다.</td></tr></tbody></table></details></div>
+</section>
+<section class="section" id="s02"><h2><span class="num">02</span>Agent와 Virtual Sequence 구조</h2><figure style="overflow-x:auto;margin:16px 0"><div style="min-width:700px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 422" role="img" aria-labelledby="ch22title"><title id="ch22title">다중 Agent와 동일 에지 IRQ 검증</title><rect width="960" height="422" fill="white"/><defs><marker id="ch22arr" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="10" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L10 4L0 8Z" fill="#5A1E1E"/></marker></defs><g font-family="Noto Sans CJK KR,sans-serif" fill="#172439" text-anchor="middle"><text x="480" y="28" font-size="20" font-weight="bold">Virtual Sequence · AXI와 IRQ의 동시 검증</text><rect x="24" y="164" width="164" height="76" rx="4" fill="#F7F9FC" stroke="#1F3A5F" stroke-width="2"/><text x="106" y="194" font-size="15" font-weight="bold">vsqr</text><text x="106" y="218" font-size="12">bus_sqr · evt_sqr</text><rect x="250" y="84" width="224" height="78" rx="4" fill="#F7F9FC" stroke="#1F3A5F" stroke-width="2"/><text x="362" y="114" font-size="15" font-weight="bold">axi22_bus_agent</text><text x="362" y="138" font-size="12">sqr · drv · mon</text><rect x="250" y="266" width="224" height="78" rx="4" fill="#F7F9FC" stroke="#1F3A5F" stroke-width="2"/><text x="362" y="296" font-size="15" font-weight="bold">irq22_event_agent</text><text x="362" y="320" font-size="12">sqr · drv · mon</text><rect x="540" y="84" width="180" height="78" rx="4" fill="#F7F9FC" stroke="#1F3A5F" stroke-width="2"/><text x="630" y="114" font-size="15" font-weight="bold">axi_dut</text><text x="630" y="138" font-size="12">AXI4-Lite adapter</text><rect x="540" y="266" width="180" height="78" rx="4" fill="#F7F9FC" stroke="#1F3A5F" stroke-width="2"/><text x="630" y="296" font-size="15" font-weight="bold">bank</text><text x="630" y="320" font-size="12">custom_register_bank</text><rect x="778" y="164" width="158" height="76" rx="4" fill="#F7F9FC" stroke="#1F3A5F" stroke-width="2"/><text x="857" y="194" font-size="15" font-weight="bold">sb</text><text x="857" y="218" font-size="12">write_bus / write_irq</text><g fill="none" stroke="#5A1E1E" stroke-width="2" marker-end="url(#ch22arr)"><path d="M188 181H218V123H250"/><path d="M188 223H218V305H250"/><path d="M474 123H540"/><path d="M474 305H540"/><path d="M630 162V266"/><path d="M362 84V64H857V164"/><path d="M362 344V369H857V240"/></g><g font-size="12"><text x="507" y="112">AXI</text><text x="507" y="294">IRQ</text><text x="685" y="205">wr_en</text><text x="685" y="223">offset/data/strb</text><text x="609" y="54">mon.ap → bus_in</text><text x="609" y="360">mon.ap → irq_in</text><text x="480" y="399">두 Monitor가 실제 거래·commit·IRQ 상태를 관찰하고 Scoreboard가 비교</text></g></g></svg>
+</div><figcaption>vsqr는 각 하위 Sequencer의 참조를 보관하며 직접 핀을 구동하지 않습니다. 두 Monitor의 분석 경로는 별도입니다.</figcaption></figure><table><thead><tr><th>클래스</th><th>책임</th></tr></thead><tbody><tr><td>axi22_bus_agent</td><td>AXI sqr·drv·mon</td></tr><tr><td>irq22_event_agent</td><td>resetn/done_event/error_event 구동 및 bank 포트 관찰</td></tr><tr><td>axi22_virtual_sequencer</td><td>bus_sqr 및 evt_sqr 참조</td></tr><tr><td>axi22_system_sequence</td><td>순차 거래 및 fork/join 동시 거래</td></tr><tr><td>axi22_scoreboard</td><td>write_bus 및 write_irq 분석 구현</td></tr></tbody></table><p>AXI Driver는 하강 에지에서 입력을 구동하고 독립 Monitor는 상승 에지에서 실제 핸드셰이크를 관찰합니다. B/R 응답을 두 클록 대기시키며 각 상승 에지에서 수락 시점까지 응답과 데이터가 유지되는지 비교합니다. X/Z는 2상태 거래 객체에 복사하기 전에 검사합니다. 현재 시험은 단일 미결 쓰기·읽기를 순차 수행하고, 별도 IRQ 이벤트 Agent와의 동시성을 시험합니다. AXI 자체의 모든 병렬 채널 조합이나 상용 VIP의 기능 전체를 검증하는 것이 아닙니다.</p>
+<div class="teach-note"><h3>구조도 읽기 · Virtual Sequencer는 하위 두 Sequencer의 참조를 가진다</h3><p>component 계층은 test→env→bus_agent·event_agent·vsqr·sb이고 각 Agent 아래 sqr·drv·mon이 있습니다. vsqr.bus_sqr와 evt_sqr는 기존 하위 Sequencer를 가리키는 참조이며 새 하드웨어나 새 Driver가 아닙니다. system Sequence·하위 Sequence·Item·Sample은 object입니다. 정적 top의 axi_bus·irq_bus·axi_dut·bank와 구별합니다.</p><p>요청은 각 sqr/Driver로 전달되고, 실제 관찰은 두 Monitor의 ap에서 sb.bus_in·irq_in으로 들어갑니다. 두 analysis imp의 접미사 매크로는 write_bus와 write_irq라는 별도 함수를 연결합니다. 하나의 함수에서 타입을 임의 해석하지 않습니다. 두 신호 구동 책임을 분리하여 resetn을 AXI Driver와 Event Driver가 동시에 쓰는 충돌도 피합니다.</p><h4>핵심 구문 ① · 구성요소의 생성과 연결을 분리한다</h4><table><thead><tr><th scope="col">실제 코드</th><th scope="col">역할</th><th scope="col">없으면 생기는 문제</th></tr></thead><tbody><tr><td><code>bus_agent=axi22_bus_agent::type_id::create("bus_agent",this)</code></td><td>env의 자식 AXI Agent 생성</td><td>AXI 요청·관찰 환경이 없음</td></tr><tr><td><code>vsqr.bus_sqr=bus_agent.sqr</code></td><td>기존 AXI Sequencer 핸들 전달</td><td>상위 Sequence가 AXI 하위 Sequence를 시작할 경로가 없음</td></tr><tr><td><code>vsqr.evt_sqr=event_agent.sqr</code></td><td>기존 이벤트 Sequencer 핸들 전달</td><td>상위 Sequence가 이벤트 명령을 전달할 경로가 없음</td></tr><tr><td><code>drv.seq_item_port.connect(sqr.seq_item_export)</code></td><td>각 Agent의 요청 전달 연결</td><td>Driver가 요청을 받지 못함</td></tr><tr><td><code>bus_agent.mon.ap.connect(sb.bus_in)</code></td><td>실제 B/R 완료 거래를 write_bus로 전달</td><td>버스 완료와 commit 대응을 확인하지 못함</td></tr><tr><td><code>event_agent.mon.ap.connect(sb.irq_in)</code></td><td>실제 에지 표본을 write_irq로 전달</td><td>IRQ 모델 및 commit 관찰이 진행되지 않음</td></tr></tbody></table><h4>핵심 구문 ② · 두 Analysis Imp의 함수 연결</h4><p><code>uvm_analysis_imp_decl(_bus)</code>와 <code>uvm_analysis_imp_decl(_irq)</code>는 접미사별 수신 타입을 선언합니다. <code>uvm_analysis_imp_bus #(axi22_item,axi22_scoreboard)</code>의 첫 인자는 수신할 거래 타입이고 두 번째는 write_bus를 구현한 수신 클래스입니다. irq_in은 irq22_sample을 받습니다. new("bus_in",this)와 new("irq_in",this)는 수신 객체를 실제 생성하고 this가 함수의 구현 주체임을 지정합니다.</p><p>Monitor의 <code>ap.write(s)</code>는 분석 포트에 연결된 구독자에게 같은 객체 핸들을 전달합니다. FIFO처럼 자동으로 대기 저장하는 기능도, 하드웨어 신호 구동도 아닙니다. 현재 각 Monitor가 새 객체를 생성하여 발행하므로 보관한 객체의 필드가 다음 표본에서 덮어써지는 문제를 피합니다.</p><h4>교수용 판서 · Virtual Sequencer와 두 하위 실행 경로</h4><table><thead><tr><th scope="col">상위 요청</th><th scope="col">실제 실행 경로</th><th scope="col">반환 또는 관찰</th></tr></thead><tbody><tr><td><code>wr(a,d,strb)</code></td><td>axi22_bus_sequence → p_sequencer.bus_sqr → axi22_driver</td><td>return_resp, 별도 AXI Monitor</td></tr><tr><td><code>rd(a,expected)</code></td><td>axi22_bus_sequence → p_sequencer.bus_sqr → axi22_driver</td><td>return_data/resp, 별도 AXI Monitor</td></tr><tr><td><code>ev(kind)</code></td><td>irq22_event_sequence → p_sequencer.evt_sqr → irq22_driver</td><td>item_done, 별도 IRQ Monitor</td></tr></tbody></table><p>Virtual Sequencer는 하위 sqr 두 개를 소유하는 부모가 아니라 참조를 보유하는 별도 component입니다. <code>vseq.start(env.vsqr)</code>가 상위 실행 위치를 정하고 <code>p_sequencer</code>는 그 Sequencer를 구체 타입으로 사용할 수 있게 합니다. 상위 Sequence가 하위 Driver의 핀을 직접 구동하지 않습니다.</p></div>
+</section>
+<section class="section" id="s03"><h2><span class="num">03</span>동일 에지의 Set/W1C · 독립 상태 계산</h2><table><thead><tr><th>구분</th><th>예상 동작</th></tr></thead><tbody><tr><td>초기 리셋</td><td>CONTROL/DATA_IN/IRQ_STATUS 초기화</td></tr><tr><td>done_event</td><td>IRQ bit 0 설정</td></tr><tr><td>error_event</td><td>IRQ bit 1 설정</td></tr><tr><td>W1C, WSTRB[0]=1</td><td>쓰기값의 1인 IRQ 비트만 해제</td></tr><tr><td>동일 클록 set + clear</td><td>set 우선</td></tr><tr><td>WSTRB[0]=0</td><td>W1C 무효</td></tr><tr><td>AR 수락</td><td>해당 에지 직전 IRQ 값을 캡처</td></tr></tbody></table><p>Event Monitor는 상승 에지에서 실제 bank 입력과 이벤트를 저장하고 #1ns 뒤 irq_status를 읽습니다. Scoreboard는 매 클록 기존 기대 IRQ에서 clear_mask를 제거하고 set_mask를 OR 합니다.</p><div class="codeblock"><div class="codebar"><span>기대값 계산 · SystemVerilog</span></div><pre tabindex="0"><code>expected_irq=(expected_irq &amp; ~clear_mask) | set_mask;</code></pre></div><p>wr_en은 실제 bank 공개 입력입니다. 관찰된 commit의 offset/data/strb를 큐에 보관하고 AXI의 B 완료 거래와 대조하여 누락·추가·payload 차이를 검출합니다. IRQ의 기대값은 DUT의 irq_status에서 얻지 않습니다. 다만 commit 시점 자체는 관찰된 bank 입력을 기준으로 하므로 모든 commit 타이밍 결함을 독립적으로 예측하는 모델은 아닙니다. CONTROL/DATA_IN 기대값은 순차 B 완료 모델을 유지합니다.</p><p>IRQ 상태는 AR 수락 에지 직전 기대값을 irq_before[time]에 저장하고 R 수락 시 ar_stamp로 조회합니다. 따라서 R 응답 대기 시점의 현재 IRQ를 잘못 비교하지 않습니다. 이번 입력에서는 AR/R 사이 별도 이벤트 경합까지 직접 자극하지는 않습니다.</p>
+<div class="teach-note"><h3>수치 판서 · 먼저 clear한 뒤 set을 합친다</h3><p>기대 IRQ11에 clear_mask01·set00을 적용하면(11 &amp; 10)|00=10입니다. 이어 clear10이면00입니다. 충돌 시험은 이전00에서 clear11·set11이므로(00 &amp; 00)|11=11입니다. set 우선이라는 말을 실제 비트 연산으로 확인합니다. strobe0이면 clear_mask00이라11이 유지됩니다.</p><p>Event Monitor는 상승 에지의 입력·commit을 먼저 저장하고1ns 뒤 NBA가 끝난 status를 같은 Sample에 담습니다. Scoreboard는 그 에지 전 기대 IRQ를 irq_before[stamp]에 보존합니다. AXI 읽기는 AR 에지에 데이터를 캡처하므로 R 응답 시각의 현재 IRQ보다 이 과거 값을 비교해야 합니다. 이번 시험은 AR/R 사이 이벤트 경합까지 자극한 것은 아닙니다.</p><p>commit 큐는 실제 bank 입력의 offset·data·strb를 B 완료 거래와 대조합니다. 누락·추가·payload 차이를 찾지만 commit 시점 자체는 관찰값에 의존합니다. 모든 쓰기 지연 결함을 독립 예측하는 모델로 과장하지 않습니다.</p><h4>핵심 구문 ③ · 왜 AR 시각을 따로 저장하는가?</h4><p>주소 수락과 데이터 반환 사이에 IRQ 상태가 변할 수 있습니다. 현재 adapter는 AR 수락 에지에서 rd_data를 RDATA로 등록합니다. 따라서 IRQ 읽기 비교의 기준은 R을 받은 시간이 아니라 AR을 받은 순간의 에지 전 상태입니다.</p><table><thead><tr><th scope="col">단계</th><th scope="col">실제 구문</th><th scope="col">보관할 값</th></tr></thead><tbody><tr><td>AR 수락</td><td><code>saved_ar_stamp=$time</code></td><td>AXI 주소 수락 시각</td></tr><tr><td>같은 에지 IRQ 관찰</td><td><code>s.stamp=$time</code></td><td>bank 입력의 샘플 시각</td></tr><tr><td>1ns 후 모델 호출</td><td><code>irq_before[s.stamp]=expected_irq</code></td><td>갱신하기 전의 기대 상태</td></tr><tr><td>R 수락</td><td><code>s.ar_stamp=saved_ar_stamp</code></td><td>완료 거래와 원래 주소 시각 연결</td></tr><tr><td>Scoreboard 읽기 검사</td><td><code>exp_data={30'd0,irq_before[s.ar_stamp]}</code></td><td>AR 순간의 기대 읽기값</td></tr></tbody></table><p>예를 들어 설명용 가정에서 AR 에지 직전 IRQ가 01이고 같은 에지에 ERROR 이벤트가 들어오면 bank의 IRQ는 NBA 후 11이 됩니다. adapter가 그 에지에 읽어 등록한 값은 01입니다. 나중 R 수락 시 현재 IRQ 11과 비교하면 정상 DUT를 실패로 판정할 수 있습니다. 현재 TB가 이 특정 경합을 별도 실행했다는 뜻은 아닙니다.</p><h4>핵심 구문 ④ · W1C와 set 우선의 비트 계산</h4><p><code>set_mask={s.error_event,s.done_event}</code>는 bit1에 error, bit0에 done을 놓습니다. <code>clear_mask=s.data[1:0]</code>는 offset 0C이고 strobe[0]가 1일 때만 실행됩니다. <code>expected_irq=(expected_irq &amp; ~clear_mask) | set_mask</code>의 clear와 set 계산은 2비트입니다.</p><table><thead><tr><th scope="col">상황</th><th scope="col">이전 IRQ</th><th scope="col">clear</th><th scope="col">set</th><th scope="col">AND 뒤</th><th scope="col">OR 뒤</th></tr></thead><tbody><tr><td>DONE</td><td>00</td><td>00</td><td>01</td><td>00</td><td>01</td></tr><tr><td>ERROR</td><td>01</td><td>00</td><td>10</td><td>01</td><td>11</td></tr><tr><td>W1C bit0</td><td>11</td><td>01</td><td>00</td><td>10</td><td>10</td></tr><tr><td>W1C bit1</td><td>10</td><td>10</td><td>00</td><td>00</td><td>00</td></tr><tr><td>동일 에지 충돌</td><td>00</td><td>11</td><td>11</td><td>00</td><td>11</td></tr><tr><td>strobe=0000</td><td>11</td><td>00</td><td>00</td><td>11</td><td>11</td></tr></tbody></table><p>개별 bit의 경우 clear=1, set=1이면 이전 상태와 무관하게 최종 1입니다. 이 수식이 RTL의 if(event) ... else if(clear) 구조와 같은 동작을 표현합니다. IRQ 모델의 갱신은 B 완료 함수 write_bus가 아니라 write_irq에서만 수행합니다.</p><h4>핵심 구문 ⑤ · commit 큐의 역할과 한계</h4><p><code>committed.push_back(c)</code>는 실제 bank 입력을 기록하고 <code>c=committed.pop_front()</code>는 이후 B 완료가 소비하는 가장 오래된 기록입니다. 크기가 0인데 B가 발생하면 선행 commit이 없고, 마지막에 큐가 남으면 미완료 대응이 있습니다. 현재 모델은 실제 commit을 관찰하여 B와 주소 하위8비트·데이터·strobe를 대조하므로, 모든 AXI 타이밍 규칙을 독립적으로 예측한 것은 아닙니다.</p></div>
+</section>
+<section class="section" id="s04"><h2><span class="num">04</span>검증 시나리오 · 6개 쓰기와 13개 읽기</h2><table><thead><tr><th>순서</th><th>자극</th><th>기대</th></tr></thead><tbody><tr><td>1</td><td>CONTROL 5, DATA_IN 11223344 쓰기/읽기</td><td>5, 11223344</td></tr><tr><td>2</td><td>DONE, ERROR 순차 발생 및 읽기</td><td>01 → 11</td></tr><tr><td>3</td><td>W1C 1, W1C 2 및 읽기</td><td>10 → 00</td></tr><tr><td>4</td><td>fork: W1C 3 + EV_BOTH_ON_CLEAR</td><td>동일 commit 에지 두 set 우선 → 11</td></tr><tr><td>5</td><td>W1C 3, WSTRB=0000</td><td>11 유지</td></tr><tr><td>6</td><td>VERSION/ID 읽기</td><td>00010000 / 524D4150</td></tr><tr><td>7</td><td>IRQ=11 및 CONTROL/DATA_IN이 남은 상태에서 리셋</td><td>세 레지스터 모두 0</td></tr></tbody></table><p>충돌 시험은 Event Driver가 실제 wr_en 및 IRQ 주소와 데이터가 유효한 하강 에지에 done/error를 함께 올리고 다음 하강 에지에서 내립니다. 그 사이 한 상승 에지에서 clear와 set이 동시에 발생합니다. Scoreboard가 collisions=1로 실제 충돌을 확인합니다. IRQ 이벤트 비트 발생 총 4개(DONE 1, ERROR 1, 동시 2), 리셋 구간 2개(초기 및 재리셋), commit 6개, zero_strobes=1입니다.</p><p>부정 시험 CORRUPT_IRQ는 충돌 시 관찰 객체의 bit 0만 반전합니다. 예상 11, 관찰 10으로 IRQ_MISMATCH 진단을 발생시킵니다. 원본 RTL 변이 시험이 아니라 비교 경로의 오류 검출 시험입니다.</p>
+<div class="teach-note"><h3>타이밍·시험 설계 · fork와 같은 에지는 다르다</h3><p>fork는 버스 쓰기와 이벤트 Sequence를 병렬 시작합니다. Event Driver는 wr_en1·offset0C·strobe[0]1·data[1:0]11을 만족하는 하강 에지를 기다린 뒤 done/error를 올립니다. 다음 상승 에지에서 W1C와 두 set이 함께 샘플링되고 다음 하강 에지에 이벤트를 내립니다. 10ns 클록에서 한 에지에 걸친10ns 펄스입니다.</p><p>최종 AXI는6쓰기+13읽기=19거래입니다. IRQ bit 이벤트는 DONE1+ERROR1+동시2=4개, 실제 충돌1회, strobe0 W1C1회입니다. Event Driver의6명령은 release2+assert_reset1+done1+error1+both1로 세는 별도 단위입니다. resets2는 낮은 리셋 표본 수가 아니라 초기·재리셋 두 구간입니다.</p><h4>판서 · fork/join과 실제 동일 상승 에지의 차이</h4><p>다음 표의 H는 W1C의 AW/W가 모두 수락된 상승 에지를 의미하는 설명용 상대 시각입니다. 클록 주기 10ns이고 adapter의 두 저장 플래그가 H에서 모두 채워지는 경우입니다.</p><table><thead><tr><th scope="col">상대 시각</th><th scope="col">AXI Driver / adapter</th><th scope="col">Event Driver / bank</th><th scope="col">검증 관찰</th></tr></thead><tbody><tr><td>H-5ns</td><td>AW/W 구동</td><td>commit 조건 탐색</td><td>아직 쓰기 미수락</td></tr><tr><td>H</td><td>AW/W 수락, NBA 뒤 wr_en=1</td><td>이전 wr_en=0이므로 bank 쓰기는 아직 없음</td><td>AXI Monitor가 주소/데이터 저장</td></tr><tr><td>H+5ns</td><td>수락한 valid 해제</td><td>wr_en=1·offset=0C·strobe[0]=1·data[1:0]=11 발견, 두 이벤트 1</td><td>다음 에지에서 충돌할 준비</td></tr><tr><td>H+10ns</td><td>bank commit 및 BVALID 등록</td><td>W1C와 두 이벤트 동시에 샘플링, IRQ 11로 갱신</td><td>IRQ Monitor가 에지 입력 저장</td></tr><tr><td>H+11ns</td><td>B 응답은 아직 수락 전</td><td>irq_status=11 관찰</td><td>write_irq: collisions 증가, 기대 11과 비교</td></tr><tr><td>H+15ns</td><td>BVALID 발견 가능, BREADY=0 유지</td><td>두 이벤트를 0으로 해제</td><td>출력 유지 관찰</td></tr><tr><td>H+35ns</td><td>두 추가 하강 에지 대기 후 BREADY=1</td><td>IRQ 11 유지</td><td>응답 안정성 검사</td></tr><tr><td>H+40ns</td><td>BVALID&&BREADY</td><td>IRQ 변경 없음</td><td>write_bus: commit 큐 소비</td></tr><tr><td>H+45ns</td><td>BREADY=0, Driver 완료</td><td>이벤트 Sequence는 이미 완료</td><td>fork/join 종료 가능</td></tr></tbody></table><p>위 시각은 해당 코드 경로에서 계산한 예시이며 새 파형 측정 결과가 아닙니다. <code>fork ... join</code>은 두 task를 병행하여 모두 끝날 때까지 기다리는 구조일 뿐입니다. 실제 동일 에지는 EV_BOTH_ON_CLEAR의 do-while 조건과 충돌 수 검사로 확인합니다.</p></div>
+</section>
+<section class="section" id="s05"><h2><span class="num">05</span>전체 SystemVerilog/UVM 테스트벤치</h2><div class="codeblock"><div class="codebar"><span>tb/ch22/tb_axi_multiagent_irq.sv · SystemVerilog / UVM</span></div><pre tabindex="0"><code>`timescale 1ns/1ps
+// 제22장: AXI4-Lite Master Agent + Reset/IRQ Agent + Virtual Sequence.
+// 상용 AMD AXI VIP가 아닌 교육용 VIP-style(재사용 검증 컴포넌트) 구현.
+// 기존 axi4lite_slave_adapter.v 및 custom_register_bank.v는 수정하지 않는다.
+
+// (추가) 버스 전용 Interface: AXI 신호만 묶는다.
+interface axi22_if(input logic clk, input logic resetn);
+    logic [31:0] awaddr=0, wdata=0, araddr=0;
+    logic [3:0] wstrb=0;
+    logic awvalid=0, wvalid=0, bready=0, arvalid=0, rready=0;
+    wire awready, wready, bvalid, arready, rvalid;
+    wire [1:0] bresp, rresp;
+    wire [31:0] rdata;
+endinterface
+
+// (추가) 하드웨어 이벤트 전용 Interface: AXI와 구동 책임을 분리한다.
+interface irq22_if(input logic clk);
+    logic resetn=0;
+    logic done_event=0, error_event=0;
+    wire [1:0] irq_status;
+    // (추가) 공개 레지스터 뱅크 입력: 실제 commit 경계 관찰 및 충돌 자극.
+    wire wr_en;
+    wire [7:0] wr_offset;
+    wire [31:0] wr_data;
+    wire [3:0] wr_strb;
+endinterface
+
+package ch22_pkg;
+    import uvm_pkg::*;
+    `include &quot;uvm_macros.svh&quot;
+
+    // 두 개의 독립 Analysis Imp(write_bus/write_irq)를 선언한다.
+    `uvm_analysis_imp_decl(_bus)
+    `uvm_analysis_imp_decl(_irq)
+
+    typedef enum {EV_RELEASE, EV_ASSERT_RESET, EV_DONE, EV_ERROR, EV_BOTH_ON_CLEAR} evt22_kind_e;
+
+    class axi22_item extends uvm_sequence_item;
+        `uvm_object_utils(axi22_item)
+        bit is_write;
+        bit [31:0] addr, data;
+        bit [3:0] strb=4'hf;
+        bit [1:0] resp=0;
+        time ar_stamp;
+        function new(string name=&quot;axi22_item&quot;);
+            super.new(name);
+        endfunction
+    endclass
+
+    class irq22_item extends uvm_sequence_item;
+        `uvm_object_utils(irq22_item)
+        evt22_kind_e kind;
+        function new(string name=&quot;irq22_item&quot;);
+            super.new(name);
+        endfunction
+    endclass
+
+    class irq22_sample extends uvm_sequence_item;
+        `uvm_object_utils(irq22_sample)
+        logic resetn, done_event, error_event, wr_en;
+        logic [7:0] offset;
+        logic [31:0] data;
+        logic [3:0] strb;
+        logic [1:0] status;
+        time stamp;
+        function new(string name=&quot;irq22_sample&quot;);
+            super.new(name);
+        endfunction
+    endclass
+
+    class axi22_sequencer extends uvm_sequencer #(axi22_item);
+        `uvm_component_utils(axi22_sequencer)
+        function new(string name, uvm_component parent);
+            super.new(name,parent);
+        endfunction
+    endclass
+
+    class irq22_sequencer extends uvm_sequencer #(irq22_item);
+        `uvm_component_utils(irq22_sequencer)
+        function new(string name, uvm_component parent);
+            super.new(name,parent);
+        endfunction
+    endclass
+
+    // AXI Master Driver: AW/W 독립 Handshake와 B/R Backpressure를 보존한다.
+    class axi22_driver extends uvm_driver #(axi22_item);
+        `uvm_component_utils(axi22_driver)
+        virtual axi22_if vif;
+        int unsigned driven=0;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction
+        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            if (!uvm_config_db#(virtual axi22_if)::get(this,&quot;&quot;,&quot;vif&quot;,vif))
+                `uvm_fatal(&quot;AXI_VIF&quot;,&quot;AXI interface missing&quot;)
+        endfunction
+        task automatic write_one(axi22_item t);
+            bit aw_done=0, w_done=0;
+            @(negedge vif.clk);
+            vif.awaddr=t.addr; vif.awvalid=1'b1;
+            vif.wdata=t.data; vif.wstrb=t.strb; vif.wvalid=1'b1;
+            for (int k=0;k&lt;100;k++) begin
+                @(posedge vif.clk);
+                if (vif.awvalid &amp;&amp; vif.awready) aw_done=1;
+                if (vif.wvalid &amp;&amp; vif.wready) w_done=1;
+                @(negedge vif.clk);
+                if (aw_done) vif.awvalid=1'b0;
+                if (w_done) vif.wvalid=1'b0;
+                if (aw_done &amp;&amp; w_done) break;
+            end
+            if (!aw_done || !w_done)
+                `uvm_fatal(&quot;AXI_AW_W&quot;,&quot;Write handshake timeout&quot;)
+            for (int k=0;k&lt;100;k++) begin
+                @(negedge vif.clk);
+                if (vif.bvalid) begin
+                    t.resp=vif.bresp;
+                    // 두 클록 동안 BREADY=0 → 응답 유지 후 수락.
+                    repeat (2) begin
+                        @(negedge vif.clk);
+                        if (vif.bvalid !== 1'b1 || vif.bresp !== t.resp)
+                            `uvm_fatal(&quot;B_HOLD&quot;,&quot;Write response changed during stall&quot;)
+                    end
+                    vif.bready=1'b1;
+                    @(posedge vif.clk);
+                    @(negedge vif.clk);
+                    vif.bready=1'b0;
+                    return;
+                end
+            end
+            `uvm_fatal(&quot;B_TIMEOUT&quot;,&quot;Write response timeout&quot;)
+        endtask
+        task automatic read_one(axi22_item t);
+            bit ar_done=0;
+            @(negedge vif.clk);
+            vif.araddr=t.addr; vif.arvalid=1'b1;
+            for (int k=0;k&lt;100;k++) begin
+                @(posedge vif.clk);
+                if (vif.arvalid &amp;&amp; vif.arready) ar_done=1;
+                @(negedge vif.clk);
+                if (ar_done) begin vif.arvalid=1'b0; break; end
+            end
+            if (!ar_done) `uvm_fatal(&quot;AR_TIMEOUT&quot;,&quot;Read address timeout&quot;)
+            for (int k=0;k&lt;100;k++) begin
+                @(negedge vif.clk);
+                if (vif.rvalid) begin
+                    t.data=vif.rdata; t.resp=vif.rresp;
+                    // 두 클록 동안 RREADY=0 → 데이터 유지 검사.
+                    repeat (2) begin
+                        @(negedge vif.clk);
+                        if (vif.rvalid !== 1'b1 || vif.rdata !== t.data ||
+                            vif.rresp !== t.resp)
+                            `uvm_fatal(&quot;R_HOLD&quot;,&quot;Read response changed during stall&quot;)
+                    end
+                    vif.rready=1'b1;
+                    @(posedge vif.clk);
+                    @(negedge vif.clk);
+                    vif.rready=1'b0;
+                    return;
+                end
+            end
+            `uvm_fatal(&quot;R_TIMEOUT&quot;,&quot;Read response timeout&quot;)
+        endtask
+        task run_phase(uvm_phase phase);
+            axi22_item req;
+            forever begin
+                seq_item_port.get_next_item(req);
+                if (req.is_write) write_one(req);
+                else read_one(req);
+                driven++;
+                seq_item_port.item_done();
+            end
+        endtask
+    endclass
+
+    // AXI Monitor는 Driver 완료 이벤트를 쓰지 않고 실제 5채널을 관찰한다.
+    class axi22_monitor extends uvm_monitor;
+        `uvm_component_utils(axi22_monitor)
+        virtual axi22_if vif;
+        uvm_analysis_port #(axi22_item) ap;
+        bit aw_seen=0, w_seen=0, ar_seen=0;
+        bit [31:0] saved_aw, saved_wd, saved_ar;
+        bit [3:0] saved_strb;
+        time saved_ar_stamp;
+        bit b_held=0, r_held=0;
+        logic [1:0] held_bresp, held_rresp;
+        logic [31:0] held_rdata;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+            ap=new(&quot;ap&quot;,this);
+        endfunction
+        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            if (!uvm_config_db#(virtual axi22_if)::get(this,&quot;&quot;,&quot;vif&quot;,vif))
+                `uvm_fatal(&quot;AXI_VIF&quot;,&quot;AXI monitor interface missing&quot;)
+        endfunction
+        task run_phase(uvm_phase phase);
+            axi22_item s;
+            forever begin
+                @(posedge vif.clk); // DUT가 Handshake를 읽는 에지에서 관찰
+                if (!vif.resetn) begin
+                    aw_seen=0; w_seen=0; ar_seen=0;
+                    b_held=0; r_held=0;
+                end else begin
+                    if ((^{vif.resetn,vif.awvalid,vif.awready,vif.wvalid,vif.wready,
+                           vif.bvalid,vif.bready,vif.arvalid,vif.arready,
+                           vif.rvalid,vif.rready}) === 1'bx)
+                        `uvm_fatal(&quot;BUS_X&quot;,&quot;Unknown handshake&quot;)
+                    // (추가) 모든 상승 에지에서 응답 대기 및 수락 에지까지 유지 검사.
+                    if (b_held &amp;&amp; (vif.bvalid !== 1'b1 || vif.bresp !== held_bresp))
+                        `uvm_fatal(&quot;B_HOLD&quot;,&quot;B changed while pending&quot;)
+                    if (r_held &amp;&amp; (vif.rvalid !== 1'b1 || vif.rresp !== held_rresp ||
+                                   vif.rdata !== held_rdata))
+                        `uvm_fatal(&quot;R_HOLD&quot;,&quot;R changed while pending&quot;)
+                    b_held=vif.bvalid &amp;&amp; !vif.bready;
+                    r_held=vif.rvalid &amp;&amp; !vif.rready;
+                    if (b_held) held_bresp=vif.bresp;
+                    if (r_held) begin held_rresp=vif.rresp; held_rdata=vif.rdata; end
+                    if (vif.awvalid &amp;&amp; vif.awready) begin
+                        if (aw_seen || (^vif.awaddr) === 1'bx)
+                            `uvm_fatal(&quot;MON_AW&quot;,&quot;Duplicate or unknown AW&quot;)
+                        saved_aw=vif.awaddr; aw_seen=1;
+                    end
+                    if (vif.wvalid &amp;&amp; vif.wready) begin
+                        if (w_seen || (^{vif.wdata,vif.wstrb}) === 1'bx)
+                            `uvm_fatal(&quot;MON_W&quot;,&quot;Duplicate or unknown W&quot;)
+                        saved_wd=vif.wdata; saved_strb=vif.wstrb; w_seen=1;
+                    end
+                    if (vif.arvalid &amp;&amp; vif.arready) begin
+                        if (ar_seen || (^vif.araddr) === 1'bx)
+                            `uvm_fatal(&quot;MON_AR&quot;,&quot;Duplicate or unknown AR&quot;)
+                        saved_ar=vif.araddr; saved_ar_stamp=$time; ar_seen=1;
+                    end
+                    if (vif.bvalid &amp;&amp; vif.bready) begin
+                        if (!aw_seen || !w_seen || vif.bresp !== 2'b00)
+                            `uvm_fatal(&quot;AXI_MON_B&quot;,&quot;B before AW/W Handshake&quot;)
+                        s=axi22_item::type_id::create(&quot;observed_write&quot;);
+                        s.is_write=1; s.addr=saved_aw; s.data=saved_wd;
+                        s.strb=saved_strb; s.resp=vif.bresp;
+                        ap.write(s);
+                        aw_seen=0; w_seen=0;
+                    end
+                    if (vif.rvalid &amp;&amp; vif.rready) begin
+                        if (!ar_seen || vif.rresp !== 2'b00 || (^vif.rdata) === 1'bx)
+                            `uvm_fatal(&quot;AXI_MON_R&quot;,&quot;R before AR Handshake&quot;)
+                        s=axi22_item::type_id::create(&quot;observed_read&quot;);
+                        s.is_write=0; s.addr=saved_ar; s.data=vif.rdata;
+                        s.ar_stamp=saved_ar_stamp;
+                        s.resp=vif.rresp;
+                        ap.write(s);
+                        ar_seen=0;
+                    end
+                end
+            end
+        endtask
+    endclass
+
+    // 별도 Event Driver는 Reset/IRQ 입력만 구동한다.
+    class irq22_driver extends uvm_driver #(irq22_item);
+        `uvm_component_utils(irq22_driver)
+        virtual irq22_if vif;
+        int unsigned events_driven=0;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction
+        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            if (!uvm_config_db#(virtual irq22_if)::get(this,&quot;&quot;,&quot;vif&quot;,vif))
+                `uvm_fatal(&quot;IRQ_VIF&quot;,&quot;IRQ interface missing&quot;)
+        endfunction
+        task run_phase(uvm_phase phase);
+            irq22_item req;
+            forever begin
+                seq_item_port.get_next_item(req);
+                case (req.kind)
+                    EV_RELEASE: begin
+                        @(negedge vif.clk);
+                        vif.resetn=1'b1;
+                    end
+                    EV_ASSERT_RESET: begin
+                        @(negedge vif.clk);
+                        vif.resetn=1'b0;
+                        repeat (3) @(negedge vif.clk);
+                    end
+                    EV_DONE: begin
+                        @(negedge vif.clk);
+                        vif.done_event=1'b1;
+                        @(negedge vif.clk);
+                        vif.done_event=1'b0;
+                    end
+                    EV_ERROR: begin
+                        @(negedge vif.clk);
+                        vif.error_event=1'b1;
+                        @(negedge vif.clk);
+                        vif.error_event=1'b0;
+                    end
+                    // (추가) 실제 bank 쓰기 경계에 두 이벤트를 정렬한다.
+                    EV_BOTH_ON_CLEAR: begin
+                        int guard=0;
+                        do begin
+                            @(negedge vif.clk);
+                            guard++;
+                            if (guard&gt;100) `uvm_fatal(&quot;COLLISION_TIMEOUT&quot;,&quot;No W1C commit&quot;)
+                        end while (!(vif.wr_en === 1'b1 &amp;&amp; vif.wr_offset === 8'h0c &amp;&amp;
+                                     vif.wr_strb[0] === 1'b1 &amp;&amp; vif.wr_data[1:0] === 2'b11));
+                        vif.done_event=1'b1; vif.error_event=1'b1;
+                        @(negedge vif.clk);
+                        vif.done_event=1'b0; vif.error_event=1'b0;
+                    end
+                endcase
+                events_driven++;
+                seq_item_port.item_done();
+            end
+        endtask
+    endclass
+
+    // 별도 Event Monitor: IRQ 상태·Reset을 관찰해 Scoreboard에 전달.
+    class irq22_monitor extends uvm_monitor;
+        `uvm_component_utils(irq22_monitor)
+        virtual irq22_if vif;
+        uvm_analysis_port #(irq22_sample) ap;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+            ap=new(&quot;ap&quot;,this);
+        endfunction
+        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            if (!uvm_config_db#(virtual irq22_if)::get(this,&quot;&quot;,&quot;vif&quot;,vif))
+                `uvm_fatal(&quot;IRQ_VIF&quot;,&quot;IRQ monitor interface missing&quot;)
+        endfunction
+        task run_phase(uvm_phase phase);
+            irq22_sample s;
+            forever begin
+                @(posedge vif.clk);
+                // (변경) 입력은 상승 에지, 출력은 NBA 이후에 같은 객체로 관찰.
+                s=irq22_sample::type_id::create(&quot;cycle&quot;);
+                s.stamp=$time; s.resetn=vif.resetn;
+                s.done_event=vif.done_event; s.error_event=vif.error_event;
+                s.wr_en=vif.wr_en; s.offset=vif.wr_offset;
+                s.data=vif.wr_data; s.strb=vif.wr_strb;
+                #1;
+                s.status=vif.irq_status;
+                if ($test$plusargs(&quot;CORRUPT_IRQ&quot;) &amp;&amp; s.resetn &amp;&amp;
+                    s.done_event &amp;&amp; s.error_event &amp;&amp; s.wr_en)
+                    s.status=s.status ^ 2'b01;
+                ap.write(s);
+            end
+        endtask
+    endclass
+
+    // 버스 완료 관찰과 IRQ 이벤트 관찰을 별도 Analysis Imp로 수집.
+    class axi22_scoreboard extends uvm_scoreboard;
+        `uvm_component_utils(axi22_scoreboard)
+        uvm_analysis_imp_bus #(axi22_item,axi22_scoreboard) bus_in;
+        uvm_analysis_imp_irq #(irq22_sample,axi22_scoreboard) irq_in;
+        bit [31:0] expected_control=0, expected_data=0;
+        bit [1:0] expected_irq=0;
+        int unsigned writes=0, reads=0, events=0, resets=0;
+        int unsigned collisions=0, zero_strobes=0, commits=0;
+        bit previous_resetn=1;
+        bit [1:0] irq_before[time];
+        axi22_item committed[$];
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+            bus_in=new(&quot;bus_in&quot;,this);
+            irq_in=new(&quot;irq_in&quot;,this);
+        endfunction
+
+        function void write_bus(axi22_item s);
+            bit [31:0] exp_data;
+            axi22_item c;
+            if (s.resp !== 2'b00)
+                `uvm_fatal(&quot;AXI_RESP&quot;,&quot;Non-OKAY AXI response&quot;)
+            if (s.is_write) begin
+                if (committed.size()==0)
+                    `uvm_fatal(&quot;COMMIT&quot;,&quot;B without register-bank commit&quot;)
+                c=committed.pop_front();
+                if (s.addr[7:0] !== c.addr[7:0] || s.data !== c.data ||
+                    s.strb !== c.strb)
+                    `uvm_fatal(&quot;COMMIT&quot;,&quot;AXI transaction differs from bank input&quot;)
+                case (s.addr)
+                    'h00: if (s.strb[0])
+                        expected_control={29'd0,s.data[2:0]};
+                    'h10: for (int i=0;i&lt;4;i++)
+                        if (s.strb[i])
+                            expected_data[i*8 +: 8]=s.data[i*8 +: 8];
+                    'h0c: ; // IRQ는 B 응답이 아니라 실제 commit 에지에서 갱신한다.
+                    default: `uvm_fatal(&quot;AXI_WR_ADDR&quot;,&quot;Unexpected write address&quot;)
+                endcase
+                writes++;
+            end else begin
+                case (s.addr)
+                    'h00: exp_data=expected_control;
+                    'h0c: begin
+                        if (!irq_before.exists(s.ar_stamp))
+                            `uvm_fatal(&quot;AR_TIME&quot;,&quot;No IRQ state at AR acceptance&quot;)
+                        exp_data={30'd0,irq_before[s.ar_stamp]};
+                    end
+                    'h10: exp_data=expected_data;
+                    'h18: exp_data=32'h00010000;
+                    'h1c: exp_data=32'h524D4150;
+                    default: `uvm_fatal(&quot;AXI_RD_ADDR&quot;,&quot;Unexpected read address&quot;)
+                endcase
+                if (s.data !== exp_data)
+                    `uvm_fatal(&quot;AXI_READ_MISMATCH&quot;,
+                        $sformatf(&quot;addr=%h got=%h expected=%h&quot;,
+                                  s.addr,s.data,exp_data))
+                reads++;
+            end
+        endfunction
+
+        function void write_irq(irq22_sample s);
+            axi22_item c;
+            bit [1:0] clear_mask, set_mask;
+            irq_before[s.stamp]=expected_irq;
+            if (s.resetn === 1'b0) begin
+                if (previous_resetn) resets++;
+                if (committed.size()!=0)
+                    `uvm_fatal(&quot;RESET_PENDING&quot;,&quot;Unexpected pending bank commit&quot;)
+                expected_irq=0; expected_control=0; expected_data=0;
+                previous_resetn=0;
+            end else begin
+                if ((^{s.resetn,s.done_event,s.error_event,s.wr_en}) === 1'bx)
+                    `uvm_fatal(&quot;IRQ_X&quot;,&quot;Unknown bank control&quot;)
+                previous_resetn=1;
+                clear_mask=0; set_mask={s.error_event,s.done_event};
+                if (s.wr_en) begin
+                    if ((^{s.offset,s.data,s.strb}) === 1'bx)
+                        `uvm_fatal(&quot;COMMIT_X&quot;,&quot;Unknown bank write&quot;)
+                    c=axi22_item::type_id::create(&quot;commit&quot;);
+                    c.addr={24'd0,s.offset}; c.data=s.data; c.strb=s.strb;
+                    committed.push_back(c); commits++;
+                    if (s.offset==8'h0c) begin
+                        if (s.strb[0]) clear_mask=s.data[1:0];
+                        else zero_strobes++;
+                    end
+                end
+                if (s.done_event) events++;
+                if (s.error_event) events++;
+                if (clear_mask==2'b11 &amp;&amp; set_mask==2'b11) collisions++;
+                // (추가) 동일 비트의 set이 clear보다 우선.
+                expected_irq=(expected_irq &amp; ~clear_mask) | set_mask;
+            end
+            if (s.status !== expected_irq)
+                `uvm_fatal(&quot;IRQ_MISMATCH&quot;,$sformatf(
+                    &quot;status=%b expected=%b collisions=%0d&quot;,
+                    s.status,expected_irq,collisions))
+        endfunction
+    endclass
+
+    class axi22_bus_agent extends uvm_agent;
+        `uvm_component_utils(axi22_bus_agent)
+        axi22_sequencer sqr;
+        axi22_driver drv;
+        axi22_monitor mon;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction
+        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            sqr=axi22_sequencer::type_id::create(&quot;sqr&quot;,this);
+            drv=axi22_driver::type_id::create(&quot;drv&quot;,this);
+            mon=axi22_monitor::type_id::create(&quot;mon&quot;,this);
+        endfunction
+        function void connect_phase(uvm_phase phase);
+            super.connect_phase(phase);
+            drv.seq_item_port.connect(sqr.seq_item_export);
+        endfunction
+    endclass
+
+    class irq22_event_agent extends uvm_agent;
+        `uvm_component_utils(irq22_event_agent)
+        irq22_sequencer sqr;
+        irq22_driver drv;
+        irq22_monitor mon;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction
+        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            sqr=irq22_sequencer::type_id::create(&quot;sqr&quot;,this);
+            drv=irq22_driver::type_id::create(&quot;drv&quot;,this);
+            mon=irq22_monitor::type_id::create(&quot;mon&quot;,this);
+        endfunction
+        function void connect_phase(uvm_phase phase);
+            super.connect_phase(phase);
+            drv.seq_item_port.connect(sqr.seq_item_export);
+        endfunction
+    endclass
+
+    // Virtual Sequencer는 두 Agent의 Sequencer 핸들만 보관한다.
+    class axi22_virtual_sequencer extends uvm_sequencer #(uvm_sequence_item);
+        `uvm_component_utils(axi22_virtual_sequencer)
+        axi22_sequencer bus_sqr;
+        irq22_sequencer evt_sqr;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction
+    endclass
+
+    class axi22_bus_sequence extends uvm_sequence #(axi22_item);
+        `uvm_object_utils(axi22_bus_sequence)
+        bit is_write;
+        bit [31:0] addr, send_data;
+        bit [3:0] strb=4'hf;
+        bit [31:0] return_data;
+        bit [1:0] return_resp;
+        function new(string name=&quot;axi22_bus_sequence&quot;);
+            super.new(name);
+        endfunction
+        task body();
+            axi22_item req=axi22_item::type_id::create(&quot;req&quot;);
+            start_item(req);
+            req.is_write=is_write;
+            req.addr=addr; req.data=send_data; req.strb=strb;
+            finish_item(req);
+            return_data=req.data;
+            return_resp=req.resp;
+        endtask
+    endclass
+
+    class irq22_event_sequence extends uvm_sequence #(irq22_item);
+        `uvm_object_utils(irq22_event_sequence)
+        evt22_kind_e kind;
+        function new(string name=&quot;irq22_event_sequence&quot;);
+            super.new(name);
+        endfunction
+        task body();
+            irq22_item req=irq22_item::type_id::create(&quot;req&quot;);
+            start_item(req);
+            req.kind=kind;
+            finish_item(req);
+        endtask
+    endclass
+
+    // Virtual Sequence 하나가 서로 다른 두 Agent를 순서대로 조정한다.
+    class axi22_system_sequence extends uvm_sequence #(uvm_sequence_item);
+        `uvm_object_utils(axi22_system_sequence)
+        `uvm_declare_p_sequencer(axi22_virtual_sequencer)
+        function new(string name=&quot;axi22_system_sequence&quot;);
+            super.new(name);
+        endfunction
+
+        task automatic ev(evt22_kind_e kind);
+            irq22_event_sequence s=irq22_event_sequence::type_id::create(&quot;ev&quot;);
+            s.kind=kind;
+            s.start(p_sequencer.evt_sqr);
+        endtask
+
+        task automatic wr(bit [31:0] a,bit [31:0] d,bit [3:0] strb=4'hf);
+            axi22_bus_sequence s=axi22_bus_sequence::type_id::create(&quot;write&quot;);
+            s.is_write=1; s.addr=a; s.send_data=d; s.strb=strb;
+            s.start(p_sequencer.bus_sqr);
+            if (s.return_resp !== 2'b00)
+                `uvm_fatal(&quot;WRITE&quot;,&quot;Write response was not OKAY&quot;)
+        endtask
+
+        task automatic rd(bit [31:0] a,bit [31:0] expected);
+            axi22_bus_sequence s=axi22_bus_sequence::type_id::create(&quot;read&quot;);
+            s.is_write=0; s.addr=a;
+            s.start(p_sequencer.bus_sqr);
+            if (s.return_resp !== 2'b00 || s.return_data !== expected)
+                `uvm_fatal(&quot;READ&quot;,
+                    $sformatf(&quot;addr=%h got=%h expected=%h&quot;,
+                              a,s.return_data,expected))
+        endtask
+
+        task body();
+            // 초기 리셋 → 제어/데이터 레지스터 접근.
+            ev(EV_RELEASE);
+            wr('h00,32'h00000005);
+            wr('h10,32'h11223344);
+            rd('h00,32'h00000005);
+            rd('h10,32'h11223344);
+
+            // 실제 HW IRQ 이벤트 발생 → AXI Read로 관찰.
+            ev(EV_DONE);
+            rd('h0c,32'h00000001);
+            ev(EV_ERROR);
+            rd('h0c,32'h00000003);
+
+            // W1C(Write 1 to Clear, 1을 써서 상태 비트 해제) 시험.
+            wr('h0c,32'h00000001);
+            rd('h0c,32'h00000002);
+            wr('h0c,32'h00000002);
+            rd('h0c,32'h00000000);
+
+            // (추가) 두 Agent를 동시에 실행하여 같은 commit 에지에서 set/clear 충돌.
+            fork
+                wr('h0c,32'h00000003);
+                ev(EV_BOTH_ON_CLEAR);
+            join
+            rd('h0c,32'h00000003);
+            // WSTRB[0]=0: W1C가 무시되어 두 비트가 유지된다.
+            wr('h0c,32'h00000003,4'b0000);
+            rd('h0c,32'h00000003);
+
+            // RO 레지스터와 리셋 후 상태 초기화 확인.
+            rd('h18,32'h00010000);
+            rd('h1c,32'h524D4150);
+            ev(EV_ASSERT_RESET);
+            ev(EV_RELEASE);
+            rd('h0c,32'h00000000);
+            rd('h00,32'h00000000);
+            rd('h10,32'h00000000);
+        endtask
+    endclass
+
+    class axi22_env extends uvm_env;
+        `uvm_component_utils(axi22_env)
+        axi22_bus_agent bus_agent;
+        irq22_event_agent event_agent;
+        axi22_virtual_sequencer vsqr;
+        axi22_scoreboard sb;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction
+        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            bus_agent=axi22_bus_agent::type_id::create(&quot;bus_agent&quot;,this);
+            event_agent=irq22_event_agent::type_id::create(&quot;event_agent&quot;,this);
+            vsqr=axi22_virtual_sequencer::type_id::create(&quot;vsqr&quot;,this);
+            sb=axi22_scoreboard::type_id::create(&quot;sb&quot;,this);
+        endfunction
+        function void connect_phase(uvm_phase phase);
+            super.connect_phase(phase);
+            vsqr.bus_sqr=bus_agent.sqr;
+            vsqr.evt_sqr=event_agent.sqr;
+            bus_agent.mon.ap.connect(sb.bus_in);
+            event_agent.mon.ap.connect(sb.irq_in);
+        endfunction
+    endclass
+
+    class axi22_test extends uvm_test;
+        `uvm_component_utils(axi22_test)
+        axi22_env env;
+        virtual irq22_if irq_vif;
+        bit done=0;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction
+        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            env=axi22_env::type_id::create(&quot;env&quot;,this);
+            if (!uvm_config_db#(virtual irq22_if)::get(this,&quot;&quot;,&quot;vif&quot;,irq_vif))
+                `uvm_fatal(&quot;TEST_VIF&quot;,&quot;IRQ virtual interface missing&quot;)
+        endfunction
+        task run_phase(uvm_phase phase);
+            axi22_system_sequence vseq;
+            phase.raise_objection(this);
+            repeat (4) @(negedge irq_vif.clk);
+            vseq=axi22_system_sequence::type_id::create(&quot;vseq&quot;);
+            vseq.start(env.vsqr);
+            done=1;
+            phase.drop_objection(this);
+        endtask
+        function void check_phase(uvm_phase phase);
+            super.check_phase(phase);
+            if (!done || env.sb.writes!=6 || env.sb.reads!=13 ||
+                env.sb.events!=4 || env.sb.resets!=2 ||
+                env.sb.collisions!=1 || env.sb.zero_strobes!=1 ||
+                env.sb.commits!=6 || env.sb.committed.size()!=0 ||
+                env.bus_agent.drv.driven!=19 ||
+                env.event_agent.drv.events_driven!=6 ||
+                env.bus_agent.mon.aw_seen || env.bus_agent.mon.w_seen ||
+                env.bus_agent.mon.ar_seen)
+                `uvm_fatal(&quot;COUNT&quot;,&quot;Incomplete multi-agent verification&quot;)
+        endfunction
+        function void report_phase(uvm_phase phase);
+            super.report_phase(phase);
+            if (uvm_report_server::get_server().get_severity_count(UVM_ERROR)!=0 ||
+                uvm_report_server::get_server().get_severity_count(UVM_FATAL)!=0)
+                `uvm_fatal(&quot;REPORT&quot;,&quot;UVM error or fatal reported&quot;)
+            `uvm_info(&quot;RESULT&quot;,&quot;PASS CH22 AXI_W=6 AXI_R=13 IRQ=4 RESET=2 COLLISION=1 ZERO=1&quot;,UVM_NONE)
+        endfunction
+    endclass
+endpackage
+
+module tb_axi_multiagent_irq;
+    import uvm_pkg::*;
+    import ch22_pkg::*;
+    logic clk=0;
+    always #5 clk=~clk;
+    irq22_if irq_bus(clk);
+    axi22_if axi_bus(clk,irq_bus.resetn);
+
+    wire wr_en;
+    wire [7:0] wr_offset,rd_offset;
+    wire [31:0] wr_data,rd_data;
+    wire [3:0] wr_strb;
+    wire enable_o,start_pulse_o,clear_pulse_o;
+    wire [1:0] mode_o;
+    wire [31:0] data_in_o;
+
+    axi4lite_slave_adapter axi_dut (
+        .s_axi_aclk(clk),.s_axi_aresetn(irq_bus.resetn),
+        .s_axi_awaddr(axi_bus.awaddr),.s_axi_awprot(3'b000),
+        .s_axi_awvalid(axi_bus.awvalid),.s_axi_awready(axi_bus.awready),
+        .s_axi_wdata(axi_bus.wdata),.s_axi_wstrb(axi_bus.wstrb),
+        .s_axi_wvalid(axi_bus.wvalid),.s_axi_wready(axi_bus.wready),
+        .s_axi_bresp(axi_bus.bresp),.s_axi_bvalid(axi_bus.bvalid),
+        .s_axi_bready(axi_bus.bready),
+        .s_axi_araddr(axi_bus.araddr),.s_axi_arprot(3'b000),
+        .s_axi_arvalid(axi_bus.arvalid),.s_axi_arready(axi_bus.arready),
+        .s_axi_rdata(axi_bus.rdata),.s_axi_rresp(axi_bus.rresp),
+        .s_axi_rvalid(axi_bus.rvalid),.s_axi_rready(axi_bus.rready),
+        .wr_en(wr_en),.wr_offset(wr_offset),.wr_data(wr_data),
+        .wr_strb(wr_strb),.rd_offset(rd_offset),.rd_data(rd_data)
+    );
+
+    custom_register_bank bank (
+        .clk(clk),.resetn(irq_bus.resetn),.wr_en(wr_en),
+        .wr_offset(wr_offset),.wr_data(wr_data),.wr_strb(wr_strb),
+        .rd_offset(rd_offset),.rd_data(rd_data),
+        .busy_i(1'b0),.done_i(1'b0),.error_i(1'b0),
+        .irq_done_event_i(irq_bus.done_event),
+        .irq_error_event_i(irq_bus.error_event),
+        .data_out_i(32'h12345678),
+        .enable_o(enable_o),.mode_o(mode_o),
+        .start_pulse_o(start_pulse_o),.clear_pulse_o(clear_pulse_o),
+        .data_in_o(data_in_o),.irq_status_o(irq_bus.irq_status)
+    );
+
+    // (추가) 관찰용 연결만 추가, 원본 DUT 포트와 동작은 유지.
+    assign irq_bus.wr_en=wr_en;
+    assign irq_bus.wr_offset=wr_offset;
+    assign irq_bus.wr_data=wr_data;
+    assign irq_bus.wr_strb=wr_strb;
+
+    initial begin
+        uvm_config_db#(virtual axi22_if)::set(
+            null,&quot;uvm_test_top.env.bus_agent.*&quot;,&quot;vif&quot;,axi_bus);
+        uvm_config_db#(virtual irq22_if)::set(
+            null,&quot;uvm_test_top.env.event_agent.*&quot;,&quot;vif&quot;,irq_bus);
+        uvm_config_db#(virtual irq22_if)::set(null,&quot;uvm_test_top&quot;,&quot;vif&quot;,irq_bus);
+        run_test(&quot;axi22_test&quot;);
+    end
+    initial begin
+        #100000;
+        $fatal(1,&quot;CH22 GLOBAL_TIMEOUT&quot;);
+    end
+endmodule
+</code></pre></div><table><thead><tr><th>구문</th><th>풀이</th></tr></thead><tbody><tr><td>uvm_analysis_imp_decl(_bus/_irq)</td><td>두 개의 독립 분석 콜백</td></tr><tr><td>fork ... join</td><td>두 Agent의 시퀀스 동시 실행 및 종료 대기</td></tr><tr><td>EV_BOTH_ON_CLEAR</td><td>실제 쓰기 경계에 이벤트 정렬</td></tr><tr><td>committed.push_back / pop_front</td><td>실제 bank 쓰기와 B 완료 비교</td></tr><tr><td>irq_before[s.ar_stamp]</td><td>AR 수락 시점 기대값 조회</td></tr><tr><td>collisions / zero_strobes</td><td>경계가 실제 발생했는지 집계</td></tr><tr><td>check_phase / report_phase</td><td>완료·누락·오류 누계 검사</td></tr></tbody></table><p>초기 리셋과 재리셋은 거래가 종료된 상태에서 진행합니다. 미결 거래의 리셋 취소는 이번 시험 대상이 아닙니다. Test는 Virtual Sequence가 반환될 때까지 objection을 유지하고 check_phase에서 19개 버스 거래와 6개 이벤트 Agent 명령, 미결 거래 없음 및 두 경계 검사를 확인합니다.</p>
+<div class="teach-note"><h3>전체 코드 · 두 시점의 관찰을 같은 사건으로 묶는다</h3><p>AXI Monitor는 각 상승 에지의 이전 대기 응답을 수락 에지까지 검사하고 실제 수락 payload를 새 Item으로 발행합니다. Driver의 반환 데이터를 정답으로 재사용하지 않습니다. IRQ Monitor는4상태를 보존하고 Scoreboard가 clear/set 및 실제 상태를 대조합니다.</p><p>CORRUPT_IRQ는 충돌 Sample의 bit0만 반전하여 정상11을10으로 만듭니다. collisions1과 expected11/got10 전용 진단이 나와야 비교 경로가 작동한 것입니다. 실제 DUT의 우선순위 회로를 변이시킨 시험과 구분합니다. 리셋 전에 commit 큐가 비어 있어야 한다는 현재 정책도 확인합니다.</p><h4>핵심 구문 ⑥ · 실제 요청의 생성과 반환</h4><table><thead><tr><th scope="col">구문</th><th scope="col">실행 의미</th></tr></thead><tbody><tr><td><code>start_item(req)</code></td><td>Sequencer의 해당 요청에 대한 실행 승인 대기</td></tr><tr><td><code>req.is_write=is_write</code></td><td>Sequence의 시험 의도를 실제 요청 객체에 복사</td></tr><tr><td><code>finish_item(req)</code></td><td>요청 전송 및 Driver의 완료 통지 대기</td></tr><tr><td><code>get_next_item(req)</code></td><td>Driver가 현재 요청 객체 참조를 받음</td></tr><tr><td><code>item_done()</code></td><td>구동 절차가 끝났음을 Sequencer에 알림</td></tr><tr><td><code>return_data=req.data</code></td><td>Driver가 갱신한 동일 요청 객체의 데이터 확인</td></tr></tbody></table><p>Bus Sequence는 응답 객체를 별도로 생성하지 않고 요청 객체의 data/resp를 갱신하는 방식입니다. Event Sequence에는 데이터 반환이 없고 kind에 해당하는 명령 완료를 기다립니다. 따라서 두 요청 타입을 하나로 통합하는 것이 필수는 아닙니다.</p><h4>핵심 구문 ⑦ · 관찰 오류 주입과 실제 회로 결함의 구별</h4><p><code>s.status=s.status ^ 2'b01</code>은 충돌 표본의 하위 비트를 반전합니다. 정상 status 11이면 관찰 객체만 10이 됩니다. expected_irq는 독립적으로 11을 계산하므로 <code>s.status !== expected_irq</code>가 참입니다. 실제 irq_status_o가 10이 되도록 RTL을 변경한 것이 아닙니다. 부정 시험은 이 관찰→분석 port→Scoreboard의 검출 경로를 입증합니다.</p><h4>최종 계수의 단위를 서로 혼동하지 않기</h4><table><thead><tr><th scope="col">실제 변수</th><th scope="col">기대 수</th><th scope="col">세는 사건</th></tr></thead><tbody><tr><td>env.sb.writes / reads</td><td>6 / 13</td><td>실제 B/R 완료 관찰</td></tr><tr><td>env.bus_agent.drv.driven</td><td>19</td><td>AXI Driver가 끝낸 요청</td></tr><tr><td>env.event_agent.drv.events_driven</td><td>6</td><td>release2, reset1, done1, error1, both1</td></tr><tr><td>env.sb.events</td><td>4</td><td>DONE1 + ERROR1 + BOTH2의 실제 이벤트 비트</td></tr><tr><td>env.sb.resets</td><td>2</td><td>초기 reset과 재reset 구간</td></tr><tr><td>env.sb.collisions / zero_strobes</td><td>1 / 1</td><td>동시 11/11 충돌과 무효 W1C</td></tr><tr><td>env.sb.commits / committed.size()</td><td>6 / 0</td><td>실제 bank 쓰기와 미결 큐</td></tr></tbody></table><p>이들 숫자가 각각 맞아야 합니다. Driver에서 19번 요청했다고 실제 버스 관찰이 19번이라는 뜻은 아닙니다. commit 6과 writes 6도 각 사건의 대응까지 확인해야 하며, reset 구간 수는 resetn이 0인 클록 수가 아닙니다.</p><h4>tb/ch22/tb_axi_multiagent_irq.sv · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-7</td><td><code class="teach-fragment">`timescale 1ns/1ps
+// 제22장: AXI4-Lite Master Agent + Reset/IRQ Agent + Virtual Sequence.
+// 상용 AMD AXI VIP가 아닌 교육용 VIP-style(재사용 검증 컴포넌트) 구현.
+// 기존 axi4lite_slave_adapter.v 및 custom_register_bank.v는 수정하지 않는다.
+
+// (추가) 버스 전용 Interface: AXI 신호만 묶는다.
+interface axi22_if(input logic clk, input logic resetn);</code></td><td>시간 단위 1ns, 정밀도 1ps입니다. 교육용 VIP는 상용 AXI VIP가 아닙니다. axi22_if는 clk와 resetn을 입력으로 받으므로 AXI Agent는 이 resetn을 구동하지 않습니다.</td></tr><tr><td>8-14</td><td><code class="teach-fragment">    logic [31:0] awaddr=0, wdata=0, araddr=0;
+    logic [3:0] wstrb=0;
+    logic awvalid=0, wvalid=0, bready=0, arvalid=0, rready=0;
+    wire awready, wready, bvalid, arready, rvalid;
+    wire [1:0] bresp, rresp;
+    wire [31:0] rdata;
+endinterface</code></td><td>AXI 입력 자극은 logic으로 초기화하고 DUT 출력은 wire로 연결합니다. AW/W/B와 AR/R 신호를 각각 확인합니다.</td></tr><tr><td>16-21</td><td><code class="teach-fragment">// (추가) 하드웨어 이벤트 전용 Interface: AXI와 구동 책임을 분리한다.
+interface irq22_if(input logic clk);
+    logic resetn=0;
+    logic done_event=0, error_event=0;
+    wire [1:0] irq_status;
+    // (추가) 공개 레지스터 뱅크 입력: 실제 commit 경계 관찰 및 충돌 자극.</code></td><td>irq22_if는 resetn과 두 이벤트를 실제 구동합니다. irq_status는 bank의 2비트 출력입니다. reset 구동 책임이 이 인터페이스에만 있습니다.</td></tr><tr><td>22-26</td><td><code class="teach-fragment">    wire wr_en;
+    wire [7:0] wr_offset;
+    wire [31:0] wr_data;
+    wire [3:0] wr_strb;
+endinterface</code></td><td>wr_en/offset/data/strb는 bank 입력을 관찰하기 위한 wire입니다. Event Driver가 이 선을 직접 쓰는 것은 아닙니다.</td></tr><tr><td>28-34</td><td><code class="teach-fragment">package ch22_pkg;
+    import uvm_pkg::*;
+    `include &quot;uvm_macros.svh&quot;
+
+    // 두 개의 독립 Analysis Imp(write_bus/write_irq)를 선언한다.
+    `uvm_analysis_imp_decl(_bus)
+    `uvm_analysis_imp_decl(_irq)</code></td><td>UVM package와 매크로를 가져옵니다. uvm_analysis_imp_decl(_bus), (_irq)는 서로 다른 수신 imp 타입과 write_bus, write_irq 호출 연결을 생성합니다. 실제 imp 객체는 아래 Scoreboard 생성자에서 만듭니다.</td></tr><tr><td>36-36</td><td><code class="teach-fragment">    typedef enum {EV_RELEASE, EV_ASSERT_RESET, EV_DONE, EV_ERROR, EV_BOTH_ON_CLEAR} evt22_kind_e;</code></td><td>다섯 이벤트 명령 종류를 enum으로 정의합니다. EV_BOTH_ON_CLEAR는 단순 동시 이벤트가 아니라 특정 W1C commit과 맞추는 명령입니다.</td></tr><tr><td>38-48</td><td><code class="teach-fragment">    class axi22_item extends uvm_sequence_item;
+        `uvm_object_utils(axi22_item)
+        bit is_write;
+        bit [31:0] addr, data;
+        bit [3:0] strb=4&#x27;hf;
+        bit [1:0] resp=0;
+        time ar_stamp;
+        function new(string name=&quot;axi22_item&quot;);
+            super.new(name);
+        endfunction
+    endclass</code></td><td>axi22_item은 버스 거래 객체입니다. is_write는 방향, addr/data는 32비트, strb는 4비트, resp는 응답입니다. ar_stamp는 AR 수락 시각을 담는 별도 time 변수입니다. bit 필드는 2상태이므로 관찰 전에 미정값을 검사합니다.</td></tr><tr><td>50-56</td><td><code class="teach-fragment">    class irq22_item extends uvm_sequence_item;
+        `uvm_object_utils(irq22_item)
+        evt22_kind_e kind;
+        function new(string name=&quot;irq22_item&quot;);
+            super.new(name);
+        endfunction
+    endclass</code></td><td>irq22_item은 이벤트 명령 객체이며 kind만 전달합니다. 버스 주소나 데이터를 억지로 같은 타입에 넣지 않습니다.</td></tr><tr><td>58-69</td><td><code class="teach-fragment">    class irq22_sample extends uvm_sequence_item;
+        `uvm_object_utils(irq22_sample)
+        logic resetn, done_event, error_event, wr_en;
+        logic [7:0] offset;
+        logic [31:0] data;
+        logic [3:0] strb;
+        logic [1:0] status;
+        time stamp;
+        function new(string name=&quot;irq22_sample&quot;);
+            super.new(name);
+        endfunction
+    endclass</code></td><td>irq22_sample은 한 클록의 관찰 객체입니다. reset/event/commit과 status는 logic으로 X/Z를 보존합니다. stamp는 상승 에지 시각이며 status는 이후 1ns에 읽습니다.</td></tr><tr><td>71-83</td><td><code class="teach-fragment">    class axi22_sequencer extends uvm_sequencer #(axi22_item);
+        `uvm_component_utils(axi22_sequencer)
+        function new(string name, uvm_component parent);
+            super.new(name,parent);
+        endfunction
+    endclass
+
+    class irq22_sequencer extends uvm_sequencer #(irq22_item);
+        `uvm_component_utils(irq22_sequencer)
+        function new(string name, uvm_component parent);
+            super.new(name,parent);
+        endfunction
+    endclass</code></td><td>두 Sequencer는 각자 axi22_item 또는 irq22_item 타입을 사용합니다. 요청의 데이터 형식이 다르므로 별도 전달 경로를 구성합니다.</td></tr><tr><td>85-97</td><td><code class="teach-fragment">    // AXI Master Driver: AW/W 독립 Handshake와 B/R Backpressure를 보존한다.
+    class axi22_driver extends uvm_driver #(axi22_item);
+        `uvm_component_utils(axi22_driver)
+        virtual axi22_if vif;
+        int unsigned driven=0;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction
+        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            if (!uvm_config_db#(virtual axi22_if)::get(this,&quot;&quot;,&quot;vif&quot;,vif))
+                `uvm_fatal(&quot;AXI_VIF&quot;,&quot;AXI interface missing&quot;)
+        endfunction</code></td><td>AXI Driver는 axi22_item을 처리하고 virtual axi22_if를 찾습니다. driven은 실제 Driver 절차를 끝낸 거래 수이며 Scoreboard 관찰 수와 별개입니다.</td></tr><tr><td>98-102</td><td><code class="teach-fragment">        task automatic write_one(axi22_item t);
+            bit aw_done=0, w_done=0;
+            @(negedge vif.clk);
+            vif.awaddr=t.addr; vif.awvalid=1&#x27;b1;
+            vif.wdata=t.data; vif.wstrb=t.strb; vif.wvalid=1&#x27;b1;</code></td><td>하강 에지에 AW와 W를 동시에 제시합니다. aw_done과 w_done은 호출마다 초기화합니다. 동시에 제시한다고 동시에 수락될 필요는 없습니다.</td></tr><tr><td>103-113</td><td><code class="teach-fragment">            for (int k=0;k&lt;100;k++) begin
+                @(posedge vif.clk);
+                if (vif.awvalid &amp;&amp; vif.awready) aw_done=1;
+                if (vif.wvalid &amp;&amp; vif.wready) w_done=1;
+                @(negedge vif.clk);
+                if (aw_done) vif.awvalid=1&#x27;b0;
+                if (w_done) vif.wvalid=1&#x27;b0;
+                if (aw_done &amp;&amp; w_done) break;
+            end
+            if (!aw_done || !w_done)
+                `uvm_fatal(&quot;AXI_AW_W&quot;,&quot;Write handshake timeout&quot;)</code></td><td>상승 에지의 valid&amp;&amp;ready로 AW/W 수락을 각각 추적합니다. 하강 에지에서 수락된 채널 valid만 내리고 둘 다 끝나면 반복을 종료합니다. 최대 100회 반복 후 미완료면 AXI_AW_W입니다.</td></tr><tr><td>114-118</td><td><code class="teach-fragment">            for (int k=0;k&lt;100;k++) begin
+                @(negedge vif.clk);
+                if (vif.bvalid) begin
+                    t.resp=vif.bresp;
+                    // 두 클록 동안 BREADY=0 → 응답 유지 후 수락.</code></td><td>하강 에지에서 BVALID를 찾고 응답을 요청 객체에 저장합니다. 아직 BREADY는 0이라 응답은 완료되지 않았습니다.</td></tr><tr><td>119-123</td><td><code class="teach-fragment">                    repeat (2) begin
+                        @(negedge vif.clk);
+                        if (vif.bvalid !== 1&#x27;b1 || vif.bresp !== t.resp)
+                            `uvm_fatal(&quot;B_HOLD&quot;,&quot;Write response changed during stall&quot;)
+                    end</code></td><td>추가 두 하강 에지까지 BVALID와 BRESP 유지 여부를 확인합니다. 이것은 마스터가 응답 수락을 늦추는 backpressure입니다.</td></tr><tr><td>124-132</td><td><code class="teach-fragment">                    vif.bready=1&#x27;b1;
+                    @(posedge vif.clk);
+                    @(negedge vif.clk);
+                    vif.bready=1&#x27;b0;
+                    return;
+                end
+            end
+            `uvm_fatal(&quot;B_TIMEOUT&quot;,&quot;Write response timeout&quot;)
+        endtask</code></td><td>BREADY를 올리고 다음 상승 에지에서 수락한 뒤 하강 에지에 BREADY를 내립니다. B_TIMEOUT은 응답 대기 기한 위반입니다.</td></tr><tr><td>133-143</td><td><code class="teach-fragment">        task automatic read_one(axi22_item t);
+            bit ar_done=0;
+            @(negedge vif.clk);
+            vif.araddr=t.addr; vif.arvalid=1&#x27;b1;
+            for (int k=0;k&lt;100;k++) begin
+                @(posedge vif.clk);
+                if (vif.arvalid &amp;&amp; vif.arready) ar_done=1;
+                @(negedge vif.clk);
+                if (ar_done) begin vif.arvalid=1&#x27;b0; break; end
+            end
+            if (!ar_done) `uvm_fatal(&quot;AR_TIMEOUT&quot;,&quot;Read address timeout&quot;)</code></td><td>AR 주소를 하강 에지에 구동하고 상승 에지의 handshake를 기다립니다. 수락 다음 하강 에지에서 ARVALID를 내려 한 번의 주소 요청만 생성합니다.</td></tr><tr><td>144-154</td><td><code class="teach-fragment">            for (int k=0;k&lt;100;k++) begin
+                @(negedge vif.clk);
+                if (vif.rvalid) begin
+                    t.data=vif.rdata; t.resp=vif.rresp;
+                    // 두 클록 동안 RREADY=0 → 데이터 유지 검사.
+                    repeat (2) begin
+                        @(negedge vif.clk);
+                        if (vif.rvalid !== 1&#x27;b1 || vif.rdata !== t.data ||
+                            vif.rresp !== t.resp)
+                            `uvm_fatal(&quot;R_HOLD&quot;,&quot;Read response changed during stall&quot;)
+                    end</code></td><td>RVALID를 발견하면 데이터/응답을 보관하고 두 하강 에지 동안 RVALID·RDATA·RRESP의 보존을 검사합니다. 주소 수락과 데이터 수락은 서로 다른 사건입니다.</td></tr><tr><td>155-163</td><td><code class="teach-fragment">                    vif.rready=1&#x27;b1;
+                    @(posedge vif.clk);
+                    @(negedge vif.clk);
+                    vif.rready=1&#x27;b0;
+                    return;
+                end
+            end
+            `uvm_fatal(&quot;R_TIMEOUT&quot;,&quot;Read response timeout&quot;)
+        endtask</code></td><td>RREADY를 올린 뒤 다음 상승 에지에서 실제 읽기를 완료하고 하강 에지에서 ready를 내립니다. 읽기 응답이 없으면 R_TIMEOUT입니다.</td></tr><tr><td>164-174</td><td><code class="teach-fragment">        task run_phase(uvm_phase phase);
+            axi22_item req;
+            forever begin
+                seq_item_port.get_next_item(req);
+                if (req.is_write) write_one(req);
+                else read_one(req);
+                driven++;
+                seq_item_port.item_done();
+            end
+        endtask
+    endclass</code></td><td>get_next_item(req)로 요청 객체를 받고 write_one/read_one을 실행합니다. 실제 절차가 끝나 driven을 증가시키고 item_done으로 호출 Sequence의 대기를 해제합니다.</td></tr><tr><td>176-184</td><td><code class="teach-fragment">    // AXI Monitor는 Driver 완료 이벤트를 쓰지 않고 실제 5채널을 관찰한다.
+    class axi22_monitor extends uvm_monitor;
+        `uvm_component_utils(axi22_monitor)
+        virtual axi22_if vif;
+        uvm_analysis_port #(axi22_item) ap;
+        bit aw_seen=0, w_seen=0, ar_seen=0;
+        bit [31:0] saved_aw, saved_wd, saved_ar;
+        bit [3:0] saved_strb;
+        time saved_ar_stamp;</code></td><td>AXI Monitor는 Driver와 별도의 관찰 component입니다. ap는 완료 거래를 발행하며 aw_seen/w_seen/ar_seen은 선행 수락 여부입니다. saved_ar_stamp는 읽기 정답의 기준 시각입니다.</td></tr><tr><td>185-196</td><td><code class="teach-fragment">        bit b_held=0, r_held=0;
+        logic [1:0] held_bresp, held_rresp;
+        logic [31:0] held_rdata;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+            ap=new(&quot;ap&quot;,this);
+        endfunction
+        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            if (!uvm_config_db#(virtual axi22_if)::get(this,&quot;&quot;,&quot;vif&quot;,vif))
+                `uvm_fatal(&quot;AXI_VIF&quot;,&quot;AXI monitor interface missing&quot;)
+        endfunction</code></td><td>b_held/r_held는 이전 표본에서 응답이 대기 중이었다는 표시입니다. held_*는 4상태 응답 저장값입니다. 생성자에서 ap를 만들고 build_phase에서 AXI vif를 가져옵니다.</td></tr><tr><td>197-208</td><td><code class="teach-fragment">        task run_phase(uvm_phase phase);
+            axi22_item s;
+            forever begin
+                @(posedge vif.clk); // DUT가 Handshake를 읽는 에지에서 관찰
+                if (!vif.resetn) begin
+                    aw_seen=0; w_seen=0; ar_seen=0;
+                    b_held=0; r_held=0;
+                end else begin
+                    if ((^{vif.resetn,vif.awvalid,vif.awready,vif.wvalid,vif.wready,
+                           vif.bvalid,vif.bready,vif.arvalid,vif.arready,
+                           vif.rvalid,vif.rready}) === 1&#x27;bx)
+                        `uvm_fatal(&quot;BUS_X&quot;,&quot;Unknown handshake&quot;)</code></td><td>매 상승 에지에서 신호를 읽습니다. 리셋이면 보류 상태를 초기화하고, 그 밖에는 reduction XOR로 handshake에 X/Z가 있는지 검사합니다. 실제 수락 에지에 관찰하는 방식입니다.</td></tr><tr><td>209-218</td><td><code class="teach-fragment">                    // (추가) 모든 상승 에지에서 응답 대기 및 수락 에지까지 유지 검사.
+                    if (b_held &amp;&amp; (vif.bvalid !== 1&#x27;b1 || vif.bresp !== held_bresp))
+                        `uvm_fatal(&quot;B_HOLD&quot;,&quot;B changed while pending&quot;)
+                    if (r_held &amp;&amp; (vif.rvalid !== 1&#x27;b1 || vif.rresp !== held_rresp ||
+                                   vif.rdata !== held_rdata))
+                        `uvm_fatal(&quot;R_HOLD&quot;,&quot;R changed while pending&quot;)
+                    b_held=vif.bvalid &amp;&amp; !vif.bready;
+                    r_held=vif.rvalid &amp;&amp; !vif.rready;
+                    if (b_held) held_bresp=vif.bresp;
+                    if (r_held) begin held_rresp=vif.rresp; held_rdata=vif.rdata; end</code></td><td>이전 표본이 stall이면 현재 표본의 valid와 payload가 동일해야 합니다. 이번 에지가 수락 에지라도 먼저 검사합니다. 그 뒤 현재 stall 여부와 값을 저장해 다음 표본의 비교 기준을 마련합니다.</td></tr><tr><td>219-223</td><td><code class="teach-fragment">                    if (vif.awvalid &amp;&amp; vif.awready) begin
+                        if (aw_seen || (^vif.awaddr) === 1&#x27;bx)
+                            `uvm_fatal(&quot;MON_AW&quot;,&quot;Duplicate or unknown AW&quot;)
+                        saved_aw=vif.awaddr; aw_seen=1;
+                    end</code></td><td>AW 수락에서 중복 또는 미정 주소를 거절하고 실제 주소를 저장합니다. Driver가 보낸 의도를 그대로 사용하지 않습니다.</td></tr><tr><td>224-228</td><td><code class="teach-fragment">                    if (vif.wvalid &amp;&amp; vif.wready) begin
+                        if (w_seen || (^{vif.wdata,vif.wstrb}) === 1&#x27;bx)
+                            `uvm_fatal(&quot;MON_W&quot;,&quot;Duplicate or unknown W&quot;)
+                        saved_wd=vif.wdata; saved_strb=vif.wstrb; w_seen=1;
+                    end</code></td><td>W 수락에서 중복 또는 미정 데이터/strobe를 검사하고 저장합니다. 이후 B 수락 시 AW와 W의 실제 값을 조합합니다.</td></tr><tr><td>229-233</td><td><code class="teach-fragment">                    if (vif.arvalid &amp;&amp; vif.arready) begin
+                        if (ar_seen || (^vif.araddr) === 1&#x27;bx)
+                            `uvm_fatal(&quot;MON_AR&quot;,&quot;Duplicate or unknown AR&quot;)
+                        saved_ar=vif.araddr; saved_ar_stamp=$time; ar_seen=1;
+                    end</code></td><td>AR 수락 때 주소와 $time을 보관합니다. 나중에 R이 늦게 수락되어도 읽기값이 어느 에지의 상태를 반영하는지 알 수 있습니다.</td></tr><tr><td>234-242</td><td><code class="teach-fragment">                    if (vif.bvalid &amp;&amp; vif.bready) begin
+                        if (!aw_seen || !w_seen || vif.bresp !== 2&#x27;b00)
+                            `uvm_fatal(&quot;AXI_MON_B&quot;,&quot;B before AW/W Handshake&quot;)
+                        s=axi22_item::type_id::create(&quot;observed_write&quot;);
+                        s.is_write=1; s.addr=saved_aw; s.data=saved_wd;
+                        s.strb=saved_strb; s.resp=vif.bresp;
+                        ap.write(s);
+                        aw_seen=0; w_seen=0;
+                    end</code></td><td>BVALID&amp;&amp;BREADY에서 두 선행 채널과 OKAY 응답을 요구합니다. 새 observed_write를 만들어 실제 주소/데이터/strobe/응답을 담고 ap.write(s)로 발행합니다. 마지막에 보류 플래그를 내립니다.</td></tr><tr><td>243-251</td><td><code class="teach-fragment">                    if (vif.rvalid &amp;&amp; vif.rready) begin
+                        if (!ar_seen || vif.rresp !== 2&#x27;b00 || (^vif.rdata) === 1&#x27;bx)
+                            `uvm_fatal(&quot;AXI_MON_R&quot;,&quot;R before AR Handshake&quot;)
+                        s=axi22_item::type_id::create(&quot;observed_read&quot;);
+                        s.is_write=0; s.addr=saved_ar; s.data=vif.rdata;
+                        s.ar_stamp=saved_ar_stamp;
+                        s.resp=vif.rresp;
+                        ap.write(s);
+                        ar_seen=0;</code></td><td>R 수락에서는 선행 AR·OKAY·확정 데이터를 확인합니다. observed_read에 저장한 AR 주소와 시각, 실제 RDATA/RRESP를 넣고 발행합니다. ar_seen을 비웁니다.</td></tr><tr><td>252-256</td><td><code class="teach-fragment">                    end
+                end
+            end
+        endtask
+    endclass</code></td><td>Monitor의 분기·반복·task·클래스 정의를 닫습니다. 다른 Driver의 완료 호출을 기다리는 구조가 아닙니다.</td></tr><tr><td>258-270</td><td><code class="teach-fragment">    // 별도 Event Driver는 Reset/IRQ 입력만 구동한다.
+    class irq22_driver extends uvm_driver #(irq22_item);
+        `uvm_component_utils(irq22_driver)
+        virtual irq22_if vif;
+        int unsigned events_driven=0;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction
+        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            if (!uvm_config_db#(virtual irq22_if)::get(this,&quot;&quot;,&quot;vif&quot;,vif))
+                `uvm_fatal(&quot;IRQ_VIF&quot;,&quot;IRQ interface missing&quot;)
+        endfunction</code></td><td>Event Driver의 요청 타입은 irq22_item이며 virtual irq22_if를 사용합니다. events_driven은 이벤트 비트 수가 아닌 처리한 명령 수입니다.</td></tr><tr><td>271-279</td><td><code class="teach-fragment">        task run_phase(uvm_phase phase);
+            irq22_item req;
+            forever begin
+                seq_item_port.get_next_item(req);
+                case (req.kind)
+                    EV_RELEASE: begin
+                        @(negedge vif.clk);
+                        vif.resetn=1&#x27;b1;
+                    end</code></td><td>별도 run_phase에서 req.kind를 분기합니다. EV_RELEASE는 하강 에지에 resetn을 1로 올립니다. AXI Driver에 reset 값을 맡기지 않습니다.</td></tr><tr><td>280-284</td><td><code class="teach-fragment">                    EV_ASSERT_RESET: begin
+                        @(negedge vif.clk);
+                        vif.resetn=1&#x27;b0;
+                        repeat (3) @(negedge vif.clk);
+                    end</code></td><td>EV_ASSERT_RESET은 하강 에지에서 resetn=0으로 만든 뒤 세 하강 에지를 기다립니다. 낮은 상태는 다음 EV_RELEASE까지 유지됩니다. 전체 reset 구간을 정확히 3클록이라고 단정하지 않습니다.</td></tr><tr><td>285-290</td><td><code class="teach-fragment">                    EV_DONE: begin
+                        @(negedge vif.clk);
+                        vif.done_event=1&#x27;b1;
+                        @(negedge vif.clk);
+                        vif.done_event=1&#x27;b0;
+                    end</code></td><td>EV_DONE은 하강 에지에 done_event를 올리고 다음 하강 에지에 내립니다. 10ns 클록에서 한 상승 에지가 HIGH를 샘플링합니다.</td></tr><tr><td>291-296</td><td><code class="teach-fragment">                    EV_ERROR: begin
+                        @(negedge vif.clk);
+                        vif.error_event=1&#x27;b1;
+                        @(negedge vif.clk);
+                        vif.error_event=1&#x27;b0;
+                    end</code></td><td>EV_ERROR도 동일한 시간 구조로 error_event를 구동합니다. done과 error는 IRQ bit0·bit1에 대응합니다.</td></tr><tr><td>297-305</td><td><code class="teach-fragment">                    // (추가) 실제 bank 쓰기 경계에 두 이벤트를 정렬한다.
+                    EV_BOTH_ON_CLEAR: begin
+                        int guard=0;
+                        do begin
+                            @(negedge vif.clk);
+                            guard++;
+                            if (guard&gt;100) `uvm_fatal(&quot;COLLISION_TIMEOUT&quot;,&quot;No W1C commit&quot;)
+                        end while (!(vif.wr_en === 1&#x27;b1 &amp;&amp; vif.wr_offset === 8&#x27;h0c &amp;&amp;
+                                     vif.wr_strb[0] === 1&#x27;b1 &amp;&amp; vif.wr_data[1:0] === 2&#x27;b11));</code></td><td>EV_BOTH_ON_CLEAR는 do-while로 하강 에지를 기다리며 실제 wr_en=1, offset=0C, strobe[0]=1, data[1:0]=11인지를 ===로 검사합니다. 하나라도 미정이면 만족하지 않으며 guard&gt;100은 충돌 대기 실패입니다.</td></tr><tr><td>306-309</td><td><code class="teach-fragment">                        vif.done_event=1&#x27;b1; vif.error_event=1&#x27;b1;
+                        @(negedge vif.clk);
+                        vif.done_event=1&#x27;b0; vif.error_event=1&#x27;b0;
+                    end</code></td><td>조건을 찾은 하강 에지에 두 이벤트를 함께 올립니다. 다음 상승 에지에서 실제 W1C와 동시 set이 발생할 수 있도록 맞추고 다음 하강 에지에서 모두 내립니다.</td></tr><tr><td>310-315</td><td><code class="teach-fragment">                endcase
+                events_driven++;
+                seq_item_port.item_done();
+            end
+        endtask
+    endclass</code></td><td>한 명령을 마친 뒤 events_driven을 1 증가시키고 item_done으로 하위 Sequence에 완료를 통지합니다. 두 이벤트를 동시에 올린 명령도 명령 수는 1입니다.</td></tr><tr><td>317-330</td><td><code class="teach-fragment">    // 별도 Event Monitor: IRQ 상태·Reset을 관찰해 Scoreboard에 전달.
+    class irq22_monitor extends uvm_monitor;
+        `uvm_component_utils(irq22_monitor)
+        virtual irq22_if vif;
+        uvm_analysis_port #(irq22_sample) ap;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+            ap=new(&quot;ap&quot;,this);
+        endfunction
+        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            if (!uvm_config_db#(virtual irq22_if)::get(this,&quot;&quot;,&quot;vif&quot;,vif))
+                `uvm_fatal(&quot;IRQ_VIF&quot;,&quot;IRQ monitor interface missing&quot;)
+        endfunction</code></td><td>IRQ Monitor는 irq22_sample 분석 포트를 생성하고 irq22_if 참조를 가져옵니다. Driver의 이벤트 명령이 아닌 실제 핀과 bank 접근을 읽습니다.</td></tr><tr><td>331-340</td><td><code class="teach-fragment">        task run_phase(uvm_phase phase);
+            irq22_sample s;
+            forever begin
+                @(posedge vif.clk);
+                // (변경) 입력은 상승 에지, 출력은 NBA 이후에 같은 객체로 관찰.
+                s=irq22_sample::type_id::create(&quot;cycle&quot;);
+                s.stamp=$time; s.resetn=vif.resetn;
+                s.done_event=vif.done_event; s.error_event=vif.error_event;
+                s.wr_en=vif.wr_en; s.offset=vif.wr_offset;
+                s.data=vif.wr_data; s.strb=vif.wr_strb;</code></td><td>상승 에지마다 새 cycle 객체를 만들고 stamp=$time, reset, event, 실제 commit payload를 즉시 읽습니다. 입력은 bank가 해당 에지에 샘플링하는 값을 담습니다.</td></tr><tr><td>341-346</td><td><code class="teach-fragment">                #1;
+                s.status=vif.irq_status;
+                if ($test$plusargs(&quot;CORRUPT_IRQ&quot;) &amp;&amp; s.resetn &amp;&amp;
+                    s.done_event &amp;&amp; s.error_event &amp;&amp; s.wr_en)
+                    s.status=s.status ^ 2&#x27;b01;
+                ap.write(s);</code></td><td>1ns 뒤 NBA 갱신 이후의 irq_status를 같은 객체에 담습니다. CORRUPT_IRQ일 때 resetn·두 이벤트·wr_en이 참이면 status bit0만 반전합니다. 실제 IRQ 출력은 변경하지 않습니다.</td></tr><tr><td>347-349</td><td><code class="teach-fragment">            end
+        endtask
+    endclass</code></td><td>매 클록 표본을 발행한 뒤 다음 상승 에지를 기다립니다. 변화가 없더라도 관찰하는 구조입니다.</td></tr><tr><td>351-355</td><td><code class="teach-fragment">    // 버스 완료 관찰과 IRQ 이벤트 관찰을 별도 Analysis Imp로 수집.
+    class axi22_scoreboard extends uvm_scoreboard;
+        `uvm_component_utils(axi22_scoreboard)
+        uvm_analysis_imp_bus #(axi22_item,axi22_scoreboard) bus_in;
+        uvm_analysis_imp_irq #(irq22_sample,axi22_scoreboard) irq_in;</code></td><td>Scoreboard는 두 종류의 분석 imp를 선언합니다. #(거래 타입, 수신 구현 타입)의 두 인자는 각 write_bus/write_irq 호출의 타입 계약을 나타냅니다.</td></tr><tr><td>356-362</td><td><code class="teach-fragment">        bit [31:0] expected_control=0, expected_data=0;
+        bit [1:0] expected_irq=0;
+        int unsigned writes=0, reads=0, events=0, resets=0;
+        int unsigned collisions=0, zero_strobes=0, commits=0;
+        bit previous_resetn=1;
+        bit [1:0] irq_before[time];
+        axi22_item committed[$];</code></td><td>expected_control/data/irq는 독립 기대값입니다. writes/reads/events/resets와 collisions/zero_strobes/commits는 서로 다른 사건을 집계합니다. irq_before[time]은 시각별 이전 IRQ 상태, committed[$]는 아직 B와 대응하지 않은 commit 큐입니다.</td></tr><tr><td>363-367</td><td><code class="teach-fragment">        function new(string name,uvm_component parent);
+            super.new(name,parent);
+            bus_in=new(&quot;bus_in&quot;,this);
+            irq_in=new(&quot;irq_in&quot;,this);
+        endfunction</code></td><td>bus_in과 irq_in은 new(이름,this)로 실제 수신 객체를 생성합니다. 선언만으로 연결이 만들어지는 것은 아닙니다.</td></tr><tr><td>369-377</td><td><code class="teach-fragment">        function void write_bus(axi22_item s);
+            bit [31:0] exp_data;
+            axi22_item c;
+            if (s.resp !== 2&#x27;b00)
+                `uvm_fatal(&quot;AXI_RESP&quot;,&quot;Non-OKAY AXI response&quot;)
+            if (s.is_write) begin
+                if (committed.size()==0)
+                    `uvm_fatal(&quot;COMMIT&quot;,&quot;B without register-bank commit&quot;)
+                c=committed.pop_front();</code></td><td>write_bus는 완료된 버스 거래를 받는 함수입니다. OKAY가 아니면 오류, 쓰기이면 선행 commit이 있어야 합니다. pop_front로 가장 오래된 bank commit을 꺼내 비교합니다.</td></tr><tr><td>378-380</td><td><code class="teach-fragment">                if (s.addr[7:0] !== c.addr[7:0] || s.data !== c.data ||
+                    s.strb !== c.strb)
+                    `uvm_fatal(&quot;COMMIT&quot;,&quot;AXI transaction differs from bank input&quot;)</code></td><td>실제 AXI 주소 하위8비트와 bank offset, WDATA, WSTRB를 비교합니다. B 응답과 bank 입력의 순서 및 내용이 맞는지 확인합니다. 전체 주소 해독을 검증한 것은 아닙니다.</td></tr><tr><td>381-390</td><td><code class="teach-fragment">                case (s.addr)
+                    &#x27;h00: if (s.strb[0])
+                        expected_control={29&#x27;d0,s.data[2:0]};
+                    &#x27;h10: for (int i=0;i&lt;4;i++)
+                        if (s.strb[i])
+                            expected_data[i*8 +: 8]=s.data[i*8 +: 8];
+                    &#x27;h0c: ; // IRQ는 B 응답이 아니라 실제 commit 에지에서 갱신한다.
+                    default: `uvm_fatal(&quot;AXI_WR_ADDR&quot;,&quot;Unexpected write address&quot;)
+                endcase
+                writes++;</code></td><td>CONTROL은 strb[0]가 1이면 하위3비트만 모델에 보관하고 DATA_IN은 선택 바이트를 갱신합니다. IRQ 주소 0C는 여기서 아무 상태도 바꾸지 않습니다. IRQ는 write_irq의 실제 commit 에지에서 처리합니다.</td></tr><tr><td>391-398</td><td><code class="teach-fragment">            end else begin
+                case (s.addr)
+                    &#x27;h00: exp_data=expected_control;
+                    &#x27;h0c: begin
+                        if (!irq_before.exists(s.ar_stamp))
+                            `uvm_fatal(&quot;AR_TIME&quot;,&quot;No IRQ state at AR acceptance&quot;)
+                        exp_data={30&#x27;d0,irq_before[s.ar_stamp]};
+                    end</code></td><td>읽기에서 CONTROL은 현재 기대값을, IRQ는 irq_before[s.ar_stamp]를 사용합니다. exists가 거짓이면 AR 시각의 기준 상태가 없어 오류입니다. IRQ 상태의 시점 일치를 확인합니다.</td></tr><tr><td>399-410</td><td><code class="teach-fragment">                    &#x27;h10: exp_data=expected_data;
+                    &#x27;h18: exp_data=32&#x27;h00010000;
+                    &#x27;h1c: exp_data=32&#x27;h524D4150;
+                    default: `uvm_fatal(&quot;AXI_RD_ADDR&quot;,&quot;Unexpected read address&quot;)
+                endcase
+                if (s.data !== exp_data)
+                    `uvm_fatal(&quot;AXI_READ_MISMATCH&quot;,
+                        $sformatf(&quot;addr=%h got=%h expected=%h&quot;,
+                                  s.addr,s.data,exp_data))
+                reads++;
+            end
+        endfunction</code></td><td>DATA_IN은 저장 기대값, VERSION/ID는 고정 상수와 비교합니다. !==로 읽기값을 검사하고 정상일 때 reads를 증가시킵니다. 대상 밖 주소는 오류입니다.</td></tr><tr><td>412-415</td><td><code class="teach-fragment">        function void write_irq(irq22_sample s);
+            axi22_item c;
+            bit [1:0] clear_mask, set_mask;
+            irq_before[s.stamp]=expected_irq;</code></td><td>write_irq는 입력과 갱신 뒤 status를 함께 받은 함수입니다. clear_mask/set_mask는 2비트입니다. 가장 먼저 현재 expected_irq를 해당 stamp의 에지 전 상태로 보존합니다.</td></tr><tr><td>416-422</td><td><code class="teach-fragment">            if (s.resetn === 1&#x27;b0) begin
+                if (previous_resetn) resets++;
+                if (committed.size()!=0)
+                    `uvm_fatal(&quot;RESET_PENDING&quot;,&quot;Unexpected pending bank commit&quot;)
+                expected_irq=0; expected_control=0; expected_data=0;
+                previous_resetn=0;
+            end else begin</code></td><td>resetn이 정확히 0이면 초기 또는 새 reset 구간에서만 resets를 증가시킵니다. 미처리 commit은 허용하지 않습니다. 기대 CONTROL/DATA/IRQ를 0으로 만들고 previous_resetn을 0으로 유지합니다.</td></tr><tr><td>423-426</td><td><code class="teach-fragment">                if ((^{s.resetn,s.done_event,s.error_event,s.wr_en}) === 1&#x27;bx)
+                    `uvm_fatal(&quot;IRQ_X&quot;,&quot;Unknown bank control&quot;)
+                previous_resetn=1;
+                clear_mask=0; set_mask={s.error_event,s.done_event};</code></td><td>리셋 해제 구간에는 reset/event/commit의 X/Z를 검사합니다. clear_mask를 0으로 초기화하고 set_mask={error,done}으로 만듭니다. 예: done만 1이면 01입니다.</td></tr><tr><td>427-432</td><td><code class="teach-fragment">                if (s.wr_en) begin
+                    if ((^{s.offset,s.data,s.strb}) === 1&#x27;bx)
+                        `uvm_fatal(&quot;COMMIT_X&quot;,&quot;Unknown bank write&quot;)
+                    c=axi22_item::type_id::create(&quot;commit&quot;);
+                    c.addr={24&#x27;d0,s.offset}; c.data=s.data; c.strb=s.strb;
+                    committed.push_back(c); commits++;</code></td><td>wr_en이 참인 실제 bank commit에서 payload 미정을 검사하고 새 commit 객체를 큐에 넣습니다. 주소는 offset을 24비트 0과 연결해 32비트로 표현합니다. commits는 실제 관찰 수입니다.</td></tr><tr><td>433-437</td><td><code class="teach-fragment">                    if (s.offset==8&#x27;h0c) begin
+                        if (s.strb[0]) clear_mask=s.data[1:0];
+                        else zero_strobes++;
+                    end
+                end</code></td><td>IRQ offset 0C에서 첫 바이트 strobe가 참이면 data[1:0]이 해제 마스크입니다. strobe[0]=0이면 clear_mask는 00으로 남고 zero_strobes를 증가시킵니다.</td></tr><tr><td>438-440</td><td><code class="teach-fragment">                if (s.done_event) events++;
+                if (s.error_event) events++;
+                if (clear_mask==2&#x27;b11 &amp;&amp; set_mask==2&#x27;b11) collisions++;</code></td><td>각 이벤트 비트가 참일 때 events를 따로 증가시킵니다. clear_mask=11과 set_mask=11이 동시에 성립한 경우만 이 시험의 collisions로 셉니다. 일반적인 모든 부분 비트 충돌을 세는 카운터는 아닙니다.</td></tr><tr><td>441-447</td><td><code class="teach-fragment">                // (추가) 동일 비트의 set이 clear보다 우선.
+                expected_irq=(expected_irq &amp; ~clear_mask) | set_mask;
+            end
+            if (s.status !== expected_irq)
+                `uvm_fatal(&quot;IRQ_MISMATCH&quot;,$sformatf(
+                    &quot;status=%b expected=%b collisions=%0d&quot;,
+                    s.status,expected_irq,collisions))</code></td><td>기대 상태를 (이전 상태 &amp; ~clear_mask) | set_mask로 계산합니다. clear 후 set을 적용하므로 동시에 1이면 set이 우선합니다. 실제 status와 !== 비교해 IRQ_MISMATCH를 검출합니다.</td></tr><tr><td>448-449</td><td><code class="teach-fragment">        endfunction
+    endclass</code></td><td>write_irq와 Scoreboard 클래스를 닫습니다. 두 분석 함수는 시간을 소비하지 않고 호출자에게 반환합니다.</td></tr><tr><td>451-458</td><td><code class="teach-fragment">    class axi22_bus_agent extends uvm_agent;
+        `uvm_component_utils(axi22_bus_agent)
+        axi22_sequencer sqr;
+        axi22_driver drv;
+        axi22_monitor mon;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction</code></td><td>AXI Agent는 sqr/driver/monitor의 세 component 핸들을 소유합니다. 상위 생성자에 name,parent를 전달합니다.</td></tr><tr><td>459-469</td><td><code class="teach-fragment">        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            sqr=axi22_sequencer::type_id::create(&quot;sqr&quot;,this);
+            drv=axi22_driver::type_id::create(&quot;drv&quot;,this);
+            mon=axi22_monitor::type_id::create(&quot;mon&quot;,this);
+        endfunction
+        function void connect_phase(uvm_phase phase);
+            super.connect_phase(phase);
+            drv.seq_item_port.connect(sqr.seq_item_export);
+        endfunction
+    endclass</code></td><td>build_phase에서 AXI 전용 세 component를 this 아래 생성하고 connect_phase에서 Driver 요청 port를 Sequencer export에 연결합니다. 능동형만 구현되어 있습니다.</td></tr><tr><td>471-478</td><td><code class="teach-fragment">    class irq22_event_agent extends uvm_agent;
+        `uvm_component_utils(irq22_event_agent)
+        irq22_sequencer sqr;
+        irq22_driver drv;
+        irq22_monitor mon;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction</code></td><td>Event Agent는 다른 타입의 sqr/driver/monitor를 소유합니다. AXI Agent와 유사한 구조지만 신호와 요청 타입은 서로 다릅니다.</td></tr><tr><td>479-489</td><td><code class="teach-fragment">        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            sqr=irq22_sequencer::type_id::create(&quot;sqr&quot;,this);
+            drv=irq22_driver::type_id::create(&quot;drv&quot;,this);
+            mon=irq22_monitor::type_id::create(&quot;mon&quot;,this);
+        endfunction
+        function void connect_phase(uvm_phase phase);
+            super.connect_phase(phase);
+            drv.seq_item_port.connect(sqr.seq_item_export);
+        endfunction
+    endclass</code></td><td>Event Agent도 별도의 요청 연결을 만듭니다. reset/IRQ 자극을 AXI 요청 채널에 혼합하지 않습니다. 수동 모드 전환 분기는 없습니다.</td></tr><tr><td>491-499</td><td><code class="teach-fragment">    // Virtual Sequencer는 두 Agent의 Sequencer 핸들만 보관한다.
+    class axi22_virtual_sequencer extends uvm_sequencer #(uvm_sequence_item);
+        `uvm_component_utils(axi22_virtual_sequencer)
+        axi22_sequencer bus_sqr;
+        irq22_sequencer evt_sqr;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction
+    endclass</code></td><td>Virtual Sequencer는 기존 bus_sqr와 evt_sqr 핸들을 보관합니다. 두 하위 Sequencer를 다시 생성하거나 새로운 Driver를 구동하지 않습니다.</td></tr><tr><td>501-510</td><td><code class="teach-fragment">    class axi22_bus_sequence extends uvm_sequence #(axi22_item);
+        `uvm_object_utils(axi22_bus_sequence)
+        bit is_write;
+        bit [31:0] addr, send_data;
+        bit [3:0] strb=4&#x27;hf;
+        bit [31:0] return_data;
+        bit [1:0] return_resp;
+        function new(string name=&quot;axi22_bus_sequence&quot;);
+            super.new(name);
+        endfunction</code></td><td>Bus Sequence는 거래 방향·주소·전송값·strobe와 반환값을 멤버에 담습니다. 요청 객체를 하나 보낼 사용자 정의 Sequence입니다.</td></tr><tr><td>511-520</td><td><code class="teach-fragment">        task body();
+            axi22_item req=axi22_item::type_id::create(&quot;req&quot;);
+            start_item(req);
+            req.is_write=is_write;
+            req.addr=addr; req.data=send_data; req.strb=strb;
+            finish_item(req);
+            return_data=req.data;
+            return_resp=req.resp;
+        endtask
+    endclass</code></td><td>Factory로 req 생성 → start_item으로 중재 승인 대기 → 필드 설정 → finish_item으로 요청 전달 및 완료 대기 → req의 갱신된 data/resp 읽기 순서입니다.</td></tr><tr><td>522-534</td><td><code class="teach-fragment">    class irq22_event_sequence extends uvm_sequence #(irq22_item);
+        `uvm_object_utils(irq22_event_sequence)
+        evt22_kind_e kind;
+        function new(string name=&quot;irq22_event_sequence&quot;);
+            super.new(name);
+        endfunction
+        task body();
+            irq22_item req=irq22_item::type_id::create(&quot;req&quot;);
+            start_item(req);
+            req.kind=kind;
+            finish_item(req);
+        endtask
+    endclass</code></td><td>Event Sequence도 req를 만들지만 kind만 전달합니다. finish_item은 Event Driver의 item_done까지 기다립니다.</td></tr><tr><td>536-542</td><td><code class="teach-fragment">    // Virtual Sequence 하나가 서로 다른 두 Agent를 순서대로 조정한다.
+    class axi22_system_sequence extends uvm_sequence #(uvm_sequence_item);
+        `uvm_object_utils(axi22_system_sequence)
+        `uvm_declare_p_sequencer(axi22_virtual_sequencer)
+        function new(string name=&quot;axi22_system_sequence&quot;);
+            super.new(name);
+        endfunction</code></td><td>상위 system Sequence의 요청 타입은 uvm_sequence_item입니다. uvm_declare_p_sequencer(axi22_virtual_sequencer)는 실행 Sequencer를 해당 타입으로 사용하는 p_sequencer 핸들과 타입 검사 연결을 제공합니다.</td></tr><tr><td>544-548</td><td><code class="teach-fragment">        task automatic ev(evt22_kind_e kind);
+            irq22_event_sequence s=irq22_event_sequence::type_id::create(&quot;ev&quot;);
+            s.kind=kind;
+            s.start(p_sequencer.evt_sqr);
+        endtask</code></td><td>ev(kind)는 하위 Event Sequence 객체를 생성하고 명령을 설정한 뒤 p_sequencer.evt_sqr에서 start합니다. start가 반환하면 하위 Sequence 실행이 끝난 것입니다.</td></tr><tr><td>550-556</td><td><code class="teach-fragment">        task automatic wr(bit [31:0] a,bit [31:0] d,bit [3:0] strb=4&#x27;hf);
+            axi22_bus_sequence s=axi22_bus_sequence::type_id::create(&quot;write&quot;);
+            s.is_write=1; s.addr=a; s.send_data=d; s.strb=strb;
+            s.start(p_sequencer.bus_sqr);
+            if (s.return_resp !== 2&#x27;b00)
+                `uvm_fatal(&quot;WRITE&quot;,&quot;Write response was not OKAY&quot;)
+        endtask</code></td><td>wr(a,d,strb)는 하위 Bus Sequence의 is_write, addr, send_data, strb를 설정합니다. bus_sqr에 start하고 실제 반환 응답 00을 확인합니다. 기본 strobe는 F입니다.</td></tr><tr><td>558-566</td><td><code class="teach-fragment">        task automatic rd(bit [31:0] a,bit [31:0] expected);
+            axi22_bus_sequence s=axi22_bus_sequence::type_id::create(&quot;read&quot;);
+            s.is_write=0; s.addr=a;
+            s.start(p_sequencer.bus_sqr);
+            if (s.return_resp !== 2&#x27;b00 || s.return_data !== expected)
+                `uvm_fatal(&quot;READ&quot;,
+                    $sformatf(&quot;addr=%h got=%h expected=%h&quot;,
+                              a,s.return_data,expected))
+        endtask</code></td><td>rd(a,expected)는 읽기 방향과 주소를 설정하고 bus_sqr에서 실행합니다. 반환값/응답을 독립 기대 상수와 비교합니다. Scoreboard의 Monitor 비교와 별개입니다.</td></tr><tr><td>568-575</td><td><code class="teach-fragment">        task body();
+            // 초기 리셋 → 제어/데이터 레지스터 접근.
+            ev(EV_RELEASE);
+            wr(&#x27;h00,32&#x27;h00000005);
+            wr(&#x27;h10,32&#x27;h11223344);
+            rd(&#x27;h00,32&#x27;h00000005);
+            rd(&#x27;h10,32&#x27;h11223344);
+</code></td><td>초기 release 후 CONTROL=5, DATA_IN=11223344를 쓰고 각각 읽습니다. 저장 정책과 반환 데이터를 확인합니다.</td></tr><tr><td>576-581</td><td><code class="teach-fragment">            // 실제 HW IRQ 이벤트 발생 → AXI Read로 관찰.
+            ev(EV_DONE);
+            rd(&#x27;h0c,32&#x27;h00000001);
+            ev(EV_ERROR);
+            rd(&#x27;h0c,32&#x27;h00000003);
+</code></td><td>DONE 명령 뒤 IRQ 01을 읽고 ERROR 명령 뒤 11을 읽습니다. 두 이벤트의 독립 비트 누적을 확인합니다.</td></tr><tr><td>582-587</td><td><code class="teach-fragment">            // W1C(Write 1 to Clear, 1을 써서 상태 비트 해제) 시험.
+            wr(&#x27;h0c,32&#x27;h00000001);
+            rd(&#x27;h0c,32&#x27;h00000002);
+            wr(&#x27;h0c,32&#x27;h00000002);
+            rd(&#x27;h0c,32&#x27;h00000000);
+</code></td><td>W1C에 01을 쓰면 11→10, 10을 쓰면 10→00입니다. 0을 쓴 다른 비트는 유지됩니다.</td></tr><tr><td>588-593</td><td><code class="teach-fragment">            // (추가) 두 Agent를 동시에 실행하여 같은 commit 에지에서 set/clear 충돌.
+            fork
+                wr(&#x27;h0c,32&#x27;h00000003);
+                ev(EV_BOTH_ON_CLEAR);
+            join
+            rd(&#x27;h0c,32&#x27;h00000003);</code></td><td>fork/join 두 분기에서 W1C 11 쓰기와 EV_BOTH_ON_CLEAR를 병행합니다. 두 Sequence가 모두 완료된 뒤 IRQ 11을 읽습니다. 실제 같은 에지는 Event Driver가 commit을 기다려 맞춥니다.</td></tr><tr><td>594-596</td><td><code class="teach-fragment">            // WSTRB[0]=0: W1C가 무시되어 두 비트가 유지된다.
+            wr(&#x27;h0c,32&#x27;h00000003,4&#x27;b0000);
+            rd(&#x27;h0c,32&#x27;h00000003);</code></td><td>같은 11을 쓰되 strobe=0000으로 두어 첫 바이트 해제를 무효화합니다. IRQ 11이 유지되어야 합니다.</td></tr><tr><td>598-607</td><td><code class="teach-fragment">            // RO 레지스터와 리셋 후 상태 초기화 확인.
+            rd(&#x27;h18,32&#x27;h00010000);
+            rd(&#x27;h1c,32&#x27;h524D4150);
+            ev(EV_ASSERT_RESET);
+            ev(EV_RELEASE);
+            rd(&#x27;h0c,32&#x27;h00000000);
+            rd(&#x27;h00,32&#x27;h00000000);
+            rd(&#x27;h10,32&#x27;h00000000);
+        endtask
+    endclass</code></td><td>VERSION/ID 상수를 읽고 잔여 IRQ·CONTROL·DATA_IN이 있는 상태에서 reset을 실행합니다. release 후 세 상태의 0을 읽어 확인합니다.</td></tr><tr><td>609-618</td><td><code class="teach-fragment">    class axi22_env extends uvm_env;
+        `uvm_component_utils(axi22_env)
+        axi22_bus_agent bus_agent;
+        irq22_event_agent event_agent;
+        axi22_virtual_sequencer vsqr;
+        axi22_scoreboard sb;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction
+        function void build_phase(uvm_phase phase);</code></td><td>env의 네 하위 component 핸들은 두 Agent, Virtual Sequencer, Scoreboard입니다. 생성자와 build_phase의 상위 호출을 포함합니다.</td></tr><tr><td>619-624</td><td><code class="teach-fragment">            super.build_phase(phase);
+            bus_agent=axi22_bus_agent::type_id::create(&quot;bus_agent&quot;,this);
+            event_agent=irq22_event_agent::type_id::create(&quot;event_agent&quot;,this);
+            vsqr=axi22_virtual_sequencer::type_id::create(&quot;vsqr&quot;,this);
+            sb=axi22_scoreboard::type_id::create(&quot;sb&quot;,this);
+        endfunction</code></td><td>Factory를 통해 네 component를 env(this)의 자식으로 생성합니다. 각 Agent의 build_phase가 실제 sqr/driver/monitor를 생성합니다.</td></tr><tr><td>625-631</td><td><code class="teach-fragment">        function void connect_phase(uvm_phase phase);
+            super.connect_phase(phase);
+            vsqr.bus_sqr=bus_agent.sqr;
+            vsqr.evt_sqr=event_agent.sqr;
+            bus_agent.mon.ap.connect(sb.bus_in);
+            event_agent.mon.ap.connect(sb.irq_in);
+        endfunction</code></td><td>vsqr.bus_sqr/evt_sqr에 기존 두 Sequencer 참조를 대입합니다. 두 Monitor의 ap를 각각 sb.bus_in과 sb.irq_in에 연결합니다. 명령 경로와 관찰 경로를 분리합니다.</td></tr><tr><td>632-647</td><td><code class="teach-fragment">    endclass
+
+    class axi22_test extends uvm_test;
+        `uvm_component_utils(axi22_test)
+        axi22_env env;
+        virtual irq22_if irq_vif;
+        bit done=0;
+        function new(string name,uvm_component parent);
+            super.new(name,parent);
+        endfunction
+        function void build_phase(uvm_phase phase);
+            super.build_phase(phase);
+            env=axi22_env::type_id::create(&quot;env&quot;,this);
+            if (!uvm_config_db#(virtual irq22_if)::get(this,&quot;&quot;,&quot;vif&quot;,irq_vif))
+                `uvm_fatal(&quot;TEST_VIF&quot;,&quot;IRQ virtual interface missing&quot;)
+        endfunction</code></td><td>env 정의를 닫고 test를 정의합니다. test는 env, irq_vif, done을 갖고 build_phase에서 env를 생성하며 IRQ 인터페이스 참조를 얻습니다.</td></tr><tr><td>648-656</td><td><code class="teach-fragment">        task run_phase(uvm_phase phase);
+            axi22_system_sequence vseq;
+            phase.raise_objection(this);
+            repeat (4) @(negedge irq_vif.clk);
+            vseq=axi22_system_sequence::type_id::create(&quot;vseq&quot;);
+            vseq.start(env.vsqr);
+            done=1;
+            phase.drop_objection(this);
+        endtask</code></td><td>run에서 objection을 올리고 초기 네 하강 에지를 기다립니다. vseq.start(env.vsqr)가 반환할 때까지 진행을 유지한 뒤 done을 설정하고 objection을 내립니다.</td></tr><tr><td>657-668</td><td><code class="teach-fragment">        function void check_phase(uvm_phase phase);
+            super.check_phase(phase);
+            if (!done || env.sb.writes!=6 || env.sb.reads!=13 ||
+                env.sb.events!=4 || env.sb.resets!=2 ||
+                env.sb.collisions!=1 || env.sb.zero_strobes!=1 ||
+                env.sb.commits!=6 || env.sb.committed.size()!=0 ||
+                env.bus_agent.drv.driven!=19 ||
+                env.event_agent.drv.events_driven!=6 ||
+                env.bus_agent.mon.aw_seen || env.bus_agent.mon.w_seen ||
+                env.bus_agent.mon.ar_seen)
+                `uvm_fatal(&quot;COUNT&quot;,&quot;Incomplete multi-agent verification&quot;)
+        endfunction</code></td><td>check_phase에서 6쓰기·13읽기·4이벤트 비트·2reset 구간·1충돌·1무효 strobe·6commit을 요구합니다. Driver 명령 수 19/6 및 미결 큐와 채널도 확인합니다.</td></tr><tr><td>669-677</td><td><code class="teach-fragment">        function void report_phase(uvm_phase phase);
+            super.report_phase(phase);
+            if (uvm_report_server::get_server().get_severity_count(UVM_ERROR)!=0 ||
+                uvm_report_server::get_server().get_severity_count(UVM_FATAL)!=0)
+                `uvm_fatal(&quot;REPORT&quot;,&quot;UVM error or fatal reported&quot;)
+            `uvm_info(&quot;RESULT&quot;,&quot;PASS CH22 AXI_W=6 AXI_R=13 IRQ=4 RESET=2 COLLISION=1 ZERO=1&quot;,UVM_NONE)
+        endfunction
+    endclass
+endpackage</code></td><td>report_phase는 UVM_ERROR/FATAL이 모두 0일 때만 RESULT를 기록합니다. test와 package 정의를 닫습니다.</td></tr><tr><td>679-685</td><td><code class="teach-fragment">module tb_axi_multiagent_irq;
+    import uvm_pkg::*;
+    import ch22_pkg::*;
+    logic clk=0;
+    always #5 clk=~clk;
+    irq22_if irq_bus(clk);
+    axi22_if axi_bus(clk,irq_bus.resetn);</code></td><td>정적 top에서 10ns 클록을 만들고 irq_bus와 axi_bus를 인스턴스화합니다. axi_bus의 resetn은 irq_bus.resetn에 연결된 입력입니다.</td></tr><tr><td>687-694</td><td><code class="teach-fragment">    wire wr_en;
+    wire [7:0] wr_offset,rd_offset;
+    wire [31:0] wr_data,rd_data;
+    wire [3:0] wr_strb;
+    wire enable_o,start_pulse_o,clear_pulse_o;
+    wire [1:0] mode_o;
+    wire [31:0] data_in_o;
+</code></td><td>adapter와 bank 사이 실제 접근 신호 및 제어 출력 연결선을 선언합니다. 분석 port의 객체 연결과 실제 회로 배선을 구별합니다.</td></tr><tr><td>695-702</td><td><code class="teach-fragment">    axi4lite_slave_adapter axi_dut (
+        .s_axi_aclk(clk),.s_axi_aresetn(irq_bus.resetn),
+        .s_axi_awaddr(axi_bus.awaddr),.s_axi_awprot(3&#x27;b000),
+        .s_axi_awvalid(axi_bus.awvalid),.s_axi_awready(axi_bus.awready),
+        .s_axi_wdata(axi_bus.wdata),.s_axi_wstrb(axi_bus.wstrb),
+        .s_axi_wvalid(axi_bus.wvalid),.s_axi_wready(axi_bus.wready),
+        .s_axi_bresp(axi_bus.bresp),.s_axi_bvalid(axi_bus.bvalid),
+        .s_axi_bready(axi_bus.bready),</code></td><td>axi_dut의 clk/reset 및 AW/W/B 포트를 axi_bus에 연결합니다. AWPROT는 000으로 고정합니다.</td></tr><tr><td>703-709</td><td><code class="teach-fragment">        .s_axi_araddr(axi_bus.araddr),.s_axi_arprot(3&#x27;b000),
+        .s_axi_arvalid(axi_bus.arvalid),.s_axi_arready(axi_bus.arready),
+        .s_axi_rdata(axi_bus.rdata),.s_axi_rresp(axi_bus.rresp),
+        .s_axi_rvalid(axi_bus.rvalid),.s_axi_rready(axi_bus.rready),
+        .wr_en(wr_en),.wr_offset(wr_offset),.wr_data(wr_data),
+        .wr_strb(wr_strb),.rd_offset(rd_offset),.rd_data(rd_data)
+    );</code></td><td>AR/R과 bank 접근 포트를 연결합니다. ARPROT 역시 000이며 보호 속성 시험은 아닙니다.</td></tr><tr><td>711-722</td><td><code class="teach-fragment">    custom_register_bank bank (
+        .clk(clk),.resetn(irq_bus.resetn),.wr_en(wr_en),
+        .wr_offset(wr_offset),.wr_data(wr_data),.wr_strb(wr_strb),
+        .rd_offset(rd_offset),.rd_data(rd_data),
+        .busy_i(1&#x27;b0),.done_i(1&#x27;b0),.error_i(1&#x27;b0),
+        .irq_done_event_i(irq_bus.done_event),
+        .irq_error_event_i(irq_bus.error_event),
+        .data_out_i(32&#x27;h12345678),
+        .enable_o(enable_o),.mode_o(mode_o),
+        .start_pulse_o(start_pulse_o),.clear_pulse_o(clear_pulse_o),
+        .data_in_o(data_in_o),.irq_status_o(irq_bus.irq_status)
+    );</code></td><td>bank의 접근 포트를 adapter와 연결하고 실제 done/error IRQ 이벤트를 irq_bus에서 받습니다. busy/done/error 상태 입력은 0, DATA_OUT은 고정이며 irq_status는 실제 bank 출력입니다.</td></tr><tr><td>724-728</td><td><code class="teach-fragment">    // (추가) 관찰용 연결만 추가, 원본 DUT 포트와 동작은 유지.
+    assign irq_bus.wr_en=wr_en;
+    assign irq_bus.wr_offset=wr_offset;
+    assign irq_bus.wr_data=wr_data;
+    assign irq_bus.wr_strb=wr_strb;</code></td><td>assign으로 실제 bank 입력 신호를 irq_bus의 관찰용 wire에 전달합니다. Event Driver가 commit을 직접 만들어 내는 것이 아니라 이 값을 읽습니다.</td></tr><tr><td>730-737</td><td><code class="teach-fragment">    initial begin
+        uvm_config_db#(virtual axi22_if)::set(
+            null,&quot;uvm_test_top.env.bus_agent.*&quot;,&quot;vif&quot;,axi_bus);
+        uvm_config_db#(virtual irq22_if)::set(
+            null,&quot;uvm_test_top.env.event_agent.*&quot;,&quot;vif&quot;,irq_bus);
+        uvm_config_db#(virtual irq22_if)::set(null,&quot;uvm_test_top&quot;,&quot;vif&quot;,irq_bus);
+        run_test(&quot;axi22_test&quot;);
+    end</code></td><td>타입별 config_db set으로 bus_agent.*와 event_agent.*의 하위 component에 해당 vif를 공급하고 test에는 irq_bus를 제공합니다. run_test는 등록한 axi22_test를 실행합니다.</td></tr><tr><td>738-742</td><td><code class="teach-fragment">    initial begin
+        #100000;
+        $fatal(1,&quot;CH22 GLOBAL_TIMEOUT&quot;);
+    end
+endmodule</code></td><td>별도 watchdog는 100000ns=100µs에 GLOBAL_TIMEOUT으로 종료합니다. 무한 대기가 정상 완료처럼 보이지 않게 합니다.</td></tr></tbody></table></details></div>
+</section>
+<section class="section" id="s06"><h2><span class="num">06</span>Ubuntu · Vivado XSIM 실행</h2><div class="codeblock"><div class="codebar"><span>scripts/run_ch22.sh · Bash</span></div><pre tabindex="0"><code>#!/usr/bin/env bash
+# 제22장: Vivado XSIM 내장 UVM 라이브러리 사용.
+set -euo pipefail
+ROOT=&quot;$(cd &quot;$(dirname &quot;${BASH_SOURCE[0]}&quot;)/..&quot; &amp;&amp; pwd)&quot;
+RTL=&quot;${RTL_DIR:-$ROOT/reference_rtl}&quot;
+for f in axi4lite_slave_adapter.v custom_register_bank.v; do
+  if [[ ! -f &quot;$RTL/$f&quot; ]]; then echo &quot;NOT_RUN: missing $RTL/$f&quot; &gt;&amp;2; exit 2; fi
+done
+RTL=&quot;$(realpath &quot;$RTL&quot;)&quot;
+for tool in xvlog xelab xsim; do
+  if ! command -v &quot;$tool&quot; &gt;/dev/null 2&gt;&amp;1; then
+    echo &quot;NOT_RUN: $tool missing; source Vivado settings64.sh&quot; &gt;&amp;2
+    exit 2
+  fi
+done
+mkdir -p &quot;$ROOT/.build/ch22&quot;
+OUT=&quot;$(mktemp -d &quot;$ROOT/.build/ch22/run.XXXXXX&quot;)&quot;
+cd &quot;$OUT&quot;
+xvlog &quot;$RTL/axi4lite_slave_adapter.v&quot; &quot;$RTL/custom_register_bank.v&quot; 2&gt;&amp;1 | tee rtl.log
+xvlog -sv -L uvm &quot;$ROOT/tb/ch22/tb_axi_multiagent_irq.sv&quot; 2&gt;&amp;1 | tee tb.log
+xelab -timescale 1ns/1ps -L uvm -debug typical tb_axi_multiagent_irq -s ch22_sim 2&gt;&amp;1 | tee elaborate.log
+xsim ch22_sim -runall -onerror quit 2&gt;&amp;1 | tee normal.log
+grep -Eq '\[RESULT\][[:space:]]+PASS CH22 AXI_W=6 AXI_R=13 IRQ=4 RESET=2 COLLISION=1 ZERO=1[[:space:]]*$' normal.log
+grep -Eq 'UVM_ERROR[[:space:]]*:[[:space:]]*0[[:space:]]*$' normal.log
+grep -Eq 'UVM_FATAL[[:space:]]*:[[:space:]]*0[[:space:]]*$' normal.log
+rc=0
+xsim ch22_sim -runall -onerror quit -testplusarg CORRUPT_IRQ &gt; negative.log 2&gt;&amp;1 || rc=$?
+grep -Eq 'UVM_FATAL.*\[IRQ_MISMATCH\].*status=10 expected=11 collisions=1' negative.log
+if grep -Eq 'PASS CH22|CH22 GLOBAL_TIMEOUT' negative.log; then
+  echo &quot;FAIL: unexpected negative result&quot; &gt;&amp;2
+  exit 1
+fi
+echo &quot;PASS CH22 HARNESS (negative exit=$rc)&quot;
+echo &quot;Logs: $OUT&quot;
+</code></pre></div><div class="codeblock"><div class="codebar"><span>Ubuntu · 실습 루트</span></div><pre tabindex="0"><code># Vivado 설치 경로의 settings64.sh를 source한 뒤 실행
+command -v xvlog xelab xsim
+bash scripts/run_ch22.sh</code></pre></div><p>xvlog는 소스 분석, xelab은 라이브러리 연결 및 스냅샷 생성, xsim은 정상과 부정 시험을 실행합니다. -L uvm은 내장 UVM 라이브러리 사용 옵션입니다. 설치 버전별 지원 여부를 확인합니다. 실행 폴더의 normal.log/negative.log 및 xsim ch22_sim -gui로 파형을 확인합니다. clk, irq_bus.resetn, done_event, error_event, wr_en, wr_offset, wr_data, wr_strb, irq_status와 AXI의 B/R 채널을 비교합니다.</p><p>공식 참고: <a href="https://docs.amd.com/r/2023.2-English/ug900-vivado-logic-simulation/Universal-Verification-Methodology-Support">AMD UG900 UVM 지원</a>.</p>
+<div class="teach-note"><h3>실습 지도 · 파형에 버스와 이벤트를 함께 둔다</h3><p>wr_en·wr_offset·wr_strb·done_event·error_event를 같은 시간축에 놓고 충돌 상승 에지 전 입력과 에지 뒤 irq_status를 비교합니다. BVALID/BREADY의 완료 시점도 표시하면 상태 갱신이 버스 응답보다 먼저라는 관계를 설명할 수 있습니다.</p><p>정상은 전체 계수와 오류0, 부정은 정확한 IRQ_MISMATCH를 요구합니다. 원본 XSIM 정상·부정 실측을 보존하며 이 제작의 새 RTL/UVM 실행은 <strong>NOT_RUN</strong>입니다. 교재 원본 RTL·TB는 변경하지 않았습니다.</p><h4>scripts/run_ch22.sh · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-5</td><td><code class="teach-fragment">#!/usr/bin/env bash
+# 제22장: Vivado XSIM 내장 UVM 라이브러리 사용.
+set -euo pipefail
+ROOT=&quot;$(cd &quot;$(dirname &quot;${BASH_SOURCE[0]}&quot;)/..&quot; &amp;&amp; pwd)&quot;
+RTL=&quot;${RTL_DIR:-$ROOT/reference_rtl}&quot;</code></td><td>Bash 실행기는 미정 변수, 명령 실패, 파이프 실패를 감지하도록 설정합니다. ROOT와 RTL 경로를 결정합니다.</td></tr><tr><td>6-9</td><td><code class="teach-fragment">for f in axi4lite_slave_adapter.v custom_register_bank.v; do
+  if [[ ! -f &quot;$RTL/$f&quot; ]]; then echo &quot;NOT_RUN: missing $RTL/$f&quot; &gt;&amp;2; exit 2; fi
+done
+RTL=&quot;$(realpath &quot;$RTL&quot;)&quot;</code></td><td>두 RTL이 존재하는지 검사하고 realpath로 절대 경로를 확보합니다. 미준비이면 NOT_RUN과 exit2입니다.</td></tr><tr><td>10-15</td><td><code class="teach-fragment">for tool in xvlog xelab xsim; do
+  if ! command -v &quot;$tool&quot; &gt;/dev/null 2&gt;&amp;1; then
+    echo &quot;NOT_RUN: $tool missing; source Vivado settings64.sh&quot; &gt;&amp;2
+    exit 2
+  fi
+done</code></td><td>xvlog/xelab/xsim을 모두 확인합니다. Vivado 실행 환경이 없으면 실제 검증을 수행한 것이 아닙니다.</td></tr><tr><td>16-18</td><td><code class="teach-fragment">mkdir -p &quot;$ROOT/.build/ch22&quot;
+OUT=&quot;$(mktemp -d &quot;$ROOT/.build/ch22/run.XXXXXX&quot;)&quot;
+cd &quot;$OUT&quot;</code></td><td>장별 새 실행 폴더를 생성하고 이동하여 이전 로그 혼입을 막습니다.</td></tr><tr><td>19-21</td><td><code class="teach-fragment">xvlog &quot;$RTL/axi4lite_slave_adapter.v&quot; &quot;$RTL/custom_register_bank.v&quot; 2&gt;&amp;1 | tee rtl.log
+xvlog -sv -L uvm &quot;$ROOT/tb/ch22/tb_axi_multiagent_irq.sv&quot; 2&gt;&amp;1 | tee tb.log
+xelab -timescale 1ns/1ps -L uvm -debug typical tb_axi_multiagent_irq -s ch22_sim 2&gt;&amp;1 | tee elaborate.log</code></td><td>RTL 분석, SystemVerilog/UVM TB 분석, ch22_sim 정교화 순서입니다. 각 단계 로그를 따로 보존합니다.</td></tr><tr><td>22-25</td><td><code class="teach-fragment">xsim ch22_sim -runall -onerror quit 2&gt;&amp;1 | tee normal.log
+grep -Eq &#x27;\[RESULT\][[:space:]]+PASS CH22 AXI_W=6 AXI_R=13 IRQ=4 RESET=2 COLLISION=1 ZERO=1[[:space:]]*$&#x27; normal.log
+grep -Eq &#x27;UVM_ERROR[[:space:]]*:[[:space:]]*0[[:space:]]*$&#x27; normal.log
+grep -Eq &#x27;UVM_FATAL[[:space:]]*:[[:space:]]*0[[:space:]]*$&#x27; normal.log</code></td><td>정상 실행의 정확한 RESULT 집계와 UVM_ERROR/FATAL 0을 요구합니다. 종료 코드만으로 성공을 판단하지 않습니다.</td></tr><tr><td>26-28</td><td><code class="teach-fragment">rc=0
+xsim ch22_sim -runall -onerror quit -testplusarg CORRUPT_IRQ &gt; negative.log 2&gt;&amp;1 || rc=$?
+grep -Eq &#x27;UVM_FATAL.*\[IRQ_MISMATCH\].*status=10 expected=11 collisions=1&#x27; negative.log</code></td><td>CORRUPT_IRQ를 별도 실행하여 종료 코드를 rc에 저장합니다. 실제 기대 11과 변조 10, collision1의 지정 진단을 요구합니다.</td></tr><tr><td>29-34</td><td><code class="teach-fragment">if grep -Eq &#x27;PASS CH22|CH22 GLOBAL_TIMEOUT&#x27; negative.log; then
+  echo &quot;FAIL: unexpected negative result&quot; &gt;&amp;2
+  exit 1
+fi
+echo &quot;PASS CH22 HARNESS (negative exit=$rc)&quot;
+echo &quot;Logs: $OUT&quot;</code></td><td>부정 로그에 정상 PASS 또는 GLOBAL_TIMEOUT이 있으면 실패로 처리합니다. 성공 시 harness 완료와 실제 로그 위치를 출력합니다.</td></tr></tbody></table></details></div>
+</section>
+<section class="section" id="s07"><h2><span class="num">07</span>예상 결과와 장애 분석</h2><p>다음은 독립 상태 계산의 기대 완료 문자열이며 실제 시뮬레이션 로그가 아닙니다.</p><div class="codeblock"><div class="codebar"><span>정상 시험</span></div><pre tabindex="0"><code>[RESULT] PASS CH22 AXI_W=6 AXI_R=13 IRQ=4 RESET=2 COLLISION=1 ZERO=1
+UVM_ERROR : 0
+UVM_FATAL : 0</code></pre></div><div class="codeblock"><div class="codebar"><span>부정 시험</span></div><pre tabindex="0"><code>[IRQ_MISMATCH] status=10 expected=11 collisions=1
+PASS CH22 HARNESS (negative exit=...)</code></pre></div><table><thead><tr><th>진단</th><th>점검</th></tr></thead><tbody><tr><td>BUS_X / MON_AW/W/AR</td><td>X/Z, 중복 수락</td></tr><tr><td>B_HOLD / R_HOLD</td><td>대기 중 응답 유지</td></tr><tr><td>COMMIT</td><td>실제 bank 입력과 B 거래</td></tr><tr><td>IRQ_MISMATCH</td><td>이벤트 set 우선, W1C, WSTRB, 리셋</td></tr><tr><td>AR_TIME</td><td>읽기 주소 수락 시각</td></tr><tr><td>COLLISION_TIMEOUT</td><td>두 Agent의 동일 에지 정렬</td></tr><tr><td>COUNT / REPORT</td><td>모든 완료 및 오류 누계</td></tr></tbody></table><p>다음 제23장은 4뉴런 NPU(신경망 처리 장치) 통합 연산기의 독립 수치 모델과 실제 파이프라인 지연 검증으로 확장합니다.</p>
+<div class="execution-evidence" data-evidence="v59"><h3>2026-11-26 실제 실행 결과</h3><p>Vivado XSIM 2024.2 · 종료 코드 0 · <strong>PASS</strong>. 정상 실행과 정의된 오류 검출 조건을 장별 실행기로 확인했습니다.</p><div class="codeblock"><div class="codebar"><span>저장소 루트 · Bash · 실행 재현 명령</span></div><pre tabindex="0"><code>bash scripts/run_chapter.sh 22</code></pre></div><div class="codeblock"><div class="codebar"><span>실제 로그 발췌 · 예상 출력과 구별</span></div><pre tabindex="0"><code>[RESULT] PASS CH22 AXI_W=6 AXI_R=13 IRQ=4 RESET=2 COLLISION=1 ZERO=1
+UVM_ERROR :    0
+UVM_FATAL :    0
+UVM_FATAL [IRQ_MISMATCH] status=10 expected=11 collisions=1
+UVM_FATAL :    1</code></pre></div><p><a href="https://github.com/Yuul-Jung/system_verilog_uvm_tb/blob/2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708/docs/evidence/v59/README.md#ch22">실행 명령·종료 코드·공개 로그 및 해시 확인</a>. 위의 예상 파형은 코드에서 계산한 도식이며, 실측 파형 이미지는 별도로 수록하지 않았습니다.</p></div>
+
+<div class="teach-note"><h3>예상 문답 · 동시성과 우선순위</h3><p><strong>fork로 동시에 시작하면 충돌인가요?</strong> 각 Driver가 기다리는 시간이 달라 실제 샘플 에지는 다를 수 있습니다. 이 코드는 commit 관찰 조건으로 정렬하고 collisions1을 요구합니다.</p><p><strong>W1C에0을 쓰면 비트가0이 되나요?</strong> 쓰기값1인 비트만 해제합니다.0은 유지이며 byte0 strobe가0이면1을 써도 해제하지 않습니다.</p><p><strong>리셋 중 IRQ 이벤트의 모든 경합도 시험했나요?</strong> 현재는 정상 이벤트·같은 에지 clear/set·strobe0·잔여 상태 재리셋의 정해진 사례입니다. 임의 리셋 시점과 모든 AXI 병렬 조합은 별도 확장 범위입니다.</p><h4>추가 교수용 문답</h4><p><strong>왜 AXI와 IRQ에 서로 다른 virtual interface 타입을 사용하나요?</strong> 버스 Driver는 AXI 입력만, 이벤트 Driver는 reset과 이벤트만 구동해야 합니다. 타입과 경로를 분리하면 구동 책임이 명확해집니다. 실제 reset은 두 환경이 공유하지만 AXI 인터페이스에는 입력으로만 연결됩니다.</p><p><strong>Scoreboard가 B를 수락할 때 IRQ를 바꾸면 안 되나요?</strong> 실제 IRQ는 bank commit 상승 에지에서 바뀌고 B는 마스터가 수락할 때 완료됩니다. BREADY를 낮춘 기간 동안 이미 IRQ가 바뀌므로 B 시점 모델은 늦습니다.</p><p><strong>Virtual Sequence를 시작하면 두 Driver가 자동으로 병렬 실행되나요?</strong> Driver의 run_phase는 각각 존재하지만 실제 명령 병행 여부는 상위 Sequence의 호출 구조로 정합니다. 일반 ev/wr/rd 호출은 완료를 기다리고 특정 충돌 시나리오만 fork/join을 사용합니다.</p></div>
+</section>
+<div class="chapter-links" id="chapter-links"></div></main></div><footer class="footer">RTL TESTBENCH · SYSTEMVERILOG · UVM · CH22 교수용 v02 · 원본 v05 · PASS</footer><script>window.COURSE={"title":"RTL · SystemVerilog · UVM 교수용 해설서","short_title":"SV UVM TEACH","home_label":"전체 교수용 해설서","chapters":[{"id":"ch01","number":1,"title":"테스트벤치의 첫 실행","file":"ch01_teacher_v02.html"},{"id":"ch02","number":2,"title":"Clock·Reset·이벤트","file":"ch02_teacher_v01.html"},{"id":"ch03","number":3,"title":"반복 자극과 작업 분리","file":"ch03_teacher_v01.html"},{"id":"ch04","number":4,"title":"PASS/FAIL 자동 판정","file":"ch04_teacher_v01.html"},{"id":"ch05","number":5,"title":"검증 자료형과 타입","file":"ch05_teacher_v01.html"},{"id":"ch06","number":6,"title":"배열·큐·패키지","file":"ch06_teacher_v01.html"},{"id":"ch07","number":7,"title":"인터페이스·타이밍 분리","file":"ch07_teacher_v01.html"},{"id":"ch08","number":8,"title":"객체와 제약 기반 입력","file":"ch08_teacher_v01.html"},{"id":"ch09","number":9,"title":"참조 모델·스코어보드","file":"ch09_teacher_v01.html"},{"id":"ch10","number":10,"title":"경계조건·오류 주입","file":"ch10_teacher_v01.html"},{"id":"ch11","number":11,"title":"시간적 속성 검사","file":"ch11_teacher_v01.html"},{"id":"ch12","number":12,"title":"기능 커버리지","file":"ch12_teacher_v01.html"},{"id":"ch13","number":13,"title":"UART 스트림 검증","file":"ch13_teacher_v01.html"},{"id":"ch14","number":14,"title":"FIFO 및 흐름 제어","file":"ch14_teacher_v01.html"},{"id":"ch15","number":15,"title":"AXI4-Lite 레지스터 검증","file":"ch15_teacher_v01.html"},{"id":"ch16","number":16,"title":"MAC·NPU 정수 연산 검증","file":"ch16_teacher_v01.html"},{"id":"ch17","number":17,"title":"최소 UVM 환경","file":"ch17_teacher_v01.html"},{"id":"ch18","number":18,"title":"Sequence에서 Driver까지","file":"ch18_teacher_v01.html"},{"id":"ch19","number":19,"title":"Monitor·Agent·Scoreboard","file":"ch19_teacher_v01.html"},{"id":"ch20","number":20,"title":"Factory·Config·Objection","file":"ch20_teacher_v01.html"},{"id":"ch21","number":21,"title":"UVM 레지스터 추상화","file":"ch21_teacher_v02.html"},{"id":"ch22","number":22,"title":"다중 Agent·VIP","file":"ch22_teacher_v02.html"},{"id":"ch23","number":23,"title":"NPU 통합 정답 비교","file":"ch23_teacher_v01.html"},{"id":"ch24","number":24,"title":"회귀·CI·검증 보고","file":"ch24_teacher_v01.html"}]};</script><script src="assets/site.js"></script></body></html>
