@@ -1,18 +1,24 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v01",
+  "version": "v02",
   "total_planned_chapters": 24,
-  "source_commit": "690dc757347b1335282cfdd6b0b4fb8a7d5ee7dd",
+  "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
     {
       "id": "ch01",
       "number": 1,
       "title": "테스트벤치의 첫 실행",
       "slug": "ch01_teacher",
-      "version": "v01",
+      "version": "v02",
       "source_html": "ch01_testbench_basics_v05.html",
-      "source_blob": "760fe8b6efc260835d80173843440122a83902a8"
+      "source_version": "v05",
+      "source_blob": "080bc24ec12d33d2ea081345d96a076571aa4338",
+      "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
+      "source_course_version": "v60",
+      "source_tb": "tb/ch01/tb_uart_echo_basics.sv",
+      "rtl_simulation": "NOT_RUN",
+      "original_execution": "EXECUTED_OBSERVATION"
     }
   ],
   "planned_chapters": [
@@ -100,8 +106,8 @@
       "id": "ch11",
       "number": 11,
       "title": "시간적 속성 검사",
-      "source_html": "ch11_temporal_assertions_v04.html",
-      "source_version": "v04",
+      "source_html": "ch11_temporal_assertions_v05.html",
+      "source_version": "v05",
       "status": "planned"
     },
     {
@@ -124,8 +130,8 @@
       "id": "ch14",
       "number": 14,
       "title": "FIFO 및 흐름 제어",
-      "source_html": "ch14_fifo_flow_control_v03.html",
-      "source_version": "v03",
+      "source_html": "ch14_fifo_flow_control_v04.html",
+      "source_version": "v04",
       "status": "planned"
     },
     {
@@ -196,8 +202,8 @@
       "id": "ch23",
       "number": 23,
       "title": "NPU 통합 정답 비교",
-      "source_html": "ch23_npu_integrated_scoreboard_v04.html",
-      "source_version": "v04",
+      "source_html": "ch23_npu_integrated_scoreboard_v05.html",
+      "source_version": "v05",
       "status": "planned"
     },
     {
@@ -208,5 +214,10 @@
       "source_version": "v04",
       "status": "planned"
     }
-  ]
+  ],
+  "external_review_confirmation": {
+    "date": "2026-11-26",
+    "confirmed_by": "user",
+    "status": "COMPLETE"
+  }
 }

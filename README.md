@@ -3,6 +3,7 @@
 6부 24장의 검증 학습안내서와 1:1 대응하는 교수용 보충 교재입니다. 원본 자료의 절 순서·그림·전체 코드·실행 증거를 보존하며, 개념의 필요성·신호 흐름·줄별 코드 풀이·수업 중 질문과 답변을 보강합니다.
 
 - [전체 목차](index.html)
+- [제01장 교수용 해설서 v02](ch01_teacher_v02.html) · [정합성·화면 검증](docs/VALIDATION_ch01_v02.md)
 - [원본 학습안내서](https://yuul-jung.github.io/system_verilog_uvm_tb/)
 - [교수용 확정 제작 규칙 23개 항목](TEACHING_RULES.md)
 - [공통 제작 규칙](https://github.com/Yuul-Jung/rule_md)
