@@ -4,6 +4,7 @@
 
 - [전체 목차](index.html)
 - [원본 학습안내서](https://yuul-jung.github.io/system_verilog_uvm_tb/)
+- [교수용 확정 제작 규칙 23개 항목](TEACHING_RULES.md)
 - [공통 제작 규칙](https://github.com/Yuul-Jung/rule_md)
 
 원본 학습안내서의 외부 검증 수정과 별개로 관리합니다. 각 해설서는 기준 원본의 Git Blob SHA와 버전을 기록하며, 원본 변경 시 대응 장만 재검토합니다. 미제작 장에는 링크를 생성하지 않습니다.
