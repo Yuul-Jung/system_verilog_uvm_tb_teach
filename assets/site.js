@@ -149,6 +149,12 @@
       "number": 21,
       "title": "UVM 레지스터 추상화",
       "file": "ch21_teacher_v01.html"
+    },
+    {
+      "id": "ch22",
+      "number": 22,
+      "title": "다중 Agent·VIP",
+      "file": "ch22_teacher_v01.html"
     }
   ]
 };

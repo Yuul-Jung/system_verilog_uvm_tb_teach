@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v22",
+  "version": "v23",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -319,6 +319,21 @@
       "source_tb": "tb/ch21/tb_axi_uvm_ral.sv",
       "rtl_simulation": "NOT_RUN",
       "original_execution": "PASS"
+    },
+    {
+      "id": "ch22",
+      "number": 22,
+      "title": "다중 Agent·VIP",
+      "slug": "ch22_teacher",
+      "version": "v01",
+      "source_html": "ch22_multi_agent_vip_v05.html",
+      "source_version": "v05",
+      "source_blob": "8118843b89e7e4a63cf706bf1ae6101d10a6b263",
+      "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
+      "source_course_version": "v60",
+      "source_tb": "tb/ch22/tb_axi_multiagent_irq.sv",
+      "rtl_simulation": "NOT_RUN",
+      "original_execution": "PASS"
     }
   ],
   "planned_chapters": [
@@ -496,7 +511,7 @@
       "title": "다중 Agent·VIP",
       "source_html": "ch22_multi_agent_vip_v05.html",
       "source_version": "v05",
-      "status": "planned"
+      "status": "published"
     },
     {
       "id": "ch23",

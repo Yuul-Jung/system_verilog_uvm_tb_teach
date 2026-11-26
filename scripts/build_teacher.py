@@ -39,7 +39,8 @@ def main():
             covered.update(range(start, end + 1))
             fragment = '\n'.join(lines[start - 1:end])
             rows.append(f'<tr><td>{span}</td><td><code class="teach-fragment">{html.escape(fragment)}</code></td><td>{explanation}</td></tr>')
-        assert all(i in covered for i, line in enumerate(lines, 1) if line.strip()), 'missing source line commentary'
+        missing = [i for i, line in enumerate(lines, 1) if line.strip() and i not in covered]
+        assert not missing, f'missing source line commentary: {line_table["path"]}: {missing}'
         table = (f'<h4>{html.escape(line_table["path"])} · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary>'
                  '<table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody>'
                  + ''.join(rows) + '</tbody></table></details>')
