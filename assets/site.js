@@ -77,6 +77,12 @@
       "number": 9,
       "title": "참조 모델·스코어보드",
       "file": "ch09_teacher_v01.html"
+    },
+    {
+      "id": "ch10",
+      "number": 10,
+      "title": "경계조건·오류 주입",
+      "file": "ch10_teacher_v01.html"
     }
   ]
 };

@@ -1,0 +1,631 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="PWM 경계조건·리셋 주입·타임아웃을 원본 RTL로 검증"><title>교수용 해설서 · 제10장 · 경계조건·오류 주입 · RTL 검증 학습안내서</title><link rel="stylesheet" href="assets/site.css"><style>.teach-note{margin:18px 0 4px;padding:15px 18px;background:#f8f7fc;border:1px solid #dddaee;border-left:4px solid #4635b1;border-radius:6px;overflow-wrap:anywhere}.teach-note h3{margin:0 0 10px;color:#4635b1}.teach-note h4{margin:14px 0 6px}.teach-note p{margin:8px 0}.teach-note summary{cursor:pointer;font-weight:600;margin:10px 0}.teach-fragment{white-space:pre-wrap;overflow-wrap:anywhere;display:block;min-width:140px}.teach-note table{margin:10px 0}.teach-note td{vertical-align:top}@media(max-width:860px){.teach-note{padding:12px}.teach-note td{min-width:68px}}.teach-note details table{min-width:680px}.teach-note details th:first-child,.teach-note details td:first-child{min-width:60px;white-space:nowrap}.teach-note details .teach-fragment{min-width:250px}</style></head>
+<body data-chapter="ch10"><a class="access-skip" href="#main-content" style="position:absolute;left:-9999px;top:0">본문 바로가기</a><button type="button" class="mobile-menu" id="mobile-menu" aria-controls="course-nav" aria-expanded="false">☰ 장·목차</button><div class="shade" id="shade"></div><header class="hero"><div class="hero-inner"><p class="kicker">교수용 해설서 · 제3부 · 자동 검증·속성·커버리지</p><h1>제10장 · 경계조건·오류 주입</h1><p>기존 PWM RTL로 0%·100% 경계, 중간 리셋, 오류 주입 검출 능력을 확인합니다.</p><div class="chips"><span class="chip">제3부 · 제10장</span><span class="chip">정상 시험 · 부정 시험</span><span class="chip">DUT 원본 보존</span></div></div></header>
+<div class="wrap"><nav class="toc" id="course-nav" aria-label="부·장·절 탐색"></nav><main class="content" id="main-content"><p>원본 제10장 · v05의 절·그림·전체 코드·실습을 보존한 교수용 해설서입니다.</p>
+<section class="section" id="s00"><h2><span class="num">00</span>개요 · 검증기가 오류도 검출하는가</h2><p>제09장은 참조 모델과 실제 출력을 매 클록 비교했습니다. 이번 장은 Corner Case(코너 케이스, 경계조건)와 Fault Injection(폴트 인젝션, 오류 주입)을 통해 정상 출력뿐 아니라 검증기의 실패 판정도 시험합니다. 원본 PWM 회로에 결함을 넣지 않고, 테스트벤치의 입력 요청과 관찰 경로에만 오류를 주입합니다.</p><p><strong>선행 설계 학습안내서:</strong> 제2부 사용자 AXI IP와 주변장치(<code>amd_soc_p2</code>) 04.2장 「RTL · AXI 풀이」 02절 「설정 Shadow와 출력 Active를 분리」 및 06절 「독립 PWM Core 전체」. 이번 DUT는 <code>pwm_core.v</code>이며 AXI 래퍼와 보드는 검증 범위 밖입니다.</p><div class="codeblock"><div class="codebar"><span>Ubuntu · 실습 폴더 준비</span></div><pre tabindex="0"><code>mkdir -p ch10_lab/reference_rtl ch10_lab/tb/ch10 ch10_lab/scripts
+cd ch10_lab</code></pre></div><table><thead><tr><th>저장할 파일</th><th>역할</th></tr></thead><tbody><tr><td>reference_rtl/pwm_core.v</td><td>원본 DUT</td></tr><tr><td>tb/ch10/tb_pwm_corner_reset_timeout.sv</td><td>경계값·리셋·부정 시험</td></tr><tr><td>scripts/run_ch10.sh</td><td>세 실행 결과 자동 판정(Icarus)</td></tr></tbody></table><p>01절·05절·06절의 전체 코드를 각각 지정된 파일에 저장합니다.</p>
+<div class="teach-note"><h3>교수용 이론 · 정상 통과와 오류 검출을 함께 확인하기</h3><p>정상 회로를 넣었을 때 PASS만 출력하는 검증기는 비교가 빠져 있어도 통과할 수 있습니다. 그래서 일부러 잘못된 관찰값이나 누락된 요청을 만들어 검사기가 실패 경로로 들어가는지 확인합니다. 부정 시험은 ‘예상한 이유로 실패해야 성공’이라는 두 단계 판정입니다.</p><p>이번 장은 0%·100%라는 경계값, 동작 중 리셋, 설정 완료 기한을 다룹니다. 원본 RTL을 변이시키지 않고 TB 외부 경로에 주입하므로 검출력을 확인한 범위 역시 그 두 경로에 한정됩니다.</p></div>
+</section>
+<section class="section" id="s01"><h2><span class="num">01</span>원본 RTL과 경계조건</h2><p>클록은 10ns, 주기는 8클록(80ns)입니다. 정상 극성, 출력 활성 조건에서 듀티 0은 항상 LOW, 듀티 8은 항상 HIGH입니다. 설정은 주기 경계에서 반영됩니다.</p><div class="codeblock"><div class="codebar"><span>reference_rtl/pwm_core.v · Verilog</span></div><pre tabindex="0"><code>`timescale 1ns/1ps
+// P2-04: 보드와 무관한 단일 채널 범용 PWM 코어.
+// (추가) period와 duty는 클록 횟수 단위. 0%/100%는 지속 LOW/HIGH.
+// (추가) 설정은 주기 마지막 경계에서만 활성값으로 반영.
+module pwm_core #(
+    parameter [31:0] RESET_PERIOD = 32'd100000
+)(
+    input  wire        clk,
+    input  wire        resetn,
+    input  wire        cfg_apply,
+    input  wire [31:0] cfg_period,
+    input  wire [31:0] cfg_duty,
+    input  wire        cfg_enable,
+    input  wire        cfg_polarity,
+    output wire        pwm_out,
+    output reg         pending,
+    output reg [31:0] active_period,
+    output reg [31:0] active_duty,
+    output reg         active_enable,
+    output reg         active_polarity
+);
+    reg [31:0] counter;
+    reg [31:0] shadow_period;
+    reg [31:0] shadow_duty;
+    reg        shadow_enable;
+    reg        shadow_polarity;
+
+    wire boundary = (counter &gt;= active_period - 32'd1);
+    wire duty_high = (counter &lt; active_duty);
+
+    // (주의) enable=0이면 polarity와 관계없이 LOW로 차단.
+    // (설명) 기본 polarity에서 active_duty=0이면 항상 LOW,
+    //         active_duty=active_period이면 항상 HIGH.
+    assign pwm_out = resetn &amp;&amp; active_enable &amp;&amp;
+                     (active_polarity ? !duty_high : duty_high);
+
+    always @(posedge clk) begin
+        if (!resetn) begin
+            counter         &lt;= 32'd0;
+            active_period   &lt;= RESET_PERIOD;
+            active_duty     &lt;= 32'd0;
+            active_enable   &lt;= 1'b0;
+            active_polarity &lt;= 1'b0;
+            shadow_period   &lt;= RESET_PERIOD;
+            shadow_duty     &lt;= 32'd0;
+            shadow_enable   &lt;= 1'b0;
+            shadow_polarity &lt;= 1'b0;
+            pending         &lt;= 1'b0;
+        end else begin
+            if (boundary) begin
+                counter &lt;= 32'd0;
+                if (pending) begin
+                    active_period   &lt;= shadow_period;
+                    active_duty     &lt;= shadow_duty;
+                    active_enable   &lt;= shadow_enable;
+                    active_polarity &lt;= shadow_polarity;
+                    pending         &lt;= 1'b0;
+                end
+            end else begin
+                counter &lt;= counter + 32'd1;
+            end
+            // (추가) 경계와 APPLY가 겹치면 새 값은 다음 경계에 적용.
+            // 여러 APPLY가 겹치면 최종 요청값을 우선하는 단일 Shadow 구조.
+            if (cfg_apply) begin
+                shadow_period   &lt;= cfg_period;
+                shadow_duty     &lt;= cfg_duty;
+                shadow_enable   &lt;= cfg_enable;
+                shadow_polarity &lt;= cfg_polarity;
+                pending         &lt;= 1'b1;
+            end
+        end
+    end
+endmodule
+</code></pre></div><table><thead><tr><th>조건</th><th>기대 출력</th></tr></thead><tbody><tr><td>active_duty=0, enable=1, polarity=0</td><td>LOW</td></tr><tr><td>active_duty=8, enable=1, polarity=0</td><td>HIGH</td></tr><tr><td>active_enable=0</td><td>극성과 무관하게 LOW</td></tr><tr><td>resetn=0</td><td>상승 에지와 무관하게 LOW</td></tr></tbody></table><p>이번 실행은 정상 극성 및 enable=1에서 두 듀티 경계를 시험합니다. 비활성화·반전 시험은 제09장을 참고합니다. 주기 0이나 범위 밖 듀티, AXI 레지스터 검사는 포함하지 않습니다.</p>
+<div class="teach-note"><h3>경계값의 회로 근거</h3><p>period=8에서 counter는 0~7입니다. duty=0이면 <code>counter&lt;0</code>은 항상 거짓, duty=8이면 <code>counter&lt;8</code>은 항상 참입니다. 정상 극성·enable=1일 때 두 경우는 계속 LOW와 계속 HIGH가 됩니다. 비트 수가 32라고 모든 32비트 입력이 의미 있는 듀티인 것은 아닙니다. 이 시험은 0과 period라는 명확한 경계 두 개를 사용합니다.</p><h4>reference_rtl/pwm_core.v · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-4</td><td><code class="teach-fragment">`timescale 1ns/1ps
+// P2-04: 보드와 무관한 단일 채널 범용 PWM 코어.
+// (추가) period와 duty는 클록 횟수 단위. 0%/100%는 지속 LOW/HIGH.
+// (추가) 설정은 주기 마지막 경계에서만 활성값으로 반영.</code></td><td>시간 단위는 ns, 정밀도는 ps입니다. period와 duty는 시간값이 아니라 클록 횟수이며, 새 설정은 주기 끝에서 적용한다는 계약을 주석이 정리합니다.</td></tr><tr><td>5-7</td><td><code class="teach-fragment">module pwm_core #(
+    parameter [31:0] RESET_PERIOD = 32&#x27;d100000
+)(</code></td><td>pwm_core의 모듈·파라미터를 선언합니다. RESET_PERIOD의 기본값 100,000을 TB 인스턴스에서 8로 바꿉니다. 원본 RTL의 기본값을 수정하는 것과 다릅니다.</td></tr><tr><td>8-10</td><td><code class="teach-fragment">    input  wire        clk,
+    input  wire        resetn,
+    input  wire        cfg_apply,</code></td><td>상승 에지 기준 clk, 0일 때 리셋하는 resetn, 설정 요청 cfg_apply입니다. 입력 이름만으로 리셋의 동기·비동기 여부를 판단하지 않고 always의 이벤트 조건을 확인해야 합니다.</td></tr><tr><td>11-14</td><td><code class="teach-fragment">    input  wire [31:0] cfg_period,
+    input  wire [31:0] cfg_duty,
+    input  wire        cfg_enable,
+    input  wire        cfg_polarity,</code></td><td>주기·듀티는 32비트 무부호 값, enable·polarity는 1비트 제어값입니다. 입력을 바꾸는 것과 Active에 적용되는 것은 별개입니다.</td></tr><tr><td>15-21</td><td><code class="teach-fragment">    output wire        pwm_out,
+    output reg         pending,
+    output reg [31:0] active_period,
+    output reg [31:0] active_duty,
+    output reg         active_enable,
+    output reg         active_polarity
+);</code></td><td>pwm_out은 조합 출력입니다. pending과 active_*는 아래 순차 블록에서 갱신하는 상태입니다. 이 reg들은 실제 에지 기반 저장 동작과 연결됩니다.</td></tr><tr><td>22</td><td><code class="teach-fragment">    reg [31:0] counter;</code></td><td>현재 주기의 위치 counter를 32비트로 보존합니다. 8클록 주기라면 0~7을 순환합니다.</td></tr><tr><td>23-26</td><td><code class="teach-fragment">    reg [31:0] shadow_period;
+    reg [31:0] shadow_duty;
+    reg        shadow_enable;
+    reg        shadow_polarity;</code></td><td>Shadow는 다음에 반영할 설정 한 묶음입니다. 여러 요청을 큐처럼 모두 저장하지 않으며 새 요청이 이전 미반영 값을 덮어쓸 수 있습니다.</td></tr><tr><td>28</td><td><code class="teach-fragment">    wire boundary = (counter &gt;= active_period - 32&#x27;d1);</code></td><td>현재 카운터가 active_period-1 이상이면 경계입니다. 8이면 7 이상입니다. 상승 에지에서 읽는 것은 에지 직전 상태이고 NBA 갱신 뒤 counter는 0이 됩니다.</td></tr><tr><td>29</td><td><code class="teach-fragment">    wire duty_high = (counter &lt; active_duty);</code></td><td>counter가 duty보다 작은 동안 duty_high가 1입니다. duty=3일 때 0·1·2 세 위치가 해당됩니다.</td></tr><tr><td>31-35</td><td><code class="teach-fragment">    // (주의) enable=0이면 polarity와 관계없이 LOW로 차단.
+    // (설명) 기본 polarity에서 active_duty=0이면 항상 LOW,
+    //         active_duty=active_period이면 항상 HIGH.
+    assign pwm_out = resetn &amp;&amp; active_enable &amp;&amp;
+                     (active_polarity ? !duty_high : duty_high);</code></td><td>정상 극성은 duty_high, 반전 극성은 그 논리 부정입니다. resetn과 enable의 AND가 바깥에 있어 둘 중 하나가 0이면 polarity와 관계없이 출력 0입니다. resetn 변화는 클록을 기다리지 않고 이 조합 출력에 반영됩니다.</td></tr><tr><td>37-38</td><td><code class="teach-fragment">    always @(posedge clk) begin
+        if (!resetn) begin</code></td><td>순차 블록은 clk 상승 에지에서만 실행합니다. 감지 조건에 negedge resetn이 없으므로 레지스터 리셋은 동기식입니다.</td></tr><tr><td>39-43</td><td><code class="teach-fragment">            counter         &lt;= 32&#x27;d0;
+            active_period   &lt;= RESET_PERIOD;
+            active_duty     &lt;= 32&#x27;d0;
+            active_enable   &lt;= 1&#x27;b0;
+            active_polarity &lt;= 1&#x27;b0;</code></td><td>리셋 에지에서 counter=0, period=RESET_PERIOD, duty=0, enable=0, polarity=0을 예약합니다. 비차단 대입은 우변을 읽고 그 시간 슬롯의 NBA 단계에서 저장값을 갱신합니다.</td></tr><tr><td>44-49</td><td><code class="teach-fragment">            shadow_period   &lt;= RESET_PERIOD;
+            shadow_duty     &lt;= 32&#x27;d0;
+            shadow_enable   &lt;= 1&#x27;b0;
+            shadow_polarity &lt;= 1&#x27;b0;
+            pending         &lt;= 1&#x27;b0;
+        end else begin</code></td><td>대기 설정도 기본값으로 초기화하고 pending을 0으로 지웁니다. 리셋을 풀어도 이전 요청을 자동 복원하지 않습니다.</td></tr><tr><td>50-51</td><td><code class="teach-fragment">            if (boundary) begin
+                counter &lt;= 32&#x27;d0;</code></td><td>주기 끝이면 counter를 0으로 되돌립니다. 경계를 계산하는 기준은 새 요청의 period가 아니라 현재 Active 주기입니다.</td></tr><tr><td>52-58</td><td><code class="teach-fragment">                if (pending) begin
+                    active_period   &lt;= shadow_period;
+                    active_duty     &lt;= shadow_duty;
+                    active_enable   &lt;= shadow_enable;
+                    active_polarity &lt;= shadow_polarity;
+                    pending         &lt;= 1&#x27;b0;
+                end</code></td><td>경계 직전에 pending=1이면 기존 Shadow 네 값을 Active로 복사하고 pending을 0으로 예약합니다. 같은 에지에서 새 Shadow에 쓴 값을 즉시 사용하는 블록이 아닙니다.</td></tr><tr><td>59-61</td><td><code class="teach-fragment">            end else begin
+                counter &lt;= counter + 32&#x27;d1;
+            end</code></td><td>경계가 아니면 counter를 1 증가시킵니다. 설정 요청 여부와 별개로 현재 주기는 진행됩니다.</td></tr><tr><td>62-64</td><td><code class="teach-fragment">            // (추가) 경계와 APPLY가 겹치면 새 값은 다음 경계에 적용.
+            // 여러 APPLY가 겹치면 최종 요청값을 우선하는 단일 Shadow 구조.
+            if (cfg_apply) begin</code></td><td>cfg_apply 검사는 경계 검사와 독립적입니다. 두 조건이 같은 에지에서 모두 참일 수 있습니다. 이 주석은 그때 이전 설정 적용과 새 요청 저장을 구분합니다.</td></tr><tr><td>65-69</td><td><code class="teach-fragment">                shadow_period   &lt;= cfg_period;
+                shadow_duty     &lt;= cfg_duty;
+                shadow_enable   &lt;= cfg_enable;
+                shadow_polarity &lt;= cfg_polarity;
+                pending         &lt;= 1&#x27;b1;</code></td><td>cfg_* 네 값을 Shadow로 저장하고 pending=1을 예약합니다. 같은 always에서 pending에 0과 1을 모두 예약하면 뒤에 실행된 1 대입이 최종 갱신값입니다. 이 장 TB가 동시 요청까지 검증한 것은 아닙니다.</td></tr><tr><td>70-73</td><td><code class="teach-fragment">            end
+        end
+    end
+endmodule</code></td><td>요청 조건, 비리셋 분기, always, module을 차례로 닫습니다. 소스의 들여쓰기 순서와 회로가 매 클록 병렬 갱신되는 의미를 구분합니다.</td></tr></tbody></table></details></div>
+</section>
+<section class="section" id="s02"><h2><span class="num">02</span>오류 주입 위치와 세 가지 실행 모드</h2><figure style="overflow-x:auto;margin:16px 0"><div style="min-width:650px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 340" role="img" aria-labelledby="ch10title ch10desc">
+<title id="ch10title">PWM 검증 경로와 오류 주입 위치</title><desc id="ch10desc">request_duty의 설정 요청 누락과 measured_pwm의 관찰값 반전은 DUT 외부에서 발생하며, 적용 대기와 출력 비교로 각각 검출한다.</desc>
+<defs><marker id="ch10arr" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="10" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L10 4L0 8Z" fill="#5A1E1E"/></marker></defs>
+<rect width="940" height="340" fill="white"/>
+<g font-family="Noto Sans CJK KR,sans-serif" fill="#172439" text-anchor="middle">
+<text x="470" y="30" font-size="20" font-weight="bold">원본 PWM과 두 오류 주입 경로</text>
+<g fill="#F7F9FC" stroke="#1F3A5F" stroke-width="2"><rect x="24" y="132" width="185" height="76" rx="4"/><rect x="269" y="132" width="175" height="76" rx="4"/><rect x="504" y="132" width="175" height="76" rx="4"/><rect x="739" y="132" width="171" height="76" rx="4"/><rect x="504" y="242" width="406" height="68" rx="4"/></g>
+<g font-size="16" font-weight="bold"><text x="116.5" y="158">request_duty()</text><text x="356.5" y="158">pwm_core</text><text x="591.5" y="158">measured_pwm</text><text x="824.5" y="158">check_outputs()</text><text x="707" y="267">check_constant_window()</text></g>
+<g font-size="13"><text x="116.5" y="183">cfg_apply · cfg_duty</text><text x="356.5" y="183">원본 RTL 유지</text><text x="591.5" y="183">pwm_out XOR 관찰 반전</text><text x="824.5" y="183">기대 레벨 비교</text><text x="707" y="290">pending · active_duty · 최대 10클록 대기</text></g>
+<g fill="#5A1E1E" font-size="13"><text x="116.5" y="65">+INJECT_TIMEOUT</text><text x="116.5" y="85">cfg_apply 누락</text><text x="591.5" y="65">+INJECT_FAULT</text><text x="591.5" y="85">corrupt_observation</text></g>
+<g stroke="#5A1E1E" stroke-width="2" fill="none" marker-end="url(#ch10arr)"><path d="M116.5 93V132"/><path d="M591.5 93V132"/><path d="M209 170H269"/><path d="M444 170H504"/><path d="M679 170H739"/><path d="M356.5 208V276H504"/></g>
+<text x="470" y="119" font-size="12">pwm_out</text><text x="430" y="265" font-size="12">공개 상태</text>
+</g></svg>
+</div><figcaption>원본 DUT 밖의 오류 주입 위치. check_constant_window와 check_outputs는 TB의 태스크이며 별도 합성 회로가 아닙니다.</figcaption></figure><table><thead><tr><th>실행 모드</th><th>의도적인 변경</th><th>기대 판정</th></tr></thead><tbody><tr><td>기본</td><td>없음</td><td>PASS CH10 requests=3 checks=48</td></tr><tr><td>+INJECT_FAULT</td><td>듀티 8 구간 measured_pwm 반전</td><td>DETECTED_INJECTED_FAULT</td></tr><tr><td>+INJECT_TIMEOUT</td><td>듀티 8 cfg_apply 누락</td><td>DETECTED_APPLY_TIMEOUT</td></tr></tbody></table><p><code>measured_pwm</code>은 <code>pwm_out ^ corrupt_observation</code>입니다. 실제 DUT 출력이 정상 HIGH임에도 측정값만 LOW가 되면 관찰 오류를 검출합니다. 요청 누락 시험에서는 첫 0% 설정을 정상 적용한 뒤 다음 듀티 8 요청의 펄스를 생략합니다. 기존 0% 상태가 유지되어야 의도된 타임아웃으로 인정합니다. 두 주입 옵션을 함께 선택하면 오류로 종료합니다.</p>
+<div class="teach-note"><h3>그림 읽기 · DUT 결함과 측정 경로 오류 구별</h3><p>measured_pwm은 <code>pwm_out ^ corrupt_observation</code>입니다. 반전 비트가 0이면 그대로이고 1이면 반대입니다. 정상 HIGH=1과 1을 XOR하면 측정값은 0이 됩니다. 실제 pwm_out은 유지하므로 ‘DUT 출력이 틀렸다’와 ‘정상 출력을 잘못 관찰했다’를 구분할 수 있습니다.</p><p>check_outputs는 먼저 공개 상태가 정상인지 확인합니다. 그 뒤 measured_pwm이 틀리면서 원래 pwm_out은 기대값과 맞을 때만 전용 DETECTED_INJECTED_FAULT를 냅니다. 아무 Fatal이나 주입 성공으로 인정하면 초기화 오류나 연결 실패까지 검출력 증거로 오인할 수 있습니다.</p></div>
+</section>
+<section class="section" id="s03"><h2><span class="num">03</span>설정 적용 대기와 시간 계약</h2><p><code>request_duty()</code>는 하강 에지에서 입력을 바꾸고 다음 하강 에지에 펄스를 종료합니다. 정상 시나리오의 요청 위치에서는 pending이 1이어야 합니다. 일반화된 연속 요청 검사와는 구별합니다. <code>check_constant_window()</code>는 pending=0과 active_duty의 목표값을 모두 기다리며, 종료하지 않으면 최대 10번 상승 에지 관찰 후 실패합니다.</p><table><thead><tr><th>사례</th><th>요청 ns</th><th>수락 ns</th><th>적용 ns</th><th>16개 출력 관찰 ns</th></tr></thead><tbody><tr><td>0%</td><td>20</td><td>25</td><td>85</td><td>96~246</td></tr><tr><td>100%</td><td>250</td><td>255</td><td>325</td><td>336~486</td></tr><tr><td>리셋 후 100%</td><td>510</td><td>515</td><td>575</td><td>586~736</td></tr></tbody></table><p>위 수치는 8클록 경계와 TB의 에지 대기를 독립 계산한 예상 시간입니다. 예를 들어 두 번째 요청을 누락하면 260ns에 요청 태스크가 끝난 뒤 266~356ns의 10개 관찰 동안 active_duty가 0입니다. 356ns에 적용 타임아웃을 검출할 것으로 예상됩니다. 정상 요청을 적용한 뒤 관찰값만 반전하는 모드는 첫 비교인 336ns에서 실패할 것으로 예상됩니다.</p><p>10클록은 이 고정 8클록 실습의 대기 상한입니다. 다른 주기로 바꾸면 상한도 재설계해야 합니다. 전체 실행의 5000ns 안전 상한은 별개의 무한 대기 방지 장치입니다.</p>
+<div class="teach-note"><h3>판서 · pending 하나만 보면 생기는 거짓 완료</h3><p>요청 누락 모드에서는 기존 0% 상태의 pending이 0입니다. pending=0만 완료 조건으로 쓰면 새 duty=8이 적용되지 않았는데도 즉시 통과합니다. 그래서 <code>pending===0</code>과 <code>active_duty===목표</code>가 모두 맞아야 대기를 끝냅니다.</p><p>두 번째 요청 task가 끝나는 260ns 뒤 최대 열 상승 에지를 관찰하면 266·276·286·296·306·316·326·336·346·356ns입니다. 그동안 기존 period=8·duty=0·enable=1·polarity=0·pending=0·출력0이 유지되어야 의도된 요청 누락으로 해석할 수 있습니다. 다른 상태가 틀리면 TIMEOUT_BASELINE 실패로 따로 분류합니다.</p><p>최대 열 클록은 고정 주기8에 맞춘 계약입니다. 정상 적용 대기는 이 한계 안에서 끝나고, 전체 5,000ns watchdog는 별도의 마지막 안전장치입니다. 두 기한을 같은 검사로 설명하지 않습니다.</p></div>
+</section>
+<section class="section" id="s04"><h2><span class="num">04</span>동작 중 리셋 · 출력과 상태를 분리</h2><p>원본은 출력 조합 차단과 내부 동기 리셋을 함께 사용합니다. 리셋을 인가하기 전에 실제 출력이 HIGH인지 먼저 확인합니다. 이미 LOW이면 리셋 차단 기능을 검증할 수 없습니다.</p><table><thead><tr><th>예상 시각</th><th>동작</th><th>검사</th></tr></thead><tbody><tr><td>486ns</td><td>두 번째 16회 검사 완료</td><td>pwm_out HIGH</td></tr><tr><td>488ns</td><td>resetn LOW</td><td>조합 출력 차단</td></tr><tr><td>489ns</td><td>1ns 뒤 관찰</td><td>pwm_out LOW, 활성 설정 유지</td></tr><tr><td>495ns</td><td>다음 상승 에지</td><td>내부 상태 초기화</td></tr><tr><td>496ns</td><td>에지 이후 관찰</td><td>period=8, duty=0, enable=0, polarity=0, pending=0, pwm_out=0</td></tr><tr><td>500ns</td><td>하강 에지</td><td>resetn HIGH</td></tr></tbody></table><p>리셋 전에는 듀티 100%로 출력이 계속 HIGH입니다. 따라서 489ns의 LOW는 495ns의 내부 레지스터 초기화보다 먼저 발생해야 합니다. 동시에 489ns에는 활성 주기 8, 듀티 8, enable 1, polarity 0, pending 0을 유지해야 합니다. 이 선행 상태 검사로 레지스터가 리셋 인가 즉시 비동기적으로 초기화되는 결함을 구별합니다. 그 후 다시 100%를 요청해 재시작까지 확인합니다.</p>
+<div class="teach-note"><h3>리셋 판서 · 출력이 먼저 내려가고 상태는 나중에 바뀐다</h3><p>두 번째 창의 마지막 비교는 486ns입니다. 여기서 HIGH 선행 조건을 확인하고 2ns 뒤 488ns에 리셋을 내립니다. 489ns에는 pwm_out=0이지만 Active는 period8·duty8·enable1을 유지해야 합니다. 495ns 상승 에지에서 레지스터를 리셋하고 496ns에는 duty0·enable0을 확인합니다.</p><p>출력만 확인하면 레지스터를 실수로 비동기 리셋한 구현도 통과할 수 있습니다. 그래서 에지 전 상태 보존 검사와 에지 후 초기화 검사를 나눕니다. 원본 동작은 ‘조합 출력 차단’과 ‘동기식 저장 상태 초기화’가 함께 있는 것이며 resetn 이름만 보고 둘을 한 종류로 부르지 않습니다.</p></div>
+</section>
+<section class="section" id="s05"><h2><span class="num">05</span>테스트벤치 전체 코드</h2><div class="codeblock"><div class="codebar"><span>tb/ch10/tb_pwm_corner_reset_timeout.sv · SystemVerilog</span></div><pre tabindex="0"><code>`timescale 1ns/1ps
+// 제10장: PWM 경계값, 실행 중 리셋, 타임아웃을 자동 판정한다.
+// 원본 pwm_core는 수정하지 않고 공개 포트만 사용한다.
+module tb_pwm_corner_reset_timeout;
+    reg clk = 1'b0;
+    reg resetn = 1'b0;
+    reg cfg_apply = 1'b0;
+    reg [31:0] cfg_period = 32'd8, cfg_duty = 32'd0;
+    reg cfg_enable = 1'b1, cfg_polarity = 1'b0;
+    wire pwm_out, pending, active_enable, active_polarity;
+    wire [31:0] active_period, active_duty;
+    integer checks = 0;
+    integer requests = 0;
+
+    // (추가) 관찰값 오류 및 설정 요청 누락을 DUT 외부에서 주입한다.
+    // +INJECT_FAULT: 측정 경로만 반전 → 스코어보드 검출 시험.
+    // +INJECT_TIMEOUT: 듀티 8 요청을 누락 → 적용 기한 검출 시험.
+    reg inject_fault = 1'b0;
+    reg inject_timeout = 1'b0;
+    reg corrupt_observation = 1'b0;
+    wire measured_pwm = pwm_out ^ corrupt_observation;
+
+    pwm_core #(.RESET_PERIOD(32'd8)) dut (
+        .clk(clk), .resetn(resetn), .cfg_apply(cfg_apply),
+        .cfg_period(cfg_period), .cfg_duty(cfg_duty),
+        .cfg_enable(cfg_enable), .cfg_polarity(cfg_polarity),
+        .pwm_out(pwm_out), .pending(pending),
+        .active_period(active_period), .active_duty(active_duty),
+        .active_enable(active_enable), .active_polarity(active_polarity)
+    );
+    always #5 clk = ~clk;
+
+`ifdef VCD
+    // (변경) Icarus 실행에서만 VCD 기록을 활성화한다.
+    initial begin
+        $dumpfile(&quot;ch10_pwm_corner_reset_timeout.vcd&quot;);
+        $dumpvars(0, tb_pwm_corner_reset_timeout);
+    end
+`endif
+
+    // 실패 시 무한 대기하지 않도록 전체 시뮬레이션에 상한을 둔다.
+    initial begin
+        #5000;
+        $fatal(1, &quot;FAIL GLOBAL_TIMEOUT&quot;);
+    end
+
+    // (변경) 상태 검사와 PWM 측정값 검사를 구별한다.
+    // 주입 시험에서 DUT 원본 pwm_out은 변경하지 않는다.
+    task automatic check_outputs(
+        input [31:0] expected_duty,
+        input expected_pwm,
+        input expected_pending
+    );
+        begin
+            if (active_period !== 32'd8 ||
+                active_duty !== expected_duty ||
+                active_enable !== 1'b1 ||
+                active_polarity !== 1'b0 ||
+                pending !== expected_pending) begin
+                $fatal(1, &quot;FAIL STATE duty=%0d pending=%b&quot;, active_duty, pending);
+            end
+
+            if (measured_pwm !== expected_pwm) begin
+                if (corrupt_observation &amp;&amp; (pwm_out === expected_pwm))
+                    $fatal(1, &quot;DETECTED_INJECTED_FAULT dut=%b measured=%b&quot;,
+                        pwm_out, measured_pwm);
+                $fatal(1, &quot;FAIL PWM actual=%b expected=%b&quot;,
+                    measured_pwm, expected_pwm);
+            end
+            checks = checks + 1;
+        end
+    endtask
+
+    // (변경) +INJECT_TIMEOUT이면 DUT가 아니라 외부 cfg_apply를 누락한다.
+    task automatic request_duty(input [31:0] duty);
+        reg withhold_apply;
+        begin
+            @(negedge clk);
+            withhold_apply = inject_timeout &amp;&amp; (duty == 32'd8);
+            cfg_period = 32'd8;
+            cfg_duty = duty;
+            cfg_enable = 1'b1;
+            cfg_polarity = 1'b0;
+            cfg_apply = !withhold_apply;
+            @(negedge clk);
+            cfg_apply = 1'b0;
+            requests = requests + 1;
+            if (!withhold_apply &amp;&amp; pending !== 1'b1)
+                $fatal(1, &quot;FAIL request not pending&quot;);
+            if (withhold_apply)
+                $display(&quot;INJECT: cfg_apply intentionally withheld&quot;);
+        end
+    endtask
+
+    // (변경) pending과 active_duty를 모두 확인한 뒤 전체 두 주기를 검사한다.
+    task automatic check_constant_window(
+        input [31:0] duty,
+        input expected_level
+    );
+        integer i;
+        begin
+            request_duty(duty);
+
+            // 최대 10클록 동안 새 설정의 실제 적용을 기다린다.
+            for (i = 0; i &lt; 10 &amp;&amp;
+                 ((pending !== 1'b0) || (active_duty !== duty));
+                 i = i + 1) begin
+                @(posedge clk);
+                #1;
+                // (추가) 요청 누락 시험에서 기존 정상 0% 상태를 확인한다.
+                // 다른 상태 오류를 의도된 타임아웃 성공으로 오인하지 않는다.
+                if (inject_timeout &amp;&amp; duty == 32'd8 &amp;&amp;
+                    (pending !== 1'b0 || active_period !== 32'd8 ||
+                     active_duty !== 32'd0 || active_enable !== 1'b1 ||
+                     active_polarity !== 1'b0 || pwm_out !== 1'b0))
+                    $fatal(1, &quot;FAIL TIMEOUT_BASELINE&quot;);
+            end
+
+            if (pending !== 1'b0 || active_duty !== duty) begin
+                if (inject_timeout &amp;&amp; duty == 32'd8)
+                    $fatal(1, &quot;DETECTED_APPLY_TIMEOUT duty=8 deadline=10clks&quot;);
+                $fatal(1, &quot;FAIL APPLY_TIMEOUT duty=%0d&quot;, duty);
+            end
+
+            // (추가) DUT 출력은 손대지 않고 관찰 회로에서만 비트 반전.
+            corrupt_observation = inject_fault &amp;&amp; (duty == 32'd8);
+            for (i = 0; i &lt; 16; i = i + 1) begin
+                @(posedge clk);
+                #1;
+                check_outputs(duty, expected_level, 1'b0);
+            end
+            corrupt_observation = 1'b0;
+        end
+    endtask
+
+    initial begin
+        inject_fault = $test$plusargs(&quot;INJECT_FAULT&quot;);
+        inject_timeout = $test$plusargs(&quot;INJECT_TIMEOUT&quot;);
+        if (inject_fault &amp;&amp; inject_timeout)
+            $fatal(1, &quot;FAIL: 동시에 두 오류 모드를 선택하지 마세요&quot;);
+
+        // 동기 리셋: 첫 상승 에지 이후 초기 레지스터를 검사한다.
+        @(posedge clk); #1;
+        if (active_period !== 32'd8 || active_duty !== 32'd0 ||
+            active_enable !== 1'b0 || active_polarity !== 1'b0 ||
+            pending !== 1'b0 || pwm_out !== 1'b0)
+            $fatal(1, &quot;FAIL initial reset&quot;);
+        @(negedge clk);
+        resetn = 1'b1;
+
+        check_constant_window(32'd0, 1'b0); // 0%: 항상 LOW
+        check_constant_window(32'd8, 1'b1); // 100%: 항상 HIGH
+
+        // (추가) 출력이 HIGH인 상태에서 리셋 차단을 검사한다.
+        if (pwm_out !== 1'b1)
+            $fatal(1, &quot;FAIL RESET_PRECONDITION&quot;);
+        // 직전 상승 에지의 관찰 후 2ns, 다음 상승 에지 전에 인가.
+        #2 resetn = 1'b0;
+        #1;
+        if (pwm_out !== 1'b0)
+            $fatal(1, &quot;FAIL async output gate&quot;);
+        // (추가) 다음 상승 에지 이전에는 활성 레지스터가 보존되어야 한다.
+        // 비동기 레지스터 리셋으로 잘못 구현한 경우를 검출한다.
+        if (active_period !== 32'd8 || active_duty !== 32'd8 ||
+            active_enable !== 1'b1 || active_polarity !== 1'b0 ||
+            pending !== 1'b0)
+            $fatal(1, &quot;FAIL PRE_EDGE_STATE&quot;);
+        @(posedge clk); #1;
+        if (active_period !== 32'd8 || active_duty !== 32'd0 ||
+            active_enable !== 1'b0 || active_polarity !== 1'b0 ||
+            pending !== 1'b0 || pwm_out !== 1'b0)
+            $fatal(1, &quot;FAIL synchronous register reset&quot;);
+        @(negedge clk);
+        resetn = 1'b1;
+
+        check_constant_window(32'd8, 1'b1); // 리셋 뒤 재설정
+        // (추가) 세 요청과 세 묶음의 16회 검사 완료 확인.
+        if (requests != 3 || checks != 48)
+            $fatal(1, &quot;FAIL COUNT requests=%0d checks=%0d&quot;, requests, checks);
+        $display(&quot;PASS CH10 requests=%0d checks=%0d&quot;, requests, checks);
+        $finish;
+    end
+endmodule
+</code></pre></div><h3>핵심 코드 풀이</h3><table><thead><tr><th>코드</th><th>기능</th></tr></thead><tbody><tr><td>$test$plusargs</td><td>실행 모드 선택</td></tr><tr><td>request_duty()</td><td>한 클록 설정 요청 또는 의도적 생략</td></tr><tr><td>check_constant_window()</td><td>최대 10클록 적용 대기 후 16회 비교</td></tr><tr><td>check_outputs()</td><td>활성 상태 및 측정 출력의 4상태 비교</td></tr><tr><td>TIMEOUT_BASELINE</td><td>요청 누락 동안 이전 정상 상태 보존 확인</td></tr><tr><td>RESET_PRECONDITION</td><td>리셋 전 HIGH 확인</td></tr><tr><td>requests / checks</td><td>정상 시험의 완료 횟수 확인</td></tr><tr><td>$fatal</td><td>의도된 검출 또는 실제 오류의 종료</td></tr></tbody></table><p>상태와 출력 비교는 기대값이 확정된 상태에서 <code>!==</code>를 사용하므로 X/Z도 비일치가 됩니다. 두 번의 정상 주기(16회)를 세 설정에서 확인하므로 총 48회 출력 비교를 수행합니다. 초기 리셋·중간 리셋·적용 대기는 이 48회에 포함되지 않습니다.</p>
+<div class="teach-note"><h3>전체 코드 · 검사 범위와 주입 모드의 조건</h3><p>정상 실행은 0% 16표본, 100% 16표본, 중간 리셋 후 100% 16표본으로 총 48개 출력 묶음을 확인합니다. 한 묶음에는 주기·듀티·허용·극성·대기 상태와 측정 출력이 포함됩니다. 초기 리셋·적용 대기·리셋 전후 상태 검사는 48 집계와 별개입니다.</p><p>두 plusarg 모드를 함께 선택하면 어느 오류를 시험했는지 모호해지므로 즉시 거절합니다. 요청 수 requests는 task를 수행한 수이며 누락 모드에서 실제 apply 펄스가 생긴 수와 같지 않을 수 있습니다. 정상 세 요청의 완료 검사와 주입 모드의 조기 Fatal 경로를 구분합니다.</p><h4>tb/ch10/tb_pwm_corner_reset_timeout.sv · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-13</td><td><code class="teach-fragment">`timescale 1ns/1ps
+// 제10장: PWM 경계값, 실행 중 리셋, 타임아웃을 자동 판정한다.
+// 원본 pwm_core는 수정하지 않고 공개 포트만 사용한다.
+module tb_pwm_corner_reset_timeout;
+    reg clk = 1&#x27;b0;
+    reg resetn = 1&#x27;b0;
+    reg cfg_apply = 1&#x27;b0;
+    reg [31:0] cfg_period = 32&#x27;d8, cfg_duty = 32&#x27;d0;
+    reg cfg_enable = 1&#x27;b1, cfg_polarity = 1&#x27;b0;
+    wire pwm_out, pending, active_enable, active_polarity;
+    wire [31:0] active_period, active_duty;
+    integer checks = 0;
+    integer requests = 0;</code></td><td>시간 규격·정상 입력·출력·검사 수와 요청 수를 선언합니다. 리셋을 0으로 시작하고 주기8·정상 극성을 사용합니다.</td></tr><tr><td>15-21</td><td><code class="teach-fragment">    // (추가) 관찰값 오류 및 설정 요청 누락을 DUT 외부에서 주입한다.
+    // +INJECT_FAULT: 측정 경로만 반전 → 스코어보드 검출 시험.
+    // +INJECT_TIMEOUT: 듀티 8 요청을 누락 → 적용 기한 검출 시험.
+    reg inject_fault = 1&#x27;b0;
+    reg inject_timeout = 1&#x27;b0;
+    reg corrupt_observation = 1&#x27;b0;
+    wire measured_pwm = pwm_out ^ corrupt_observation;</code></td><td>주입 모드와 실제 반전 활성 비트를 별도로 둡니다. measured_pwm은 DUT 출력에 외부 XOR를 적용한 관찰값입니다.</td></tr><tr><td>23-31</td><td><code class="teach-fragment">    pwm_core #(.RESET_PERIOD(32&#x27;d8)) dut (
+        .clk(clk), .resetn(resetn), .cfg_apply(cfg_apply),
+        .cfg_period(cfg_period), .cfg_duty(cfg_duty),
+        .cfg_enable(cfg_enable), .cfg_polarity(cfg_polarity),
+        .pwm_out(pwm_out), .pending(pending),
+        .active_period(active_period), .active_duty(active_duty),
+        .active_enable(active_enable), .active_polarity(active_polarity)
+    );
+    always #5 clk = ~clk;</code></td><td>원본 DUT 13포트를 연결하고 10ns 클록을 만듭니다.</td></tr><tr><td>33-39</td><td><code class="teach-fragment">`ifdef VCD
+    // (변경) Icarus 실행에서만 VCD 기록을 활성화한다.
+    initial begin
+        $dumpfile(&quot;ch10_pwm_corner_reset_timeout.vcd&quot;);
+        $dumpvars(0, tb_pwm_corner_reset_timeout);
+    end
+`endif</code></td><td>선택적 VCD 기록 블록입니다. 모드별 파일 분리는 외부 실행기가 처리합니다.</td></tr><tr><td>41-45</td><td><code class="teach-fragment">    // 실패 시 무한 대기하지 않도록 전체 시뮬레이션에 상한을 둔다.
+    initial begin
+        #5000;
+        $fatal(1, &quot;FAIL GLOBAL_TIMEOUT&quot;);
+    end</code></td><td>전체 5,000ns watchdog로 진행이 끝나지 않는 실행을 실패시킵니다.</td></tr><tr><td>47-53</td><td><code class="teach-fragment">    // (변경) 상태 검사와 PWM 측정값 검사를 구별한다.
+    // 주입 시험에서 DUT 원본 pwm_out은 변경하지 않는다.
+    task automatic check_outputs(
+        input [31:0] expected_duty,
+        input expected_pwm,
+        input expected_pending
+    );</code></td><td>기대 듀티·출력·대기를 받는 검사 task를 선언합니다. DUT 상태와 측정 출력의 실패를 구분하려는 구조입니다.</td></tr><tr><td>54-61</td><td><code class="teach-fragment">        begin
+            if (active_period !== 32&#x27;d8 ||
+                active_duty !== expected_duty ||
+                active_enable !== 1&#x27;b1 ||
+                active_polarity !== 1&#x27;b0 ||
+                pending !== expected_pending) begin
+                $fatal(1, &quot;FAIL STATE duty=%0d pending=%b&quot;, active_duty, pending);
+            end</code></td><td>주기8·기대듀티·enable1·polarity0·기대pending을 먼저 !==로 검사하고 상태 오류를 따로 종료합니다.</td></tr><tr><td>63-72</td><td><code class="teach-fragment">            if (measured_pwm !== expected_pwm) begin
+                if (corrupt_observation &amp;&amp; (pwm_out === expected_pwm))
+                    $fatal(1, &quot;DETECTED_INJECTED_FAULT dut=%b measured=%b&quot;,
+                        pwm_out, measured_pwm);
+                $fatal(1, &quot;FAIL PWM actual=%b expected=%b&quot;,
+                    measured_pwm, expected_pwm);
+            end
+            checks = checks + 1;
+        end
+    endtask</code></td><td>측정값이 틀린 경우 반전이 활성이고 실제 DUT 출력이 옳을 때만 전용 검출 Fatal을 냅니다. 그 외에는 일반 PWM 실패입니다. 정상 비교만 checks를 늘립니다.</td></tr><tr><td>74-79</td><td><code class="teach-fragment">    // (변경) +INJECT_TIMEOUT이면 DUT가 아니라 외부 cfg_apply를 누락한다.
+    task automatic request_duty(input [31:0] duty);
+        reg withhold_apply;
+        begin
+            @(negedge clk);
+            withhold_apply = inject_timeout &amp;&amp; (duty == 32&#x27;d8);</code></td><td>하강 에지에 요청하고, 타임아웃 모드의 duty8이면 withhold_apply를 참으로 정합니다.</td></tr><tr><td>80-87</td><td><code class="teach-fragment">            cfg_period = 32&#x27;d8;
+            cfg_duty = duty;
+            cfg_enable = 1&#x27;b1;
+            cfg_polarity = 1&#x27;b0;
+            cfg_apply = !withhold_apply;
+            @(negedge clk);
+            cfg_apply = 1&#x27;b0;
+            requests = requests + 1;</code></td><td>설정값을 준비하고 펄스를 만들거나 생략합니다. 다음 하강 에지에서 내린 뒤 요청 절차 수를 늘립니다.</td></tr><tr><td>88-93</td><td><code class="teach-fragment">            if (!withhold_apply &amp;&amp; pending !== 1&#x27;b1)
+                $fatal(1, &quot;FAIL request not pending&quot;);
+            if (withhold_apply)
+                $display(&quot;INJECT: cfg_apply intentionally withheld&quot;);
+        end
+    endtask</code></td><td>일반 요청이면 pending1을 확인합니다. 의도적으로 생략한 경우에는 그 사실만 기록하고 이 검사를 적용하지 않습니다.</td></tr><tr><td>95-102</td><td><code class="teach-fragment">    // (변경) pending과 active_duty를 모두 확인한 뒤 전체 두 주기를 검사한다.
+    task automatic check_constant_window(
+        input [31:0] duty,
+        input expected_level
+    );
+        integer i;
+        begin
+            request_duty(duty);</code></td><td>듀티와 기대 레벨을 받아 요청→제한 대기→16회 검사할 task를 정의하고 요청 task를 호출합니다.</td></tr><tr><td>104-109</td><td><code class="teach-fragment">            // 최대 10클록 동안 새 설정의 실제 적용을 기다린다.
+            for (i = 0; i &lt; 10 &amp;&amp;
+                 ((pending !== 1&#x27;b0) || (active_duty !== duty));
+                 i = i + 1) begin
+                @(posedge clk);
+                #1;</code></td><td>pending0과 목표 Active 듀티가 모두 맞을 때까지 최대 열 상승 에지 뒤 #1에서 관찰합니다. !==는 미정 상태도 미완료로 취급합니다.</td></tr><tr><td>110-117</td><td><code class="teach-fragment">                // (추가) 요청 누락 시험에서 기존 정상 0% 상태를 확인한다.
+                // 다른 상태 오류를 의도된 타임아웃 성공으로 오인하지 않는다.
+                if (inject_timeout &amp;&amp; duty == 32&#x27;d8 &amp;&amp;
+                    (pending !== 1&#x27;b0 || active_period !== 32&#x27;d8 ||
+                     active_duty !== 32&#x27;d0 || active_enable !== 1&#x27;b1 ||
+                     active_polarity !== 1&#x27;b0 || pwm_out !== 1&#x27;b0))
+                    $fatal(1, &quot;FAIL TIMEOUT_BASELINE&quot;);
+            end</code></td><td>요청 누락 동안 이전 정상 0% 상태가 모두 유지되는지 확인합니다. 다른 상태 결함을 전용 타임아웃 성공으로 오인하지 않습니다.</td></tr><tr><td>119-123</td><td><code class="teach-fragment">            if (pending !== 1&#x27;b0 || active_duty !== duty) begin
+                if (inject_timeout &amp;&amp; duty == 32&#x27;d8)
+                    $fatal(1, &quot;DETECTED_APPLY_TIMEOUT duty=8 deadline=10clks&quot;);
+                $fatal(1, &quot;FAIL APPLY_TIMEOUT duty=%0d&quot;, duty);
+            end</code></td><td>기한 뒤 미완료면 해당 주입 모드에서는 전용 DETECTED_APPLY_TIMEOUT, 그 외에는 일반 APPLY_TIMEOUT입니다.</td></tr><tr><td>125-134</td><td><code class="teach-fragment">            // (추가) DUT 출력은 손대지 않고 관찰 회로에서만 비트 반전.
+            corrupt_observation = inject_fault &amp;&amp; (duty == 32&#x27;d8);
+            for (i = 0; i &lt; 16; i = i + 1) begin
+                @(posedge clk);
+                #1;
+                check_outputs(duty, expected_level, 1&#x27;b0);
+            end
+            corrupt_observation = 1&#x27;b0;
+        end
+    endtask</code></td><td>관찰 반전 모드의 duty8에서만 반전 비트를 켜고 다음 16개 상승 에지+1ns마다 묶음을 비교합니다. 창을 마치면 반전을 내립니다.</td></tr><tr><td>136-140</td><td><code class="teach-fragment">    initial begin
+        inject_fault = $test$plusargs(&quot;INJECT_FAULT&quot;);
+        inject_timeout = $test$plusargs(&quot;INJECT_TIMEOUT&quot;);
+        if (inject_fault &amp;&amp; inject_timeout)
+            $fatal(1, &quot;FAIL: 동시에 두 오류 모드를 선택하지 마세요&quot;);</code></td><td>실행 plusarg를 읽고 두 주입 옵션의 동시 사용을 거절합니다.</td></tr><tr><td>142-149</td><td><code class="teach-fragment">        // 동기 리셋: 첫 상승 에지 이후 초기 레지스터를 검사한다.
+        @(posedge clk); #1;
+        if (active_period !== 32&#x27;d8 || active_duty !== 32&#x27;d0 ||
+            active_enable !== 1&#x27;b0 || active_polarity !== 1&#x27;b0 ||
+            pending !== 1&#x27;b0 || pwm_out !== 1&#x27;b0)
+            $fatal(1, &quot;FAIL initial reset&quot;);
+        @(negedge clk);
+        resetn = 1&#x27;b1;</code></td><td>첫 상승 에지 후 초기 상태6개를 확인하고 10ns 하강 에지에 리셋을 풉니다.</td></tr><tr><td>151-152</td><td><code class="teach-fragment">        check_constant_window(32&#x27;d0, 1&#x27;b0); // 0%: 항상 LOW
+        check_constant_window(32&#x27;d8, 1&#x27;b1); // 100%: 항상 HIGH</code></td><td>0%와 100% 창을 순서대로 요청·비교합니다. 초기 리셋값을 0% 활성 상태로 오인하지 않습니다.</td></tr><tr><td>154-161</td><td><code class="teach-fragment">        // (추가) 출력이 HIGH인 상태에서 리셋 차단을 검사한다.
+        if (pwm_out !== 1&#x27;b1)
+            $fatal(1, &quot;FAIL RESET_PRECONDITION&quot;);
+        // 직전 상승 에지의 관찰 후 2ns, 다음 상승 에지 전에 인가.
+        #2 resetn = 1&#x27;b0;
+        #1;
+        if (pwm_out !== 1&#x27;b0)
+            $fatal(1, &quot;FAIL async output gate&quot;);</code></td><td>현재 HIGH를 확인하고 직전 관찰2ns 뒤 리셋을 내린 다음 1ns 후 출력 LOW를 검사합니다.</td></tr><tr><td>162-167</td><td><code class="teach-fragment">        // (추가) 다음 상승 에지 이전에는 활성 레지스터가 보존되어야 한다.
+        // 비동기 레지스터 리셋으로 잘못 구현한 경우를 검출한다.
+        if (active_period !== 32&#x27;d8 || active_duty !== 32&#x27;d8 ||
+            active_enable !== 1&#x27;b1 || active_polarity !== 1&#x27;b0 ||
+            pending !== 1&#x27;b0)
+            $fatal(1, &quot;FAIL PRE_EDGE_STATE&quot;);</code></td><td>다음 상승 에지 전에는 Active가 리셋 전 상태를 유지해야 합니다. 잘못된 비동기 레지스터 초기화를 검출합니다.</td></tr><tr><td>168-174</td><td><code class="teach-fragment">        @(posedge clk); #1;
+        if (active_period !== 32&#x27;d8 || active_duty !== 32&#x27;d0 ||
+            active_enable !== 1&#x27;b0 || active_polarity !== 1&#x27;b0 ||
+            pending !== 1&#x27;b0 || pwm_out !== 1&#x27;b0)
+            $fatal(1, &quot;FAIL synchronous register reset&quot;);
+        @(negedge clk);
+        resetn = 1&#x27;b1;</code></td><td>다음 상승 에지 후 초기 상태와 출력0을 확인한 뒤 하강 에지에 리셋을 풉니다.</td></tr><tr><td>176-183</td><td><code class="teach-fragment">        check_constant_window(32&#x27;d8, 1&#x27;b1); // 리셋 뒤 재설정
+        // (추가) 세 요청과 세 묶음의 16회 검사 완료 확인.
+        if (requests != 3 || checks != 48)
+            $fatal(1, &quot;FAIL COUNT requests=%0d checks=%0d&quot;, requests, checks);
+        $display(&quot;PASS CH10 requests=%0d checks=%0d&quot;, requests, checks);
+        $finish;
+    end
+endmodule</code></td><td>리셋 후 100%를 재요청하고 세 요청·48정상 묶음 비교를 확인한 뒤 PASS로 종료합니다.</td></tr></tbody></table></details></div>
+</section>
+<section class="section" id="s06"><h2><span class="num">06</span>Ubuntu 실행 · 정상과 부정 시험의 분리</h2><p>Vivado XSIM(엑스심, RTL 시뮬레이터)을 우선 사용합니다. UG900의 <code>-testplusarg</code>는 TB의 <code>$test$plusargs</code>에 전달할 인자를 지정합니다.</p><div class="codeblock"><div class="codebar"><span>Ubuntu · Vivado XSIM</span></div><pre tabindex="0"><code># Vivado 설치 경로의 settings64.sh를 source한 뒤 실행
+command -v xvlog xelab xsim
+mkdir -p .build/ch10/xsim
+cd .build/ch10/xsim
+xvlog ../../../reference_rtl/pwm_core.v
+xvlog -sv ../../../tb/ch10/tb_pwm_corner_reset_timeout.sv
+xelab -debug typical tb_pwm_corner_reset_timeout -s ch10_sim
+xsim ch10_sim -runall &gt; normal.log 2&gt;&amp;1
+xsim ch10_sim -runall -testplusarg INJECT_FAULT &gt; fault_injection.log 2&gt;&amp;1
+xsim ch10_sim -runall -testplusarg INJECT_TIMEOUT &gt; apply_timeout.log 2&gt;&amp;1
+grep -E 'PASS CH10|DETECTED_|FAIL' normal.log fault_injection.log apply_timeout.log</code></pre></div><p>각 xsim 명령의 종료 상태와 로그를 별도로 확인합니다. 부정 시험의 종료 코드 전달 방식은 설치 버전에서 확인해야 하므로, 이 명령 예시는 수동 검토용입니다. 정상 실행 로그에는 최종 PASS, 부정 실행 로그에는 해당 진단이 있어야 합니다. GUI는 같은 폴더에서 <code>xsim ch10_sim -gui</code>로 실행합니다.</p><h3>Icarus 자동 시험</h3><p>실습 루트로 돌아가 다음 스크립트를 저장합니다. 한 번 컴파일하고 세 모드를 실행합니다. 정상 시험의 종료 상태와 정확한 완료 문자열을 확인하며, 부정 시험은 비정상 종료와 전용 진단 문자열을 함께 확인합니다.</p><div class="codeblock"><div class="codebar"><span>scripts/run_ch10.sh · Bash</span></div><pre tabindex="0"><code>#!/usr/bin/env bash
+# 제10장: 정상 경계값 시험 + 오류 주입 2건(예상 실패)을 자동 확인한다.
+# 오류 주입은 테스트벤치의 관찰 경로/입력 요청에만 적용한다. DUT 수정 없음.
+set -euo pipefail
+
+ROOT=&quot;$(cd &quot;$(dirname &quot;${BASH_SOURCE[0]}&quot;)/..&quot; &amp;&amp; pwd)&quot;
+DUT_PATH=&quot;${DUT_PATH:-$ROOT/reference_rtl/pwm_core.v}&quot;
+TB_PATH=&quot;$ROOT/tb/ch10/tb_pwm_corner_reset_timeout.sv&quot;
+OUT=&quot;$ROOT/.build/ch10&quot;
+
+for tool in iverilog vvp; do
+  if ! command -v &quot;$tool&quot; &gt;/dev/null 2&gt;&amp;1; then
+    echo &quot;NOT_RUN: $tool 미설치. sudo apt update &amp;&amp; sudo apt install iverilog&quot; &gt;&amp;2
+    exit 2
+  fi
+done
+if [[ ! -f &quot;$DUT_PATH&quot; ]]; then
+  echo &quot;FAIL: 원본 DUT 파일 없음: $DUT_PATH&quot; &gt;&amp;2
+  exit 1
+fi
+
+mkdir -p &quot;$OUT&quot;
+# 이전 실행의 파형을 이번 실행 결과로 오인하지 않도록 정리한다.
+rm -f &quot;$OUT/ch10_pwm_corner_reset_timeout.vcd&quot; &quot;$OUT/normal.vcd&quot; \
+  &quot;$OUT/fault_injection.vcd&quot; &quot;$OUT/apply_timeout.vcd&quot;
+iverilog -g2012 -DVCD -s tb_pwm_corner_reset_timeout -o &quot;$OUT/sim.vvp&quot; \
+  &quot;$DUT_PATH&quot; &quot;$TB_PATH&quot; 2&gt;&amp;1 | tee &quot;$OUT/build.log&quot;
+
+# ① 정상 사례: 실제 DUT가 0%·100%·중간 리셋·재설정을 통과해야 함.
+(cd &quot;$OUT&quot; &amp;&amp; vvp ./sim.vvp | tee normal.log)
+if [[ -f &quot;$OUT/ch10_pwm_corner_reset_timeout.vcd&quot; ]]; then
+  mv &quot;$OUT/ch10_pwm_corner_reset_timeout.vcd&quot; &quot;$OUT/normal.vcd&quot;
+fi
+if ! grep -q '^PASS CH10 requests=3 checks=48$' &quot;$OUT/normal.log&quot;; then
+  echo &quot;FAIL: 정상 시험이 기대한 48회 검사를 완료하지 못함&quot; &gt;&amp;2
+  exit 1
+fi
+
+# ② 부정 시험: 관찰 경로의 PWM 값만 반전한다.
+# 반드시 비정상 종료 + 전용 진단 문자열을 동시에 확인해야 통과.
+if (cd &quot;$OUT&quot; &amp;&amp; vvp ./sim.vvp +INJECT_FAULT &gt;fault_injection.log 2&gt;&amp;1); then
+  echo &quot;FAIL: 주입한 PWM 관찰 오류를 검출하지 못함&quot; &gt;&amp;2
+  exit 1
+fi
+if [[ -f &quot;$OUT/ch10_pwm_corner_reset_timeout.vcd&quot; ]]; then
+  mv &quot;$OUT/ch10_pwm_corner_reset_timeout.vcd&quot; &quot;$OUT/fault_injection.vcd&quot;
+fi
+grep -q 'DETECTED_INJECTED_FAULT' &quot;$OUT/fault_injection.log&quot; || {
+  echo &quot;FAIL: PWM 관찰 오류 대신 다른 이유로 실패함&quot; &gt;&amp;2
+  exit 1
+}
+echo &quot;PASS HARNESS: 의도한 PWM 관찰 오류 검출&quot;
+
+# ③ 부정 시험: 듀티 8의 cfg_apply를 누락하여 적용 타임아웃을 검사한다.
+if (cd &quot;$OUT&quot; &amp;&amp; vvp ./sim.vvp +INJECT_TIMEOUT &gt;apply_timeout.log 2&gt;&amp;1); then
+  echo &quot;FAIL: 누락한 cfg_apply를 타임아웃으로 검출하지 못함&quot; &gt;&amp;2
+  exit 1
+fi
+if [[ -f &quot;$OUT/ch10_pwm_corner_reset_timeout.vcd&quot; ]]; then
+  mv &quot;$OUT/ch10_pwm_corner_reset_timeout.vcd&quot; &quot;$OUT/apply_timeout.vcd&quot;
+fi
+grep -q 'DETECTED_APPLY_TIMEOUT' &quot;$OUT/apply_timeout.log&quot; || {
+  echo &quot;FAIL: 적용 타임아웃 대신 다른 이유로 실패함&quot; &gt;&amp;2
+  exit 1
+}
+echo &quot;PASS HARNESS: 의도한 cfg_apply 누락 타임아웃 검출&quot;
+
+echo &quot;PASS CH10 SUITE: 정상 1회 + 의도된 오류 검출 2회&quot;
+echo &quot;로그: $OUT/{normal,fault_injection,apply_timeout}.log&quot;
+</code></pre></div><div class="codeblock"><div class="codebar"><span>Ubuntu · 실습 루트에서 실행</span></div><pre tabindex="0"><code>sudo apt update
+sudo apt install iverilog
+bash scripts/run_ch10.sh</code></pre></div><p>apt update는 패키지 목록 갱신, apt install은 도구 설치, bash는 자동 시험 스크립트 실행입니다. 기존 설치 환경에서는 설치 명령을 생략합니다. 출력 로그와 VCD 파형은 .build/ch10에 모드별로 저장합니다.</p><p>명령 참고: <a href="https://docs.amd.com/r/2021.1-English/ug900-vivado-logic-simulation/xsim-Executable-Options">AMD UG900 · xsim 실행 옵션</a>.</p>
+<div class="teach-note"><h3>실습 설명 · 부정 실행의 실패를 harness가 판정한다</h3><p>Harness(하니스, 여러 실행을 관리하는 검사 스크립트)는 정상 모드의 종료 성공과 정확한 PASS 행을 확인합니다. 두 부정 모드는 비정상 종료를 요구하고 전용 진단을 추가 확인합니다. 예를 들어 문법 오류로 실행이 끝난 것은 INJECT_FAULT 검출 성공이 아닙니다.</p><p>원본 XSIM 명령은 설치 버전의 Fatal 종료 코드 처리를 확인하는 수동 검토 경로입니다. Icarus 스크립트는 실패를 조건문 안에서 처리해, 예상한 비정상 종료 때문에 전체 셸이 즉시 끊기지 않도록 합니다. 마지막 PASS SUITE는 세 실행 결과를 묶은 판정이고 부정 TB 자체가 정상 종료했다는 뜻은 아닙니다. 기존 실측 로그를 보존하며 새로운 RTL_SIM은 <strong>NOT_RUN</strong>입니다.</p><h4>scripts/run_ch10.sh · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-4</td><td><code class="teach-fragment">#!/usr/bin/env bash
+# 제10장: 정상 경계값 시험 + 오류 주입 2건(예상 실패)을 자동 확인한다.
+# 오류 주입은 테스트벤치의 관찰 경로/입력 요청에만 적용한다. DUT 수정 없음.
+set -euo pipefail</code></td><td>Bash 실행 형식과 목적을 명시합니다. -e는 처리하지 않은 실패, -u는 미정 변수, pipefail은 파이프 내부 실패를 감지하게 합니다.</td></tr><tr><td>6-9</td><td><code class="teach-fragment">ROOT=&quot;$(cd &quot;$(dirname &quot;${BASH_SOURCE[0]}&quot;)/..&quot; &amp;&amp; pwd)&quot;
+DUT_PATH=&quot;${DUT_PATH:-$ROOT/reference_rtl/pwm_core.v}&quot;
+TB_PATH=&quot;$ROOT/tb/ch10/tb_pwm_corner_reset_timeout.sv&quot;
+OUT=&quot;$ROOT/.build/ch10&quot;</code></td><td>스크립트 위치에서 실습 루트를 계산하고 기본 DUT·TB·출력 경로를 정합니다. DUT_PATH를 별도 지정할 수 있지만 원본을 덮어쓰는 코드가 아닙니다.</td></tr><tr><td>11-20</td><td><code class="teach-fragment">for tool in iverilog vvp; do
+  if ! command -v &quot;$tool&quot; &gt;/dev/null 2&gt;&amp;1; then
+    echo &quot;NOT_RUN: $tool 미설치. sudo apt update &amp;&amp; sudo apt install iverilog&quot; &gt;&amp;2
+    exit 2
+  fi
+done
+if [[ ! -f &quot;$DUT_PATH&quot; ]]; then
+  echo &quot;FAIL: 원본 DUT 파일 없음: $DUT_PATH&quot; &gt;&amp;2
+  exit 1
+fi</code></td><td>도구 부재는 NOT_RUN 종료2, DUT 파일 부재는 FAIL 종료1로 구분합니다.</td></tr><tr><td>22-27</td><td><code class="teach-fragment">mkdir -p &quot;$OUT&quot;
+# 이전 실행의 파형을 이번 실행 결과로 오인하지 않도록 정리한다.
+rm -f &quot;$OUT/ch10_pwm_corner_reset_timeout.vcd&quot; &quot;$OUT/normal.vcd&quot; \
+  &quot;$OUT/fault_injection.vcd&quot; &quot;$OUT/apply_timeout.vcd&quot;
+iverilog -g2012 -DVCD -s tb_pwm_corner_reset_timeout -o &quot;$OUT/sim.vvp&quot; \
+  &quot;$DUT_PATH&quot; &quot;$TB_PATH&quot; 2&gt;&amp;1 | tee &quot;$OUT/build.log&quot;</code></td><td>출력 폴더를 만들고 이 장의 이전 파형 네 파일만 정리한 후 두 소스를 컴파일합니다. tee로 빌드 로그를 보존하고 pipefail로 컴파일 실패도 전달합니다.</td></tr><tr><td>29-37</td><td><code class="teach-fragment"># ① 정상 사례: 실제 DUT가 0%·100%·중간 리셋·재설정을 통과해야 함.
+(cd &quot;$OUT&quot; &amp;&amp; vvp ./sim.vvp | tee normal.log)
+if [[ -f &quot;$OUT/ch10_pwm_corner_reset_timeout.vcd&quot; ]]; then
+  mv &quot;$OUT/ch10_pwm_corner_reset_timeout.vcd&quot; &quot;$OUT/normal.vcd&quot;
+fi
+if ! grep -q &#x27;^PASS CH10 requests=3 checks=48$&#x27; &quot;$OUT/normal.log&quot;; then
+  echo &quot;FAIL: 정상 시험이 기대한 48회 검사를 완료하지 못함&quot; &gt;&amp;2
+  exit 1
+fi</code></td><td>정상 실행과 로그·파형 보존 후 정확한 3요청48검사 완료 행을 찾습니다. 정상 실행 실패나 완료 누락은 거절합니다.</td></tr><tr><td>39-44</td><td><code class="teach-fragment"># ② 부정 시험: 관찰 경로의 PWM 값만 반전한다.
+# 반드시 비정상 종료 + 전용 진단 문자열을 동시에 확인해야 통과.
+if (cd &quot;$OUT&quot; &amp;&amp; vvp ./sim.vvp +INJECT_FAULT &gt;fault_injection.log 2&gt;&amp;1); then
+  echo &quot;FAIL: 주입한 PWM 관찰 오류를 검출하지 못함&quot; &gt;&amp;2
+  exit 1
+fi</code></td><td>주입 모드를 if 조건에서 실행합니다. 정상 종료하면 주입 오류를 놓친 것이므로 harness를 실패시킵니다.</td></tr><tr><td>45-52</td><td><code class="teach-fragment">if [[ -f &quot;$OUT/ch10_pwm_corner_reset_timeout.vcd&quot; ]]; then
+  mv &quot;$OUT/ch10_pwm_corner_reset_timeout.vcd&quot; &quot;$OUT/fault_injection.vcd&quot;
+fi
+grep -q &#x27;DETECTED_INJECTED_FAULT&#x27; &quot;$OUT/fault_injection.log&quot; || {
+  echo &quot;FAIL: PWM 관찰 오류 대신 다른 이유로 실패함&quot; &gt;&amp;2
+  exit 1
+}
+echo &quot;PASS HARNESS: 의도한 PWM 관찰 오류 검출&quot;</code></td><td>반전 실행 파형을 분리하고 전용 DETECTED_INJECTED_FAULT 진단이 있어야 해당 검출 성공을 표시합니다.</td></tr><tr><td>54-61</td><td><code class="teach-fragment"># ③ 부정 시험: 듀티 8의 cfg_apply를 누락하여 적용 타임아웃을 검사한다.
+if (cd &quot;$OUT&quot; &amp;&amp; vvp ./sim.vvp +INJECT_TIMEOUT &gt;apply_timeout.log 2&gt;&amp;1); then
+  echo &quot;FAIL: 누락한 cfg_apply를 타임아웃으로 검출하지 못함&quot; &gt;&amp;2
+  exit 1
+fi
+if [[ -f &quot;$OUT/ch10_pwm_corner_reset_timeout.vcd&quot; ]]; then
+  mv &quot;$OUT/ch10_pwm_corner_reset_timeout.vcd&quot; &quot;$OUT/apply_timeout.vcd&quot;
+fi</code></td><td>요청 누락 실행 역시 비정상 종료를 요구하고 파형을 다른 이름으로 보존합니다.</td></tr><tr><td>62-66</td><td><code class="teach-fragment">grep -q &#x27;DETECTED_APPLY_TIMEOUT&#x27; &quot;$OUT/apply_timeout.log&quot; || {
+  echo &quot;FAIL: 적용 타임아웃 대신 다른 이유로 실패함&quot; &gt;&amp;2
+  exit 1
+}
+echo &quot;PASS HARNESS: 의도한 cfg_apply 누락 타임아웃 검출&quot;</code></td><td>전용 DETECTED_APPLY_TIMEOUT이 있어야 의도된 기한 검출로 인정합니다. 다른 실패를 성공으로 집계하지 않습니다.</td></tr><tr><td>68-69</td><td><code class="teach-fragment">echo &quot;PASS CH10 SUITE: 정상 1회 + 의도된 오류 검출 2회&quot;
+echo &quot;로그: $OUT/{normal,fault_injection,apply_timeout}.log&quot;</code></td><td>정상1·의도된 검출2의 전체 suite 통과와 로그 위치를 출력합니다. 개별 부정 TB의 PASS와 다른 층의 결과입니다.</td></tr></tbody></table></details></div>
+</section>
+<section class="section" id="s07"><h2><span class="num">07</span>예상 결과와 오류 분석</h2><p>다음은 시간 계약 및 코드 경로로 계산한 예상 출력입니다. 실제 시뮬레이터의 실행 로그가 아닙니다.</p><div class="codeblock"><div class="codebar"><span>정상 실행의 기대 완료 문자열</span></div><pre tabindex="0"><code>PASS CH10 requests=3 checks=48</code></pre></div><div class="codeblock"><div class="codebar"><span>부정 실행의 기대 진단</span></div><pre tabindex="0"><code>DETECTED_INJECTED_FAULT dut=1 measured=0
+DETECTED_APPLY_TIMEOUT duty=8 deadline=10clks</code></pre></div><div class="codeblock"><div class="codebar"><span>자동 시험의 기대 완료 문자열</span></div><pre tabindex="0"><code>PASS CH10 SUITE: 정상 1회 + 의도된 오류 검출 2회</code></pre></div><table><thead><tr><th>진단</th><th>의미 및 확인 사항</th></tr></thead><tbody><tr><td>FAIL request not pending</td><td>정상 요청의 저장 여부 확인</td></tr><tr><td>FAIL APPLY_TIMEOUT</td><td>일반 적용 오류</td></tr><tr><td>FAIL TIMEOUT_BASELINE</td><td>요청 누락 이외의 상태 오류</td></tr><tr><td>FAIL RESET_PRECONDITION</td><td>리셋 직전 HIGH가 아님</td></tr><tr><td>FAIL async output gate</td><td>상승 에지 이전 출력 LOW 실패</td></tr><tr><td>FAIL PRE_EDGE_STATE</td><td>상승 에지 이전 활성 상태가 바뀜</td></tr><tr><td>FAIL synchronous register reset</td><td>상승 에지 이후 초기화 실패</td></tr><tr><td>FAIL COUNT</td><td>정상 시험의 요청 또는 비교 횟수 누락</td></tr><tr><td>FAIL GLOBAL_TIMEOUT</td><td>전체 실행 기한 초과</td></tr></tbody></table><p>부정 시험의 예상된 실패는 검증기 동작에 대한 성공 조건입니다. 원본 DUT가 고장났다는 뜻은 아닙니다. 이 장은 두 주입 경로를 확인하며 모든 가능한 결함 또는 클록 사이의 순간 글리치를 검출하는 검증은 아닙니다. 제11장은 SVA(SystemVerilog Assertions, 시스템베릴로그 시간 속성 검사)로 신호의 시간 계약을 확장합니다.</p>
+<div class="execution-evidence" data-evidence="v59"><h3>2026-11-26 실제 실행 결과</h3><p>Icarus Verilog 12.0 · 종료 코드 0 · <strong>PASS</strong>. 정상 실행과 정의된 오류 검출 조건을 장별 실행기로 확인했습니다.</p><div class="codeblock"><div class="codebar"><span>저장소 루트 · Bash · 실행 재현 명령</span></div><pre tabindex="0"><code>bash scripts/run_chapter.sh 10</code></pre></div><div class="codeblock"><div class="codebar"><span>실제 로그 발췌 · 예상 출력과 구별</span></div><pre tabindex="0"><code>PASS CH10 requests=3 checks=48
+FATAL: &lt;REPO&gt;/tb/ch10/tb_pwm_corner_reset_timeout.sv:65: DETECTED_INJECTED_FAULT dut=1 measured=0
+FATAL: &lt;REPO&gt;/tb/ch10/tb_pwm_corner_reset_timeout.sv:121: DETECTED_APPLY_TIMEOUT duty=8 deadline=10clks</code></pre></div><p><a href="https://github.com/Yuul-Jung/system_verilog_uvm_tb/blob/2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708/docs/evidence/v59/README.md#ch10">실행 명령·종료 코드·공개 로그 및 해시 확인</a>. 위의 예상 파형은 코드에서 계산한 도식이며, 실측 파형 이미지는 별도로 수록하지 않았습니다.</p></div>
+
+<div class="teach-note"><h3>예상 문답 · 검출 성공의 의미</h3><p><strong>부정 로그에 FATAL이 있으면 DUT가 고장인가요?</strong> 의도된 외부 관찰 반전 또는 요청 누락을 검출한 결과입니다. 전용 메시지와 모드를 확인해야 하며 정상 DUT 결함으로 단정하지 않습니다.</p><p><strong>왜 첫 0%도 설정을 요청하나요?</strong> 리셋값은 duty0이지만 enable0입니다. 정상 0% 상태 enable1을 적용해 두어야 뒤 요청 누락에서 기존 상태 보존을 확인할 수 있습니다.</p><p><strong>두 오류를 찾았으면 모든 결함을 찾나요?</strong> 검사한 주입 위치와 시나리오의 검출 증거입니다. 모든 RTL 변이, 입력 공간, 샘플 사이 글리치의 검출률을 증명하지 않습니다. 다음 SVA는 정해진 시간 관계를 속성으로 명시합니다.</p></div>
+</section>
+<div class="chapter-links" id="chapter-links"></div></main></div><footer class="footer">RTL TESTBENCH · SYSTEMVERILOG · UVM · CH10 교수용 v01 · 원본 v05 · PASS</footer><script>window.COURSE={"title":"RTL · SystemVerilog · UVM 교수용 해설서","short_title":"SV UVM TEACH","home_label":"전체 교수용 해설서","chapters":[{"id":"ch01","number":1,"title":"테스트벤치의 첫 실행","file":"ch01_teacher_v02.html"},{"id":"ch02","number":2,"title":"Clock·Reset·이벤트","file":"ch02_teacher_v01.html"},{"id":"ch03","number":3,"title":"반복 자극과 작업 분리","file":"ch03_teacher_v01.html"},{"id":"ch04","number":4,"title":"PASS/FAIL 자동 판정","file":"ch04_teacher_v01.html"},{"id":"ch05","number":5,"title":"검증 자료형과 타입","file":"ch05_teacher_v01.html"},{"id":"ch06","number":6,"title":"배열·큐·패키지","file":"ch06_teacher_v01.html"},{"id":"ch07","number":7,"title":"인터페이스·타이밍 분리","file":"ch07_teacher_v01.html"},{"id":"ch08","number":8,"title":"객체와 제약 기반 입력","file":"ch08_teacher_v01.html"},{"id":"ch09","number":9,"title":"참조 모델·스코어보드","file":"ch09_teacher_v01.html"},{"id":"ch10","number":10,"title":"경계조건·오류 주입","file":"ch10_teacher_v01.html"}]};</script><script src="assets/site.js"></script></body></html>
