@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v07",
+  "version": "v08",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -94,6 +94,21 @@
       "source_tb": "tb/ch06/tb_uart_arrays_queues.sv",
       "rtl_simulation": "NOT_RUN",
       "original_execution": "PASS"
+    },
+    {
+      "id": "ch07",
+      "number": 7,
+      "title": "인터페이스·타이밍 분리",
+      "slug": "ch07_teacher",
+      "version": "v01",
+      "source_html": "ch07_interface_modport_clocking_v04.html",
+      "source_version": "v04",
+      "source_blob": "ad797efdebf5589e68e23d1584dde5c9cfcab500",
+      "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
+      "source_course_version": "v60",
+      "source_tb": "tb/ch07/tb_uart_interface.sv",
+      "rtl_simulation": "NOT_RUN",
+      "original_execution": "PASS"
     }
   ],
   "planned_chapters": [
@@ -151,7 +166,7 @@
       "title": "인터페이스·타이밍 분리",
       "source_html": "ch07_interface_modport_clocking_v04.html",
       "source_version": "v04",
-      "status": "planned"
+      "status": "published"
     },
     {
       "id": "ch08",

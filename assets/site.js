@@ -59,6 +59,12 @@
       "number": 6,
       "title": "배열·큐·패키지",
       "file": "ch06_teacher_v01.html"
+    },
+    {
+      "id": "ch07",
+      "number": 7,
+      "title": "인터페이스·타이밍 분리",
+      "file": "ch07_teacher_v01.html"
     }
   ]
 };
