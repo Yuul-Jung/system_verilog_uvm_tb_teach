@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v14",
+  "version": "v15",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -199,6 +199,21 @@
       "source_tb": "tb/ch13/tb_uart_stream.sv",
       "rtl_simulation": "NOT_RUN",
       "original_execution": "PASS"
+    },
+    {
+      "id": "ch14",
+      "number": 14,
+      "title": "FIFO 및 흐름 제어",
+      "slug": "ch14_teacher",
+      "version": "v01",
+      "source_html": "ch14_fifo_flow_control_v04.html",
+      "source_version": "v04",
+      "source_blob": "aaea77b620ea5f0d84b09477b692206bf4eb0959",
+      "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
+      "source_course_version": "v60",
+      "source_tb": "tb/ch14/tb_uart_fifo_flow.sv",
+      "rtl_simulation": "NOT_RUN",
+      "original_execution": "PASS"
     }
   ],
   "planned_chapters": [
@@ -312,7 +327,7 @@
       "title": "FIFO 및 흐름 제어",
       "source_html": "ch14_fifo_flow_control_v04.html",
       "source_version": "v04",
-      "status": "planned"
+      "status": "published"
     },
     {
       "id": "ch15",

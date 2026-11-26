@@ -101,6 +101,12 @@
       "number": 13,
       "title": "UART 스트림 검증",
       "file": "ch13_teacher_v01.html"
+    },
+    {
+      "id": "ch14",
+      "number": 14,
+      "title": "FIFO 및 흐름 제어",
+      "file": "ch14_teacher_v01.html"
     }
   ]
 };

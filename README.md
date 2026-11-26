@@ -24,4 +24,5 @@
 - [제11장 · 시간적 속성 검사](ch11_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch11_v01.md)
 - [제12장 · 기능 커버리지](ch12_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch12_v01.md)
 - [제13장 · UART 스트림 검증](ch13_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch13_v01.md)
+- [제14장 · FIFO 및 흐름 제어](ch14_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch14_v01.md)
 <!-- /PUBLISHED -->
