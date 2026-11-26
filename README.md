@@ -42,7 +42,7 @@ Pages는 `main` 루트의 정적 HTML을 제공합니다. `.nojekyll`로 원본 
 - [제20장 · Factory·Config·Objection](ch20_teacher_v02.html) · [검증 기록](docs/VALIDATION_ch20_v02.md)
 - [제21장 · UVM 레지스터 추상화](ch21_teacher_v02.html) · [검증 기록](docs/VALIDATION_ch21_v02.md)
 - [제22장 · 다중 Agent·VIP](ch22_teacher_v02.html) · [검증 기록](docs/VALIDATION_ch22_v02.md)
-- [제23장 · NPU 통합 정답 비교](ch23_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch23_v01.md)
+- [제23장 · NPU 통합 정답 비교](ch23_teacher_v02.html) · [검증 기록](docs/VALIDATION_ch23_v02.md)
 - [제24장 · 회귀·CI·검증 보고](ch24_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch24_v01.md)
 <!-- /PUBLISHED -->
 
@@ -57,3 +57,5 @@ Pages는 `main` 루트의 정적 HTML을 제공합니다. `.nojekyll`로 원본 
 교수용 해설 보강 v30: 제18장 v02에서 Item/Sequence/Sequencer/Driver의 책임, 실제 요청·완료 호출, 직접 대입과 constraint, PWM 적용 시각 및 8위상 비교를 보강했다. [제18장 v02 검증](docs/VALIDATION_ch18_v02.md). 신규 브라우저·공개 Pages 검사는 별도 수행 대상이다.
 
 교수용 해설 보강 v31: 제15장 v02에서 AXI 5채널, AW/W 독립 수락과 commit, WSTRB 바이트 갱신, 응답 대기·리셋 취소 및 T1~T5 계수를 보강했다. [제15장 v02 검증](docs/VALIDATION_ch15_v02.md). 신규 브라우저·공개 Pages 검사는 별도 수행 대상이다.
+
+교수용 해설 보강 v32: 제23장 v02에서 NPU 데이터 폭·부호 확장·독립 점수 모델·파이프라인·극값 및 거부 조건을 보강했다. busy 쓰기 시험의 RAM 영구 보존 및 정확한 error 펄스 길이 검증 한계도 명시했다. [제23장 v02 검증](docs/VALIDATION_ch23_v02.md). 신규 브라우저·공개 Pages 검사는 별도 수행 대상이다.
