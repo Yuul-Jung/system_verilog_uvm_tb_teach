@@ -1,15 +1,255 @@
 {
- "s00":"<h3>교수용 이론 · 구동 의도를 정답의 근거로 재사용하지 않는다</h3><p>Driver가 설정을 보냈다고 기록한 것과 실제 포트에서 올바른 값이 올바른 시점에 나타난 것은 별개입니다. 이 장은 Driver의 출력 비교를 떼어내어 Monitor가 매 클록 공개 신호를 수집하고 Scoreboard가 독립 기준으로 판정합니다. 자극 코드와 검사 코드가 같은 잘못된 가정에 묶이는 위험을 줄이는 구조입니다.</p><p>독립성은 단순히 클래스를 나눈 사실보다 기대값의 출처에 있습니다. Scoreboard는 계획2·6·0과 리셋 후 클록 수로 기대 상태를 만들며 실제 active_duty나 pending에 맞춰 정답을 이동시키지 않습니다.</p>",
- "s01":"<h3>회로 읽기 · 관찰 가능한 출력과 내부 구현을 나눈다</h3><p>원본 PWM의 Shadow·Active·counter 동작은 그대로입니다. 검증 클래스는 내부 counter를 읽지 않고 공개 cfg_*·active_*·pending·pwm_out을 봅니다. 같은 포트 계약을 지키는 다른 구현에도 관찰 구조를 재사용할 수 있습니다. 단, 현재 기대 모델의 주기8·초기 리셋3회·시나리오는 고정입니다.</p>",
- "s02":"<h3>구조도 판서 · 두 연결은 목적과 자료형이 다르다</h3><p>component 계층은 test → env → ag·sb, ag → sqr·drv·mon입니다. Sequence와 요청 Item, 매 클록의 Sample은 object이며 이 부모·자식 계층의 component가 아닙니다. 정적 top의 bus·dut도 별도입니다. 그림 안 Interface와 DUT의 위치는 신호 흐름을 위한 배치로 읽습니다.</p><p>요청 경로는 Sequence → sqr → drv의 pwm19_item입니다. 관찰 경로는 mon.ap → sb.analysis_export → sb.write의 pwm19_sample입니다. 이름이 analysis_export이지만 선언 타입은 uvm_analysis_imp이며 write의 실제 수신 구현입니다. write는 시간을 소비하지 않는 함수이므로 여기서 클록을 기다리지 않습니다.</p><p>Monitor는 매번 새 Sample을 만들고 logic 필드에 X/Z까지 담습니다. 같은 객체를 재사용해 수정하면 수신자가 보관한 이전 참조도 달라질 수 있습니다. 현재 새 객체 생성은 그 혼동을 피합니다. Agent는 항상 능동형이며 수동 전환 구현은 없습니다.</p>",
- "s03":"<h3>독립 모델 판서 · 관찰 누락도 오류로 만든다</h3><p>pending이 바뀔 때만 Sample을 보내면 DUT가 잘못해서 pending을 못 바꾼 경우 판정 입력 자체가 사라집니다. 그래서 Monitor는 모든 상승 에지+1ns에 원시 신호를 보냅니다. Scoreboard는 cycles를 늘리고 cycles%8=0에서 이전 요청을 적용합니다. 실제 pending은 기대값과 비교할 대상입니다.</p><p>경계와 새 요청이 겹치면 코드 순서상 이전 기대 요청을 먼저 적용한 뒤 새 요청을 저장합니다. 예컨대 첫 요청 관찰46ns, 적용106ns는60ns 차이입니다. 모델은 req_time 차이80ns 이내를 확인하고 동시에 클록 위상으로 정확한 기대 상태를 정합니다. 추가 리셋은 지원 시나리오가 아니므로 SB_RESET으로 거절합니다.</p>",
- "s04":"<h3>수치·타이밍 · 24개 활성 표본과 34개 전체 표본</h3><p>6·16·26ns는 리셋3표본입니다.36~336ns는(336-36)/10+1=31표본이며, 활성 전36~96ns의7표본과106~336ns의24표본으로 나뉩니다. 세 duty는 각각106~176,186~256,266~336ns의8표본을 가집니다.</p><p>Driver는 pending 해제 뒤 다음 요청을 시작하므로 제18장처럼 한 주기 비교가 끝날 때까지 기다리지 않습니다. 마지막 Driver 완료 뒤에도 test는 sb.samples24를 기다려 최종 duty0의8위상을 관찰합니다. 부정 시험126ns는 첫 duty2의 위상2로 정상LOW0이며 Sample만1로 뒤집어 SB_PWM의 정확한 시각·위상·값을 요구합니다.</p>",
- "s05":"<h3>전체 코드 · Sample과 기대 상태의 수명을 따라간다</h3><p>요청 Item의2상태 bit duty는 계획값을 담지만 Sample은 실제 포트의4상태 logic를 보존합니다. !== 비교로 알려지지 않은 관찰값도 실패시킵니다. 기대 planned_duty는 DUT에서 읽지 않고 별도로 정의한 시나리오입니다.</p><p>Driver의 driven3은 입력 절차 완료, Scoreboard의 requests3은 공개 요청 관찰, applied3은 기대 경계 처리, samples24는 활성 상태 관찰입니다. 여기에 cycles31·reset_samples3·pending없음·Sequence완료를 함께 요구하여 한 숫자만 맞는 누락·중복을 막습니다. write 호출 횟수가 맞더라도 샘플 사이 글리치까지 검증한 것은 아닙니다.</p>",
- "s06":"<h3>실습 지도 · 판정기 자체의 오류 검출을 확인한다</h3><p>CORRUPT_SAMPLE은 DUT RTL이나 물리 출력선을 바꾸지 않고 Monitor가 발행할 객체의 pwm만 반전합니다. 따라서 Scoreboard 전달·비교 경로의 작동을 확인하는 부정 시험입니다. 모든 RTL 변이를 잡는 능력과는 범위가 다릅니다.</p><p>정상과 부정은 새 프로세스에서 따로 실행합니다. 완료 행·오류 누계0과 부정 전용 SB_PWM t126/phase2/expected0/got1을 각각 확인합니다. 원본 실측은 보존하며 이 제작의 새 RTL/UVM 실행은 <strong>NOT_RUN</strong>입니다.</p>",
- "s07":"<h3>예상 문답 · 독립 관찰과 종료</h3><p><strong>Monitor가 DUT를 제어하나요?</strong> 현재 Monitor는 신호를 읽고 Sample을 발행합니다. 부정 시험도 객체만 바꾸며 인터페이스 핀을 구동하지 않습니다.</p><p><strong>Sequence가 끝나면 바로 종료해도 되나요?</strong> 마지막 입력이 적용된 것과 마지막 출력 구간을 검사한 것은 다릅니다. test는 Scoreboard24표본을 기다린 뒤 다음 하강 에지에 objection을 내립니다.</p><p><strong>이 모델로 period16도 시험하나요?</strong> cycles%8과 계획이 고정이므로 그대로 사용할 수 없습니다. 매개변수와 주기 변경 계약을 모델에도 독립 반영하는 확장이 필요합니다.</p>",
- "__lines__":[
- {"reuse":"content/pwm_line_notes.json"},
- {"path":"tb/ch19/tb_pwm_monitor_agent_scoreboard.sv","section":"s05","rows":[["1-19","실제 interface와 UVM package를 정의하며 기존 DUT를 유지합니다."],["21-43","요청 Item과 관찰 Sample을 별도 타입으로 선언합니다. Sample은4상태 신호와 표본 시각을 보존합니다."],["45-71","2·6·0 요청 Sequence와 같은 Item 타입의 Sequencer를 정의합니다."],["73-107","Driver는 vif를 얻고 하강 에지에 설정을 구동합니다. pending 대기는 다음 요청 시점 제어이며 정답 비교는 하지 않습니다."],["108-116","요청을 받아 구동 절차 뒤 item_done으로 완료 통지합니다."],["118-132","Monitor에 분석 포트를 실제 생성하고 build에서 관찰용 vif를 요구합니다."],["133-159","매 상승 에지1ns 뒤 새 Sample에 모든 공개 입출력을 담아 발행합니다. 부정 인자는126ns 객체 PWM만 반전합니다."],["161-179","Scoreboard의 수신 imp와 독립 계획·시각·위상·기대 상태를 생성합니다."],["181-197","초기3리셋 표본의 출력과 순서를 검사하고 정상 cycles·위상을 독립 계산합니다."],["199-211","경계에서는 이전 기대 요청만 적용하고 요청 유무·개수·최대 지연을 확인합니다."],["212-226","공개 cfg_apply의 새 요청을 계획과 비교하고 미정·중복·중첩을 거절하며 기대 pending을 세웁니다."],["228-240","실제 활성 설정·pending·PWM을 독립 기대값과 매 표본 비교하고 활성 관찰 수를 셉니다."],["242-261","Agent가 sqr·drv·mon을 만들고 요청 포트를 연결합니다. 수동형 조건 분기는 없습니다."],["263-279","env는 Agent와 Scoreboard를 만들고 Monitor 분석 포트를 수신 imp에 연결합니다."],["281-310","test는 env·vif를 구성하고 리셋·Sequence를 실행합니다. Sequence와24표본 완료 후 다음 하강 에지에 objection을 내립니다."],["311-327","정확한 요청·적용·관찰·리셋 수와 오류0을 요구한 뒤 RESULT를 기록합니다."],["329-357","정적 top은 클록·bus·원본 DUT를 만들고 test·drv·mon에 명시적으로 vif를 전달합니다. 별도 watchdog로 정지를 검출합니다."]]},
- {"path":"scripts/run_ch19.sh","section":"s06","rows":[["1-16","DUT·XSIM 준비 실패를 NOT_RUN으로 구분합니다."],["17-26","새 실행 폴더에서 UVM 전체를 분석·연결·실행하고3요청·3적용·24표본 및 오류0을 요구합니다."],["27-37","Sample 반전 부정 실행의 정확한 SB_PWM 진단과 PASS/timeout 부재를 요구하며 rc를 기록합니다."]]}
+ "s00": "<h3>교수용 이론 · 구동 의도를 정답의 근거로 재사용하지 않는다</h3><p>Driver가 설정을 보냈다고 기록한 것과 실제 포트에서 올바른 값이 올바른 시점에 나타난 것은 별개입니다. 이 장은 Driver의 출력 비교를 떼어내어 Monitor가 매 클록 공개 신호를 수집하고 Scoreboard가 독립 기준으로 판정합니다. 자극 코드와 검사 코드가 같은 잘못된 가정에 묶이는 위험을 줄이는 구조입니다.</p><p>독립성은 단순히 클래스를 나눈 사실보다 기대값의 출처에 있습니다. Scoreboard는 계획2·6·0과 리셋 후 클록 수로 기대 상태를 만들며 실제 active_duty나 pending에 맞춰 정답을 이동시키지 않습니다.</p>",
+ "s01": "<h3>회로 읽기 · 관찰 가능한 출력과 내부 구현을 나눈다</h3><p>원본 PWM의 Shadow·Active·counter 동작은 그대로입니다. 검증 클래스는 내부 counter를 읽지 않고 공개 cfg_*·active_*·pending·pwm_out을 봅니다. 같은 포트 계약을 지키는 다른 구현에도 관찰 구조를 재사용할 수 있습니다. 단, 현재 기대 모델의 주기8·초기 리셋3회·시나리오는 고정입니다.</p>",
+ "s02": "<h3>구조도 판서 · 두 연결은 목적과 자료형이 다르다</h3><p>component 계층은 test → env → ag·sb, ag → sqr·drv·mon입니다. Sequence와 요청 Item, 매 클록의 Sample은 object이며 이 부모·자식 계층의 component가 아닙니다. 정적 top의 bus·dut도 별도입니다. 그림 안 Interface와 DUT의 위치는 신호 흐름을 위한 배치로 읽습니다.</p><p>요청 경로는 Sequence → sqr → drv의 pwm19_item입니다. 관찰 경로는 mon.ap → sb.analysis_export → sb.write의 pwm19_sample입니다. 이름이 analysis_export이지만 선언 타입은 uvm_analysis_imp이며 write의 실제 수신 구현입니다. write는 시간을 소비하지 않는 함수이므로 여기서 클록을 기다리지 않습니다.</p><p>Monitor는 매번 새 Sample을 만들고 logic 필드에 X/Z까지 담습니다. 같은 객체를 재사용해 수정하면 수신자가 보관한 이전 참조도 달라질 수 있습니다. 현재 새 객체 생성은 그 혼동을 피합니다. Agent는 항상 능동형이며 수동 전환 구현은 없습니다.</p><h4>핵심 구문 ① · 요청 객체와 관찰 객체를 분리하는 이유</h4><table><thead><tr><th scope=\"col\">구분</th><th scope=\"col\">pwm19_item</th><th scope=\"col\">pwm19_sample</th></tr></thead><tbody><tr><td>생성 위치</td><td>Sequence body</td><td>Monitor run_phase</td></tr><tr><td>자료형</td><td>bit duty (2상태)</td><td>logic 입력·출력 (4상태), time sampled_at</td></tr><tr><td>내용</td><td>보내려는 값</td><td>실제 포트에서 관찰한 값</td></tr><tr><td>전달 경로</td><td>sqr → drv</td><td>mon.ap → sb.analysis_export</td></tr><tr><td>검사 역할</td><td>자극 요청</td><td>독립 모델과 비교</td></tr></tbody></table><p>예를 들어 Sequence가 duty2를 요청해도 실제 cfg_duty가 6으로 잘못 구동될 수 있습니다. Driver가 가진 req.duty=2를 Scoreboard로 보내 정답과 비교하면 실제 입력 오류를 놓칠 수 있습니다. Monitor가 관찰한 cfg_duty=6을 planned_duty[0]=2와 비교해야 SB_REQUEST로 검출할 수 있습니다.</p><h4>핵심 구문 ② · 두 종류의 TLM 연결</h4><table><thead><tr><th scope=\"col\">실제 구문</th><th scope=\"col\">역할</th></tr></thead><tbody><tr><td><code>drv.seq_item_port.connect(sqr.seq_item_export)</code></td><td>Driver의 요청 획득/완료 통지 경로</td></tr><tr><td><code>uvm_analysis_port #(pwm19_sample) ap;</code></td><td>관찰 객체를 발행하는 포트 선언</td></tr><tr><td><code>ap=new(\"ap\",this)</code></td><td>포트 인스턴스 생성</td></tr><tr><td><code>uvm_analysis_imp #(pwm19_sample,pwm19_scoreboard) analysis_export;</code></td><td>표본 타입과 수신 구현 타입을 명시</td></tr><tr><td><code>analysis_export=new(\"analysis_export\",this)</code></td><td>수신 구현을 현재 Scoreboard 객체와 연결</td></tr><tr><td><code>ag.mon.ap.connect(sb.analysis_export)</code></td><td>Monitor 발행 포트와 실제 수신 imp를 연결</td></tr><tr><td><code>ap.write(sample)</code></td><td>연결된 수신자의 write(sample) 호출</td></tr></tbody></table><p>TLM(Transaction-Level Modeling, 거래 수준 모델링)은 개별 핀 대신 객체로 검증 데이터를 전달하는 방식입니다. 여기서 분석 write는 시간을 소비하지 않는 함수이며 큐에 자동 저장하거나 다음 클록까지 대기하는 기능은 없습니다. 요청 전달은 get_next_item/item_done의 완료 통지와 결합하지만 분석 전달에는 그러한 요청 응답 절차가 없습니다.</p><p>Agent의 build에서 sqr·drv·mon을 생성하고 connect에서 요청 경로를 연결합니다. env는 ag·sb를 만들고 분석 경로를 연결합니다. Agent는 이 예제에서 능동형만 구현하며 Monitor만 남기는 passive 분기는 구현되어 있지 않습니다.</p>",
+ "s03": "<h3>독립 모델 판서 · 관찰 누락도 오류로 만든다</h3><p>pending이 바뀔 때만 Sample을 보내면 DUT가 잘못해서 pending을 못 바꾼 경우 판정 입력 자체가 사라집니다. 그래서 Monitor는 모든 상승 에지+1ns에 원시 신호를 보냅니다. Scoreboard는 cycles를 늘리고 cycles%8=0에서 이전 요청을 적용합니다. 실제 pending은 기대값과 비교할 대상입니다.</p><p>경계와 새 요청이 겹치면 코드 순서상 이전 기대 요청을 먼저 적용한 뒤 새 요청을 저장합니다. 예컨대 첫 요청 관찰46ns, 적용106ns는60ns 차이입니다. 모델은 req_time 차이80ns 이내를 확인하고 동시에 클록 위상으로 정확한 기대 상태를 정합니다. 추가 리셋은 지원 시나리오가 아니므로 SB_RESET으로 거절합니다.</p><h4>핵심 구문 ③ · 독립 기대 모델의 상태 추적</h4><p><code>phase_idx=cycles % 8</code>은 리셋 이후 관찰한 클록 개수로 위상을 계산합니다. 실제 DUT 내부 counter를 읽지 않습니다. <code>expected_pending</code>은 실제 pending이 아니라 모델 자체의 요청 보류 상태입니다.</p><table><thead><tr><th scope=\"col\">관찰 시각(ns)</th><th scope=\"col\">cycles</th><th scope=\"col\">phase_idx</th><th scope=\"col\">requests</th><th scope=\"col\">applied</th><th scope=\"col\">기대 pending</th><th scope=\"col\">기대 duty</th><th scope=\"col\">기대 PWM</th></tr></thead><tbody><tr><td>36</td><td>1</td><td>1</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr><tr><td>46</td><td>2</td><td>2</td><td>1</td><td>0</td><td>1</td><td>0</td><td>0</td></tr><tr><td>96</td><td>7</td><td>7</td><td>1</td><td>0</td><td>1</td><td>0</td><td>0</td></tr><tr><td>106</td><td>8</td><td>0</td><td>1</td><td>1</td><td>0</td><td>2</td><td>1</td></tr><tr><td>116</td><td>9</td><td>1</td><td>1</td><td>1</td><td>0</td><td>2</td><td>1</td></tr><tr><td>126</td><td>10</td><td>2</td><td>2</td><td>1</td><td>1</td><td>2</td><td>0</td></tr><tr><td>186</td><td>16</td><td>0</td><td>2</td><td>2</td><td>0</td><td>6</td><td>1</td></tr><tr><td>206</td><td>18</td><td>2</td><td>3</td><td>2</td><td>1</td><td>6</td><td>1</td></tr><tr><td>266</td><td>24</td><td>0</td><td>3</td><td>3</td><td>0</td><td>0</td><td>0</td></tr><tr><td>336</td><td>31</td><td>7</td><td>3</td><td>3</td><td>0</td><td>0</td><td>0</td></tr></tbody></table><p>표는 원본 코드의 예상 상태를 계산한 것입니다. 126ns에 두 번째 요청 duty6을 관찰하지만 아직 현재 duty는 2입니다. 새 요청은 Shadow에 보관되고 186ns 경계에서만 적용됩니다. 모델은 기존 요청 적용을 먼저 처리한 다음 새 요청을 등록합니다.</p><h4>핵심 구문 ④ · 4상태 검사와 관찰 누락</h4><p><code>sample.pending !== expected_pending</code>은 0/1 불일치뿐 아니라 X/Z도 확정된 기대값과 다르게 판정합니다. 예를 들어 기대 pending=0인데 실제 X이면 결과는 참입니다. 단순 !=의 결과가 X일 때 if에서 확정된 참으로 처리되지 않는 경우와 구별합니다.</p><p>Monitor가 pending 변화를 기다리기만 하면 고장으로 pending이 변화하지 않을 때 검사가 실행되지 않을 수 있습니다. 매 클록 표본을 전달하면 예상 경계에서 pending과 duty가 바뀌어야 한다는 모델의 독립 기준으로 누락을 검출할 수 있습니다. 다만 표본 사이의 짧은 글리치나 모든 타이밍 위반까지 검사하는 것은 아닙니다.</p>",
+ "s04": "<h3>수치·타이밍 · 24개 활성 표본과 34개 전체 표본</h3><p>6·16·26ns는 리셋3표본입니다.36~336ns는(336-36)/10+1=31표본이며, 활성 전36~96ns의7표본과106~336ns의24표본으로 나뉩니다. 세 duty는 각각106~176,186~256,266~336ns의8표본을 가집니다.</p><p>Driver는 pending 해제 뒤 다음 요청을 시작하므로 제18장처럼 한 주기 비교가 끝날 때까지 기다리지 않습니다. 마지막 Driver 완료 뒤에도 test는 sb.samples24를 기다려 최종 duty0의8위상을 관찰합니다. 부정 시험126ns는 첫 duty2의 위상2로 정상LOW0이며 Sample만1로 뒤집어 SB_PWM의 정확한 시각·위상·값을 요구합니다.</p><h4>판서 · 요청·적용·관찰 완료의 시간축</h4><table><thead><tr><th scope=\"col\">요청 관찰</th><th scope=\"col\">경계 적용</th><th scope=\"col\">활성 8표본 구간</th><th scope=\"col\">기대 위상 0→7</th></tr></thead><tbody><tr><td>46ns</td><td>106ns</td><td>106~176ns</td><td>11000000</td></tr><tr><td>126ns</td><td>186ns</td><td>186~256ns</td><td>11111100</td></tr><tr><td>206ns</td><td>266ns</td><td>266~336ns</td><td>00000000</td></tr></tbody></table><p>세 적용 지연은 각각 60ns입니다. Driver는 마지막 적용 후 270ns 하강 에지에서 pending0을 확인해 완료를 통지하지만 마지막 7개 표본은 아직 남습니다. Test가 samples24를 기다린 뒤 340ns 하강 에지에 objection을 내려야 마지막 duty0의 전체 주기 검사가 끝납니다. 이는 코드에서 계산한 설명용 시각이며 새로운 파형 측정 결과가 아닙니다.</p>",
+ "s05": "<h3>전체 코드 · Sample과 기대 상태의 수명을 따라간다</h3><p>요청 Item의2상태 bit duty는 계획값을 담지만 Sample은 실제 포트의4상태 logic를 보존합니다. !== 비교로 알려지지 않은 관찰값도 실패시킵니다. 기대 planned_duty는 DUT에서 읽지 않고 별도로 정의한 시나리오입니다.</p><p>Driver의 driven3은 입력 절차 완료, Scoreboard의 requests3은 공개 요청 관찰, applied3은 기대 경계 처리, samples24는 활성 상태 관찰입니다. 여기에 cycles31·reset_samples3·pending없음·Sequence완료를 함께 요구하여 한 숫자만 맞는 누락·중복을 막습니다. write 호출 횟수가 맞더라도 샘플 사이 글리치까지 검증한 것은 아닙니다.</p><h4>핵심 구문 ⑤ · write(sample)의 실행 순서와 검사 위치</h4><table><thead><tr><th scope=\"col\">실제 판정</th><th scope=\"col\">무엇을 확인하는가</th><th scope=\"col\">오류</th></tr></thead><tbody><tr><td>resetn 및 reset_samples</td><td>초기 리셋 3표본과 출력 상태</td><td>SB_RESET</td></tr><tr><td>phase_idx==0 &amp;&amp; expected_pending</td><td>이전 요청의 예상 적용과 순서</td><td>SB_ORDER / SB_LATENCY</td></tr><tr><td>sample.cfg_apply===1'b1</td><td>실제 요청의 개수·중첩·내용</td><td>SB_EXTRA / SB_REQUEST</td></tr><tr><td>sample.period/duty/enable/polarity/pending</td><td>실제 활성 상태와 모델 상태</td><td>SB_STATE</td></tr><tr><td>sample.pwm !== expected_pwm</td><td>실제 PWM과 계산된 출력</td><td>SB_PWM</td></tr><tr><td>if(expected_enable) samples++</td><td>활성 주기의 전체 표본 집계</td><td>최종 SB_COUNT</td></tr></tbody></table><p>applied는 모델에서 예정된 적용을 처리한 횟수입니다. 그 자체로 실제 적용 성공을 증명하지 않으므로 뒤의 SB_STATE와 SB_PWM 비교가 필요합니다. request_time[requests]는 requests 증가 전에 저장하고, 적용 때 request_time[applied]를 읽은 뒤 applied를 증가시킵니다. 각 인덱스는 0~2입니다.</p><h4>핵심 구문 ⑥ · 표본 변조로 판정기 자체를 확인</h4><p><code>sample.pwm=~sample.pwm</code>은 126ns에 관찰 객체의 값만 반전합니다. 첫 주기의 위상은 2이고 기대 duty=2이므로 2&lt;2는 거짓, 기대 PWM은 0입니다. 정상 관찰 0을 1로 반전하면 SB_PWM t126/phase2/expected0/got1이 발생합니다. 이 부정 시험은 Monitor→분석 포트→Scoreboard의 검출 경로가 작동함을 확인하며 RTL의 모든 오류를 검출한다는 의미는 아닙니다.</p>",
+ "s06": "<h3>실습 지도 · 판정기 자체의 오류 검출을 확인한다</h3><p>CORRUPT_SAMPLE은 DUT RTL이나 물리 출력선을 바꾸지 않고 Monitor가 발행할 객체의 pwm만 반전합니다. 따라서 Scoreboard 전달·비교 경로의 작동을 확인하는 부정 시험입니다. 모든 RTL 변이를 잡는 능력과는 범위가 다릅니다.</p><p>정상과 부정은 새 프로세스에서 따로 실행합니다. 완료 행·오류 누계0과 부정 전용 SB_PWM t126/phase2/expected0/got1을 각각 확인합니다. 원본 실측은 보존하며 이 제작의 새 RTL/UVM 실행은 <strong>NOT_RUN</strong>입니다.</p>",
+ "s07": "<h3>예상 문답 · 독립 관찰과 종료</h3><p><strong>Monitor가 DUT를 제어하나요?</strong> 현재 Monitor는 신호를 읽고 Sample을 발행합니다. 부정 시험도 객체만 바꾸며 인터페이스 핀을 구동하지 않습니다.</p><p><strong>Sequence가 끝나면 바로 종료해도 되나요?</strong> 마지막 입력이 적용된 것과 마지막 출력 구간을 검사한 것은 다릅니다. test는 Scoreboard24표본을 기다린 뒤 다음 하강 에지에 objection을 내립니다.</p><p><strong>이 모델로 period16도 시험하나요?</strong> cycles%8과 계획이 고정이므로 그대로 사용할 수 없습니다. 매개변수와 주기 변경 계약을 모델에도 독립 반영하는 확장이 필요합니다.</p><h4>추가 교수용 문답</h4><p><strong>Monitor의 ap.write가 다른 객체를 생성해 복사하나요?</strong> 객체 핸들을 전달합니다. 현재 Monitor가 매 클록 새 객체를 생성하기 때문에 이후 표본이 이전 객체를 덮어쓰지 않습니다.</p><p><strong>analysis_export라는 이름이므로 uvm_analysis_export인가요?</strong> 아닙니다. 실제 선언은 uvm_analysis_imp이며 수신자의 write 구현을 호출합니다. 변수명보다 타입을 확인해야 합니다.</p><p><strong>Driver의 driven3과 Scoreboard의 applied3이 같으면 충분한가요?</strong> driven은 자극 절차 완료, applied는 모델의 예정 적용입니다. 실제 상태·출력 비교 및 24개 활성 표본, 31개 정상 클록, 리셋 3개, 미결 없음까지 함께 확인해야 합니다.</p>",
+ "__lines__": [
+  {
+   "reuse": "content/pwm_line_notes.json"
+  },
+  {
+   "path": "tb/ch19/tb_pwm_monitor_agent_scoreboard.sv",
+   "section": "s05",
+   "rows": [
+    [
+     "1-6",
+     "시간 단위 1ns, 정밀도 1ps입니다. pwm19_if는 실제 포트 묶음이며 검증 클래스와 DUT를 연결합니다."
+    ],
+    [
+     "7-15",
+     "resetn과 cfg_*는 TB가 구동하는 logic, pwm_out·pending·active_*는 DUT가 구동하는 wire입니다. 초기 period8은 8클록입니다."
+    ],
+    [
+     "17-19",
+     "UVM package 및 매크로를 가져옵니다. 클래스 정의는 정적 하드웨어 인스턴스와 다릅니다."
+    ],
+    [
+     "21-28",
+     "pwm19_item은 한 번의 요청을 나타내며 duty 하나만 포함합니다. bit는 2상태입니다. 객체 등록과 생성자를 구별합니다."
+    ],
+    [
+     "30-38",
+     "pwm19_sample은 실제 공개 입력과 출력의 스냅샷입니다. logic으로 X/Z를 보존하고 time으로 관찰 시각을 보관합니다."
+    ],
+    [
+     "39-43",
+     "객체 타입을 Factory에 등록하고 이름을 상위 생성자로 전달합니다. component 부모는 없습니다."
+    ],
+    [
+     "45-50",
+     "pwm19_sequence는 pwm19_item을 보내는 시나리오 객체입니다. 제18장의 계획을 재사용합니다."
+    ],
+    [
+     "51-55",
+     "세 번 반복하면서 req_0~req_2를 각각 생성하고 start_item으로 Sequencer의 중재 승인을 기다립니다."
+    ],
+    [
+     "56-64",
+     "반복 인덱스별 duty 2·6·0을 대입하고 finish_item으로 요청을 전달해 Driver 완료까지 기다립니다. 무작위화는 사용하지 않습니다."
+    ],
+    [
+     "66-71",
+     "Sequencer는 같은 pwm19_item 타입의 요청을 전달하는 component입니다. name,parent는 계층 구성에 쓰입니다."
+    ],
+    [
+     "73-80",
+     "Driver는 실제 bus를 참조하는 vif와 완료 요청 수 driven을 소유합니다. 정답 비교는 별도 Scoreboard에 맡깁니다."
+    ],
+    [
+     "81-85",
+     "build_phase에서 config_db의 현재 경로와 vif 키를 통해 실제 인터페이스 참조를 받습니다. 찾지 못하면 NOVIF입니다."
+    ],
+    [
+     "86-93",
+     "drive_one은 하강 에지에 period8, 요청 duty, enable1, polarity0, apply1을 설정합니다. 다음 상승 에지에 DUT가 요청을 읽게 합니다."
+    ],
+    [
+     "94-98",
+     "다음 하강 에지에 apply를 내립니다. 10ns 동안 한 상승 에지가 apply=1을 샘플링합니다."
+    ],
+    [
+     "99-107",
+     "pending이 정확히 0이 될 때까지 하강 에지를 기다립니다. X/Z도 미완료로 처리하며 guard&gt;12이면 13번째 반복에서 실패합니다. driven 증가는 구동 완료이지 PWM 정답 판정이 아닙니다."
+    ],
+    [
+     "108-116",
+     "get_next_item으로 요청 객체를 얻고 drive_one을 실행한 뒤 item_done으로 완료를 통지합니다. 다음 요청까지 다시 대기합니다."
+    ],
+    [
+     "118-123",
+     "Monitor는 실제 vif와 pwm19_sample 타입의 분석 발행 포트를 갖습니다. DUT 핀을 구동하지 않습니다."
+    ],
+    [
+     "124-127",
+     "ap=new(&quot;ap&quot;,this)는 포트 객체를 생성합니다. 아직 수신자와 연결하지는 않습니다."
+    ],
+    [
+     "128-132",
+     "Monitor 자신의 경로에서 vif를 조회합니다. Driver가 보낸 요청 객체를 대신 참조하지 않습니다."
+    ],
+    [
+     "133-139",
+     "매 상승 에지에서 1ns를 기다리고 새 cycle_sample을 만듭니다. 비차단 대입 이후 출력을 읽으며 입력도 이때 읽으므로 하강 에지 구동 규약에 의존합니다."
+    ],
+    [
+     "140-145",
+     "공개 입력 resetn·apply·duty·period·enable·polarity를 관찰합니다. 계획값을 복사하지 않습니다."
+    ],
+    [
+     "146-152",
+     "공개 active_*와 pending·pwm_out을 기록하고 sampled_at에 $time을 저장합니다. 입력 요청과 출력 상태를 같은 표본에서 비교할 수 있습니다."
+    ],
+    [
+     "153-159",
+     "CORRUPT_SAMPLE이 있고 관찰 시각126ns이면 표본의 pwm만 반전합니다. ap.write로 발행하며 실제 DUT 출력은 수정하지 않습니다."
+    ],
+    [
+     "161-165",
+     "Scoreboard의 analysis_export는 이름과 달리 uvm_analysis_imp입니다. 첫 타입은 전달 표본, 둘째 타입은 write를 구현하는 수신 클래스입니다."
+    ],
+    [
+     "166-174",
+     "독립 계획 배열 2·6·0, 요청 시각 배열, 요청·적용·리셋·정상·활성 표본 수와 기대 위상·상태를 정의합니다."
+    ],
+    [
+     "176-179",
+     "analysis_export=new(&quot;analysis_export&quot;,this)는 수신 imp를 생성합니다. this는 실제 write 함수 구현 주체입니다."
+    ],
+    [
+     "181-187",
+     "write(sample)은 분석 전달에서 호출되는 함수입니다. 초기 리셋 구간을 처리하고 정상 거래 중 추가 리셋은 거절합니다."
+    ],
+    [
+     "188-193",
+     "리셋의 period8/duty0/enable0/polarity0/pending0/pwm0을 !==로 검사합니다. return하므로 정상 클록 수에는 포함되지 않습니다."
+    ],
+    [
+     "194-197",
+     "resetn이 정확히 1이고 초기 reset 표본이 3개여야 합니다. 정상 cycles를 증가시키고 cycles%8로 독립 위상 0~7을 계산합니다."
+    ],
+    [
+     "199-205",
+     "예상 위상0에 이전 예상 요청이 있으면 planned_duty[applied]를 적용합니다. 요청 수와 배열 범위를 먼저 확인하고 기대 enable/pending을 갱신합니다."
+    ],
+    [
+     "206-211",
+     "관찰 시각 차이가 80ns를 넘으면 SB_LATENCY입니다. applied를 증가시키고 예상 적용 duty를 기록합니다."
+    ],
+    [
+     "212-219",
+     "실제 cfg_apply가 1이면 새 요청으로 판정합니다. 계획 밖 또는 중첩 요청을 금지하고 공개 입력을 8·계획 duty·1·0과 대조합니다."
+    ],
+    [
+     "220-226",
+     "요청 관찰 시간을 저장하고 requests와 expected_pending을 갱신합니다. apply가 0 또는 1이 아니면 오류입니다. 이전 적용과 새 요청의 처리 순서를 유지합니다."
+    ],
+    [
+     "228-233",
+     "실제 period/duty/enable/polarity/pending을 독립 기대값과 비교합니다. 하나라도 다르거나 미정이면 SB_STATE입니다."
+    ],
+    [
+     "234-240",
+     "기대 PWM은 enable과 phase_idx&lt;expected_duty로 계산합니다. !== 비교로 SB_PWM을 검출하며 활성 enable 표본을 셉니다. duty0도 LOW 8개가 검사 대상입니다."
+    ],
+    [
+     "242-250",
+     "Agent는 sqr·drv·mon 핸들을 묶는 component입니다. new에 name,parent를 전달합니다."
+    ],
+    [
+     "251-256",
+     "build_phase에서 세 component를 Factory로 생성합니다. 현재는 항상 능동형 구조이며 수동형 선택 분기는 없습니다."
+    ],
+    [
+     "257-261",
+     "connect_phase에서 Driver 요청 port를 Sequencer export에 연결합니다. 분석 포트 연결은 env가 맡습니다."
+    ],
+    [
+     "263-269",
+     "env는 Agent와 Scoreboard의 상위 component입니다. 둘의 핸들을 보유합니다."
+    ],
+    [
+     "270-274",
+     "Factory로 ag와 sb를 env 아래에 생성합니다. 이후 하위 build 단계에서 실제 포트와 component가 준비됩니다."
+    ],
+    [
+     "275-279",
+     "ag.mon.ap.connect(sb.analysis_export)는 관찰 객체의 발행→수신 경로를 연결합니다. 연결되면 ap.write가 sb.write를 호출합니다."
+    ],
+    [
+     "281-288",
+     "test는 실제 bus 참조, env, Sequence 완료 플래그를 보유합니다."
+    ],
+    [
+     "289-294",
+     "build에서 env를 생성하고 test 자신의 vif를 조회합니다. 이 참조는 실제 reset을 구동하는 데 필요합니다."
+    ],
+    [
+     "295-302",
+     "objection을 올린 뒤 세 하강 에지를 기다리고 리셋 상태를 확인해 resetn을 1로 해제합니다."
+    ],
+    [
+     "303-310",
+     "Sequence를 생성해 env.ag.sqr에서 실행합니다. 반환 후에도 samples24를 기다리고 다음 하강 에지에서 objection을 내립니다."
+    ],
+    [
+     "311-318",
+     "check_phase는 Sequence 완료, driven3, requests3, applied3, samples24, cycles31, reset3, 미결 없음 모두를 확인합니다. 단일 완료 계수로 성공을 판단하지 않습니다."
+    ],
+    [
+     "319-327",
+     "report_phase에서 UVM_ERROR/FATAL이 0이면 RESULT를 기록합니다. UVM_NONE은 메시지 verbosity 수준입니다."
+    ],
+    [
+     "329-335",
+     "정적 top에서 5ns마다 반전하는 클록을 만들어 주기10ns를 얻고 실제 bus를 인스턴스화합니다."
+    ],
+    [
+     "337-345",
+     "원본 pwm_core를 RESET_PERIOD8로 연결합니다. 실제 하드웨어 인터페이스와 UVM 객체 사이의 연결점입니다."
+    ],
+    [
+     "347-352",
+     "config_db set(null,절대 경로,&quot;vif&quot;,bus)로 test·drv·mon에 같은 실제 인터페이스를 제공합니다. run_test는 Factory에 등록한 pwm19_test를 실행합니다."
+    ],
+    [
+     "353-357",
+     "별도 watchdog는 2000ns(2µs)에 GLOBAL_TIMEOUT을 발생시킵니다. 정상 실행은 그 전에 종료해야 합니다."
+    ]
+   ]
+  },
+  {
+   "path": "scripts/run_ch19.sh",
+   "section": "s06",
+   "rows": [
+    [
+     "1-10",
+     "Bash 오류·미정 변수·파이프 실패를 감지합니다. ROOT와 DUT_PATH를 정하고 원본 RTL 누락이면 NOT_RUN/exit2로 종료합니다."
+    ],
+    [
+     "11-16",
+     "xvlog/xelab/xsim을 확인합니다. 실행 환경 부재를 PASS로 처리하지 않습니다."
+    ],
+    [
+     "17-22",
+     "새 실행 폴더에서 RTL 분석, SV/UVM 분석, 정교화를 실행하고 단계별 로그를 보존합니다."
+    ],
+    [
+     "23-26",
+     "정상 실행 결과의 정확한 요청3·적용3·표본24와 UVM_ERROR/FATAL 0을 검사합니다."
+    ],
+    [
+     "27-31",
+     "별도 실행에 CORRUPT_SAMPLE을 전달하고 rc를 기록합니다. SB_PWM t126/phase2/expected0/got1의 정확한 진단을 요구합니다."
+    ],
+    [
+     "32-37",
+     "부정 로그에 정상 PASS나 GLOBAL_TIMEOUT이 있으면 실패합니다. 지정 진단과 금지 문자열 부재를 확인한 뒤 harness 결과 및 로그 경로를 기록합니다."
+    ]
+   ]
+  }
  ]
 }
