@@ -160,7 +160,7 @@
       "id": "ch23",
       "number": 23,
       "title": "NPU 통합 정답 비교",
-      "file": "ch23_teacher_v01.html"
+      "file": "ch23_teacher_v02.html"
     },
     {
       "id": "ch24",
