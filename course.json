@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v32",
+  "version": "v33",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -355,7 +355,7 @@
       "number": 24,
       "title": "회귀·CI·검증 보고",
       "slug": "ch24_teacher",
-      "version": "v01",
+      "version": "v02",
       "source_html": "ch24_regression_ci_reporting_v04.html",
       "source_version": "v04",
       "source_blob": "f292c0c9c0987e54d6d8ca93388bd208ded759fb",
