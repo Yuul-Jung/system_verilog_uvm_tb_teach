@@ -15,7 +15,7 @@
 
 종합 품질 검증: [제1부](docs/PART01_QUALITY_REVIEW.md) · [제2부](docs/PART02_QUALITY_REVIEW.md) · [제3부](docs/PART03_QUALITY_REVIEW.md) · [제4부](docs/PART04_QUALITY_REVIEW.md) · [제5부](docs/PART05_QUALITY_REVIEW.md) · [제6부](docs/PART06_QUALITY_REVIEW.md). 원본 설명에서 발견한 세 항목은 [별도 기록](docs/SOURCE_ISSUES.md)에 보존했습니다.
 
-[24장 최종 검증 보고서](docs/FINAL_REVIEW_v25.md) · [전체 파일 정합성](docs/evidence/final/integrity.json) · [공개 Pages 실제 검증](docs/evidence/publication/pages.json)
+[v25 기준 24장 최종 검증 보고서](docs/FINAL_REVIEW_v25.md) · [v25 기준 전체 파일 정합성](docs/evidence/final/integrity.json) · [v25 기준 공개 Pages 실제 검증](docs/evidence/publication/pages.json)
 
 Pages는 `main` 루트의 정적 HTML을 제공합니다. `.nojekyll`로 원본 SystemVerilog·Python·SVG를 템플릿 처리 없이 배포합니다. 공개 배포의 실제 커밋·HTTP·SHA256·화면은 `scripts/check_publication.py`로 확인합니다.
 
@@ -40,8 +40,10 @@ Pages는 `main` 루트의 정적 HTML을 제공합니다. `.nojekyll`로 원본 
 - [제18장 · Sequence에서 Driver까지](ch18_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch18_v01.md)
 - [제19장 · Monitor·Agent·Scoreboard](ch19_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch19_v01.md)
 - [제20장 · Factory·Config·Objection](ch20_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch20_v01.md)
-- [제21장 · UVM 레지스터 추상화](ch21_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch21_v01.md)
+- [제21장 · UVM 레지스터 추상화](ch21_teacher_v02.html) · [검증 기록](docs/VALIDATION_ch21_v02.md)
 - [제22장 · 다중 Agent·VIP](ch22_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch22_v01.md)
 - [제23장 · NPU 통합 정답 비교](ch23_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch23_v01.md)
 - [제24장 · 회귀·CI·검증 보고](ch24_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch24_v01.md)
 <!-- /PUBLISHED -->
+
+교수용 해설 보강 v26: 제21장 v02에서 RAL 구문 및 API 인자, 객체 생성, 독립 예측 경로, 실제 행별 풀이를 세분화했다. [제21장 v02 검증](docs/VALIDATION_ch21_v02.md). 기존 v25 화면·Pages 증거는 해당 시점의 기록이며 v02 화면/공개 HTTP 신규 확인은 별도 수행 대상이다.
