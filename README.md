@@ -33,4 +33,5 @@
 - [제20장 · Factory·Config·Objection](ch20_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch20_v01.md)
 - [제21장 · UVM 레지스터 추상화](ch21_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch21_v01.md)
 - [제22장 · 다중 Agent·VIP](ch22_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch22_v01.md)
+- [제23장 · NPU 통합 정답 비교](ch23_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch23_v01.md)
 <!-- /PUBLISHED -->

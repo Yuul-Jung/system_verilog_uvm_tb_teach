@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v23",
+  "version": "v24",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -334,6 +334,21 @@
       "source_tb": "tb/ch22/tb_axi_multiagent_irq.sv",
       "rtl_simulation": "NOT_RUN",
       "original_execution": "PASS"
+    },
+    {
+      "id": "ch23",
+      "number": 23,
+      "title": "NPU 통합 정답 비교",
+      "slug": "ch23_teacher",
+      "version": "v01",
+      "source_html": "ch23_npu_integrated_scoreboard_v05.html",
+      "source_version": "v05",
+      "source_blob": "9e9a9819f4b6235932f6e2eac3c1c8cc9dd8d379",
+      "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
+      "source_course_version": "v60",
+      "source_tb": "tb/ch23/tb_npu_integrated.sv",
+      "rtl_simulation": "NOT_RUN",
+      "original_execution": "PASS"
     }
   ],
   "planned_chapters": [
@@ -519,7 +534,7 @@
       "title": "NPU 통합 정답 비교",
       "source_html": "ch23_npu_integrated_scoreboard_v05.html",
       "source_version": "v05",
-      "status": "planned"
+      "status": "published"
     },
     {
       "id": "ch24",
