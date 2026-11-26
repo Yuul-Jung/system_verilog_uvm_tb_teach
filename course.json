@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v27",
+  "version": "v28",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -295,7 +295,7 @@
       "number": 20,
       "title": "Factory·Config·Objection",
       "slug": "ch20_teacher",
-      "version": "v01",
+      "version": "v02",
       "source_html": "ch20_factory_config_objection_v04.html",
       "source_version": "v04",
       "source_blob": "4c946e22723b8d2ed9e7d7c95abf133916e9ff70",
