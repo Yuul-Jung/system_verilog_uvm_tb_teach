@@ -1,0 +1,212 @@
+{
+  "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
+  "course_code": "SV UVM TEACH",
+  "version": "v01",
+  "total_planned_chapters": 24,
+  "source_commit": "690dc757347b1335282cfdd6b0b4fb8a7d5ee7dd",
+  "chapters": [
+    {
+      "id": "ch01",
+      "number": 1,
+      "title": "테스트벤치의 첫 실행",
+      "slug": "ch01_teacher",
+      "version": "v01",
+      "source_html": "ch01_testbench_basics_v05.html",
+      "source_blob": "760fe8b6efc260835d80173843440122a83902a8"
+    }
+  ],
+  "planned_chapters": [
+    {
+      "id": "ch01",
+      "number": 1,
+      "title": "테스트벤치의 첫 실행",
+      "source_html": "ch01_testbench_basics_v05.html",
+      "source_version": "v05",
+      "status": "published"
+    },
+    {
+      "id": "ch02",
+      "number": 2,
+      "title": "Clock·Reset·이벤트",
+      "source_html": "ch02_clock_reset_events_v04.html",
+      "source_version": "v04",
+      "status": "planned"
+    },
+    {
+      "id": "ch03",
+      "number": 3,
+      "title": "반복 자극과 작업 분리",
+      "source_html": "ch03_reusable_stimulus_v04.html",
+      "source_version": "v04",
+      "status": "planned"
+    },
+    {
+      "id": "ch04",
+      "number": 4,
+      "title": "PASS/FAIL 자동 판정",
+      "source_html": "ch04_pass_fail_automation_v05.html",
+      "source_version": "v05",
+      "status": "planned"
+    },
+    {
+      "id": "ch05",
+      "number": 5,
+      "title": "검증 자료형과 타입",
+      "source_html": "ch05_verification_types_v05.html",
+      "source_version": "v05",
+      "status": "planned"
+    },
+    {
+      "id": "ch06",
+      "number": 6,
+      "title": "배열·큐·패키지",
+      "source_html": "ch06_arrays_queues_packages_v05.html",
+      "source_version": "v05",
+      "status": "planned"
+    },
+    {
+      "id": "ch07",
+      "number": 7,
+      "title": "인터페이스·타이밍 분리",
+      "source_html": "ch07_interface_modport_clocking_v04.html",
+      "source_version": "v04",
+      "status": "planned"
+    },
+    {
+      "id": "ch08",
+      "number": 8,
+      "title": "객체와 제약 기반 입력",
+      "source_html": "ch08_objects_constraints_v04.html",
+      "source_version": "v04",
+      "status": "planned"
+    },
+    {
+      "id": "ch09",
+      "number": 9,
+      "title": "참조 모델·스코어보드",
+      "source_html": "ch09_reference_model_scoreboard_v04.html",
+      "source_version": "v04",
+      "status": "planned"
+    },
+    {
+      "id": "ch10",
+      "number": 10,
+      "title": "경계조건·오류 주입",
+      "source_html": "ch10_corner_reset_timeout_v05.html",
+      "source_version": "v05",
+      "status": "planned"
+    },
+    {
+      "id": "ch11",
+      "number": 11,
+      "title": "시간적 속성 검사",
+      "source_html": "ch11_temporal_assertions_v04.html",
+      "source_version": "v04",
+      "status": "planned"
+    },
+    {
+      "id": "ch12",
+      "number": 12,
+      "title": "기능 커버리지",
+      "source_html": "ch12_functional_coverage_v03.html",
+      "source_version": "v03",
+      "status": "planned"
+    },
+    {
+      "id": "ch13",
+      "number": 13,
+      "title": "UART 스트림 검증",
+      "source_html": "ch13_uart_stream_verification_v03.html",
+      "source_version": "v03",
+      "status": "planned"
+    },
+    {
+      "id": "ch14",
+      "number": 14,
+      "title": "FIFO 및 흐름 제어",
+      "source_html": "ch14_fifo_flow_control_v03.html",
+      "source_version": "v03",
+      "status": "planned"
+    },
+    {
+      "id": "ch15",
+      "number": 15,
+      "title": "AXI4-Lite 레지스터 검증",
+      "source_html": "ch15_axi4lite_register_verification_v03.html",
+      "source_version": "v03",
+      "status": "planned"
+    },
+    {
+      "id": "ch16",
+      "number": 16,
+      "title": "MAC·NPU 정수 연산 검증",
+      "source_html": "ch16_mac_npu_integer_verification_v03.html",
+      "source_version": "v03",
+      "status": "planned"
+    },
+    {
+      "id": "ch17",
+      "number": 17,
+      "title": "최소 UVM 환경",
+      "source_html": "ch17_minimal_uvm_environment_v04.html",
+      "source_version": "v04",
+      "status": "planned"
+    },
+    {
+      "id": "ch18",
+      "number": 18,
+      "title": "Sequence에서 Driver까지",
+      "source_html": "ch18_sequence_driver_v04.html",
+      "source_version": "v04",
+      "status": "planned"
+    },
+    {
+      "id": "ch19",
+      "number": 19,
+      "title": "Monitor·Agent·Scoreboard",
+      "source_html": "ch19_monitor_agent_scoreboard_v05.html",
+      "source_version": "v05",
+      "status": "planned"
+    },
+    {
+      "id": "ch20",
+      "number": 20,
+      "title": "Factory·Config·Objection",
+      "source_html": "ch20_factory_config_objection_v04.html",
+      "source_version": "v04",
+      "status": "planned"
+    },
+    {
+      "id": "ch21",
+      "number": 21,
+      "title": "UVM 레지스터 추상화",
+      "source_html": "ch21_uvm_register_abstraction_v04.html",
+      "source_version": "v04",
+      "status": "planned"
+    },
+    {
+      "id": "ch22",
+      "number": 22,
+      "title": "다중 Agent·VIP",
+      "source_html": "ch22_multi_agent_vip_v05.html",
+      "source_version": "v05",
+      "status": "planned"
+    },
+    {
+      "id": "ch23",
+      "number": 23,
+      "title": "NPU 통합 정답 비교",
+      "source_html": "ch23_npu_integrated_scoreboard_v04.html",
+      "source_version": "v04",
+      "status": "planned"
+    },
+    {
+      "id": "ch24",
+      "number": 24,
+      "title": "회귀·CI·검증 보고",
+      "source_html": "ch24_regression_ci_reporting_v04.html",
+      "source_version": "v04",
+      "status": "planned"
+    }
+  ]
+}
