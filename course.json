@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v26",
+  "version": "v27",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -325,7 +325,7 @@
       "number": 22,
       "title": "다중 Agent·VIP",
       "slug": "ch22_teacher",
-      "version": "v01",
+      "version": "v02",
       "source_html": "ch22_multi_agent_vip_v05.html",
       "source_version": "v05",
       "source_blob": "8118843b89e7e4a63cf706bf1ae6101d10a6b263",
