@@ -1,0 +1,1124 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="제15장 AXI4-Lite 레지스터 검증"><title>교수용 해설서 · 제15장 · AXI4-Lite 레지스터 검증</title><link rel="stylesheet" href="assets/site.css"><style>.teach-note{margin:18px 0 4px;padding:15px 18px;background:#f8f7fc;border:1px solid #dddaee;border-left:4px solid #4635b1;border-radius:6px;overflow-wrap:anywhere}.teach-note h3{margin:0 0 10px;color:#4635b1}.teach-note h4{margin:14px 0 6px}.teach-note p{margin:8px 0}.teach-note summary{cursor:pointer;font-weight:600;margin:10px 0}.teach-fragment{white-space:pre-wrap;overflow-wrap:anywhere;display:block;min-width:140px}.teach-note table{margin:10px 0}.teach-note td{vertical-align:top}@media(max-width:860px){.teach-note{padding:12px}.teach-note td{min-width:68px}}.teach-note details table{min-width:680px}.teach-note details th:first-child,.teach-note details td:first-child{min-width:60px;white-space:nowrap}.teach-note details .teach-fragment{min-width:250px}</style></head><body data-chapter="ch15"><a class="access-skip" href="#main-content">본문 바로가기</a><button type="button" class="mobile-menu" id="mobile-menu" aria-controls="course-nav" aria-expanded="false">☰ 장·목차</button><div class="shade" id="shade"></div><header class="hero"><div class="hero-inner"><p class="kicker">교수용 해설서 · 제4부 · 인터페이스·연산기 검증</p><h1>제15장 · AXI4-Lite 레지스터 검증</h1><p>독립 AW/W 거래부터 WSTRB, 응답 유지, 리셋까지 실제 RTL로 확인합니다.</p><div class="chips"><span class="chip">PART 04 · CHAPTER 15</span><span class="chip">5개 채널 · 5개 시나리오</span><span class="chip">원본 RTL 변경 없음</span></div></div></header><div class="wrap"><nav class="toc" id="course-nav" aria-label="부·장·절 탐색"></nav><main class="content" id="main-content"><p>원본 제15장 · v03의 절·그림·전체 코드·실습을 보존한 교수용 해설서입니다.</p>
+<section class="section" id="s00"><h2><span class="num">00</span>개요 · 버스 거래와 레지스터 검증</h2><p>제14장의 UART는 바이트 스트림을 전달했습니다. 이번 장에서는 AXI4-Lite(에이엑스아이 포 라이트, 경량 메모리 매핑 버스)를 통해 주소와 데이터를 전달하고 레지스터 값을 읽습니다. 독립된 다섯 채널의 수락, 응답 유지, 바이트 쓰기, 리셋을 검증합니다.</p><p><strong>설계 개념 연계:</strong> 제2부 사용자 AXI IP와 주변장치(<code>amd_soc_p2</code>) 04.2장 03~04절 AXI 핸드셰이크·WSTRB, 10.3장 사양서 2~3절 공통 버스·레지스터 계약, 03.2장 IRQ 관련 설계. 해당 PWM 및 버튼 IP의 RTL과 이 장의 범용 어댑터·레지스터 뱅크는 동일 파일로 확인되지 않았습니다. 이 장은 기존 검증용 스냅샷 두 파일의 독립 실습이며 개념만 연계합니다.</p><div class="codeblock"><div class="codebar"><span>Ubuntu · 실습 폴더 준비</span></div><pre tabindex="0"><code>mkdir -p ch15_lab/reference_rtl ch15_lab/tb/ch15 ch15_lab/scripts
+cd ch15_lab</code></pre></div><table><thead><tr><th>파일</th><th>역할</th></tr></thead><tbody><tr><td>reference_rtl/axi4lite_slave_adapter.v</td><td>AXI 채널·응답 처리</td></tr><tr><td>reference_rtl/custom_register_bank.v</td><td>레지스터 저장·읽기</td></tr><tr><td>tb/ch15/tb_axi4lite_registers.sv</td><td>독립 자극·모니터·판정</td></tr><tr><td>scripts/run_ch15.sh</td><td>Icarus 대체 실행</td></tr></tbody></table><p>01절·05절·06절의 전체 코드를 지정된 파일에 저장합니다.</p>
+<div class="teach-note"><h3>교수용 이론 · CPU의 쓰기를 회로 상태 변화로 연결한다</h3><p>AXI4-Lite는 주소로 주변장치 레지스터를 선택하는 메모리 매핑 버스입니다. 주소를 받았다는 사실, 쓸 데이터를 받았다는 사실, 저장이 반영되었다는 사실, CPU가 완료 응답을 받았다는 사실은 서로 다른 사건입니다. 다섯 채널로 분리하면 상대가 잠시 멈춰도 각 사건을 보존할 수 있습니다.</p><p>현재 DUT는 범용 검증 스냅샷 두 모듈입니다. 다른 교재의 PWM/IRQ IP와 개념은 이어지지만 동일 구현이나 최신 IP의 오류 응답 정책을 시험한 결과로 확대하지 않습니다.</p></div>
+</section>
+<section class="section" id="s01"><h2><span class="num">01</span>원본 RTL 전체 · 어댑터와 레지스터 뱅크</h2><figure style="overflow-x:auto;margin:16px 0"><div style="min-width:700px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 360" role="img" aria-labelledby="ch15title">
+<title id="ch15title">AXI4-Lite 어댑터와 레지스터 뱅크의 연결</title><rect width="960" height="360" fill="white"/>
+<defs><marker id="ch15arr" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="10" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto"><path d="M0 0L10 4L0 8Z" fill="#5A1E1E"/></marker></defs>
+<g fill="#172439" font-family="Noto Sans CJK KR,sans-serif" text-anchor="middle">
+<text x="480" y="30" font-size="20" font-weight="bold">AXI4-Lite · 주소와 데이터의 독립 수락</text>
+<g fill="#F7F9FC" stroke="#1F3A5F" stroke-width="2"><rect x="24" y="60" width="170" height="254" rx="4"/><rect x="340" y="60" width="278" height="254" rx="4"/><rect x="758" y="60" width="178" height="254" rx="4"/></g>
+<g font-size="16" font-weight="bold"><text x="109" y="86">테스트벤치</text><text x="479" y="86">axi4lite_slave_adapter</text><text x="847" y="86">register bank</text></g>
+<g font-size="12"><text x="109" y="108">독립 BFM</text><text x="847" y="106">custom_register_bank</text><text x="267" y="112">AWADDR / VALID</text><text x="267" y="146">WDATA / WSTRB</text><text x="267" y="180">BVALID / BRESP</text><text x="267" y="214">ARADDR / VALID</text><text x="267" y="248">RDATA / RRESP</text><text x="688" y="128">wr_en / offset</text><text x="688" y="174">wr_data / strb</text><text x="688" y="236">rd_offset</text><text x="688" y="282">rd_data</text></g>
+<g fill="white" stroke="#1F3A5F" stroke-width="1.4"><rect x="361" y="109" width="112" height="48"/><rect x="485" y="109" width="112" height="48"/><rect x="361" y="174" width="236" height="48"/><rect x="361" y="237" width="236" height="54"/></g>
+<g font-size="13"><text x="417" y="127">aw_stored</text><text x="417" y="148">awaddr_stored</text><text x="541" y="127">w_stored</text><text x="541" y="148">wdata / wstrb</text><text x="479" y="192" font-weight="bold">write_commit</text><text x="479" y="214">두 저장 플래그 · B 대기 없음</text><text x="479" y="257" font-weight="bold">s_axi_rdata / rvalid</text><text x="479" y="276">AR 수락 시 읽기값 캡처</text><text x="847" y="156">CONTROL</text><text x="847" y="180">DATA_IN · COMMAND</text><text x="847" y="204">IRQ_STATUS</text><text x="847" y="254">rd_data 조합 선택</text><text x="109" y="281">READY / VALID</text><text x="109" y="302">상승 에지 관찰</text></g>
+<g fill="none" stroke="#5A1E1E" stroke-width="2" marker-end="url(#ch15arr)"><path d="M194 120H340"/><path d="M194 154H340"/><path d="M340 188H194"/><path d="M194 222H340"/><path d="M340 256H194"/><path d="M618 136H758"/><path d="M618 182H758"/><path d="M618 244H758"/><path d="M758 290H618"/></g>
+<text x="480" y="340" font-size="13">채널별 READY는 VALID와 반대 방향 · 도식은 주요 payload 방향을 표시</text>
+</g></svg>
+</div><figcaption>실제 두 모듈의 주요 데이터 연결. 그림의 BFM과 모니터는 검증 환경이며 합성 회로가 아닙니다.</figcaption></figure><div class="codeblock"><div class="codebar"><span>reference_rtl/axi4lite_slave_adapter.v · Verilog</span></div><pre tabindex="0"><code>module axi4lite_slave_adapter #(
+    parameter integer C_S_AXI_ADDR_WIDTH = 32
+)(
+    input  wire                          s_axi_aclk,
+    input  wire                          s_axi_aresetn,
+
+    // AXI4-Lite Write Address Channel
+    input  wire [C_S_AXI_ADDR_WIDTH-1:0] s_axi_awaddr,
+    input  wire [2:0]                    s_axi_awprot,
+    input  wire                          s_axi_awvalid,
+    output wire                          s_axi_awready,
+
+    // AXI4-Lite Write Data Channel
+    input  wire [31:0]                   s_axi_wdata,
+    input  wire [3:0]                    s_axi_wstrb,
+    input  wire                          s_axi_wvalid,
+    output wire                          s_axi_wready,
+
+    // AXI4-Lite Write Response Channel
+    output reg  [1:0]                    s_axi_bresp,
+    output reg                           s_axi_bvalid,
+    input  wire                          s_axi_bready,
+
+    // AXI4-Lite Read Address Channel
+    input  wire [C_S_AXI_ADDR_WIDTH-1:0] s_axi_araddr,
+    input  wire [2:0]                    s_axi_arprot,
+    input  wire                          s_axi_arvalid,
+    output wire                          s_axi_arready,
+
+    // AXI4-Lite Read Data Channel
+    output reg  [31:0]                   s_axi_rdata,
+    output reg  [1:0]                    s_axi_rresp,
+    output reg                           s_axi_rvalid,
+    input  wire                          s_axi_rready,
+
+    // Bus-independent register access interface
+    output wire                          wr_en,
+    output wire [7:0]                    wr_offset,
+    output wire [31:0]                   wr_data,
+    output wire [3:0]                    wr_strb,
+
+    output wire [7:0]                    rd_offset,
+    input  wire [31:0]                   rd_data
+);
+
+// AXI response code used by this basic slave.
+localparam [1:0] AXI_RESP_OKAY = 2'b00;
+
+// Write Address and Write Data are independent AXI channels.
+// Each channel is buffered separately until both are available.
+reg                          aw_stored;
+reg [C_S_AXI_ADDR_WIDTH-1:0] awaddr_stored;
+reg                          w_stored;
+reg [31:0]                   wdata_stored;
+reg [3:0]                    wstrb_stored;
+
+wire write_commit;
+
+// Single-outstanding-write policy:
+// Do not accept a new write while a response is pending.
+assign s_axi_awready =
+    s_axi_aresetn &amp;&amp; !aw_stored &amp;&amp; !s_axi_bvalid;
+
+assign s_axi_wready =
+    s_axi_aresetn &amp;&amp; !w_stored &amp;&amp; !s_axi_bvalid;
+
+// Register-bank write occurs only after BOTH address and data
+// channels have completed their independent handshakes.
+assign write_commit =
+    aw_stored &amp;&amp; w_stored &amp;&amp; !s_axi_bvalid;
+
+assign wr_en     = write_commit;
+assign wr_offset = awaddr_stored[7:0];
+assign wr_data   = wdata_stored;
+assign wr_strb   = wstrb_stored;
+
+// Read side accepts one address only when no previous R response
+// is waiting for the master.
+assign s_axi_arready =
+    s_axi_aresetn &amp;&amp; !s_axi_rvalid;
+
+// custom_register_bank read path is combinational.
+// The address presented during AR handshake selects rd_data.
+assign rd_offset = s_axi_araddr[7:0];
+
+// AWPROT / ARPROT are not used by this educational register slave.
+wire unused_prot;
+assign unused_prot = ^{s_axi_awprot, s_axi_arprot};
+
+always @(posedge s_axi_aclk) begin
+    if (!s_axi_aresetn) begin
+        aw_stored     &lt;= 1'b0;
+        awaddr_stored &lt;= {C_S_AXI_ADDR_WIDTH{1'b0}};
+        w_stored      &lt;= 1'b0;
+        wdata_stored  &lt;= 32'h0000_0000;
+        wstrb_stored  &lt;= 4'b0000;
+        s_axi_bresp   &lt;= AXI_RESP_OKAY;
+        s_axi_bvalid  &lt;= 1'b0;
+    end else begin
+        // Capture Write Address independently.
+        if (s_axi_awready &amp;&amp; s_axi_awvalid) begin
+            aw_stored     &lt;= 1'b1;
+            awaddr_stored &lt;= s_axi_awaddr;
+        end
+
+        // Capture Write Data independently.
+        if (s_axi_wready &amp;&amp; s_axi_wvalid) begin
+            w_stored     &lt;= 1'b1;
+            wdata_stored &lt;= s_axi_wdata;
+            wstrb_stored &lt;= s_axi_wstrb;
+        end
+
+        // Once both parts exist, pulse wr_en through write_commit
+        // and create the AXI B response.
+        if (write_commit) begin
+            aw_stored    &lt;= 1'b0;
+            w_stored     &lt;= 1'b0;
+            s_axi_bresp  &lt;= AXI_RESP_OKAY;
+            s_axi_bvalid &lt;= 1'b1;
+        end else if (s_axi_bvalid &amp;&amp; s_axi_bready) begin
+            s_axi_bvalid &lt;= 1'b0;
+        end
+    end
+end
+
+always @(posedge s_axi_aclk) begin
+    if (!s_axi_aresetn) begin
+        s_axi_rdata  &lt;= 32'h0000_0000;
+        s_axi_rresp  &lt;= AXI_RESP_OKAY;
+        s_axi_rvalid &lt;= 1'b0;
+    end else begin
+        // Capture the selected register value at AR handshake.
+        if (s_axi_arready &amp;&amp; s_axi_arvalid) begin
+            s_axi_rdata  &lt;= rd_data;
+            s_axi_rresp  &lt;= AXI_RESP_OKAY;
+            s_axi_rvalid &lt;= 1'b1;
+        end else if (s_axi_rvalid &amp;&amp; s_axi_rready) begin
+            s_axi_rvalid &lt;= 1'b0;
+        end
+    end
+end
+
+endmodule
+</code></pre></div><div class="codeblock"><div class="codebar"><span>reference_rtl/custom_register_bank.v · Verilog</span></div><pre tabindex="0"><code>module custom_register_bank (
+    input  wire        clk,
+    input  wire        resetn,
+
+    // Bus-independent register access interface.
+    // SoC 12 will connect this interface to AXI4-Lite.
+    input  wire        wr_en,
+    input  wire [7:0]  wr_offset,
+    input  wire [31:0] wr_data,
+    input  wire [3:0]  wr_strb,
+
+    input  wire [7:0]  rd_offset,
+    output reg  [31:0] rd_data,
+
+    // Hardware status / event inputs
+    input  wire        busy_i,
+    input  wire        done_i,
+    input  wire        error_i,
+    input  wire        irq_done_event_i,
+    input  wire        irq_error_event_i,
+    input  wire [31:0] data_out_i,
+
+    // Control outputs
+    output reg         enable_o,
+    output reg  [1:0]  mode_o,
+    output reg         start_pulse_o,
+    output reg         clear_pulse_o,
+    output reg  [31:0] data_in_o,
+    output reg  [1:0]  irq_status_o
+);
+
+localparam [7:0] REG_CONTROL    = 8'h00;
+localparam [7:0] REG_STATUS     = 8'h04;
+localparam [7:0] REG_COMMAND    = 8'h08;
+localparam [7:0] REG_IRQ_STATUS = 8'h0C;
+localparam [7:0] REG_DATA_IN    = 8'h10;
+localparam [7:0] REG_DATA_OUT   = 8'h14;
+localparam [7:0] REG_VERSION    = 8'h18;
+localparam [7:0] REG_ID         = 8'h1C;
+
+localparam [31:0] VERSION_VALUE = 32'h0001_0000;
+localparam [31:0] ID_VALUE      = 32'h524D_4150; // ASCII &quot;RMAP&quot;
+
+integer byte_index;
+
+always @(posedge clk) begin
+    if (!resetn) begin
+        enable_o      &lt;= 1'b0;
+        mode_o        &lt;= 2'b00;
+        start_pulse_o &lt;= 1'b0;
+        clear_pulse_o &lt;= 1'b0;
+        data_in_o     &lt;= 32'h0000_0000;
+        irq_status_o  &lt;= 2'b00;
+    end else begin
+        // W1P pulses are one clock wide by default.
+        start_pulse_o &lt;= 1'b0;
+        clear_pulse_o &lt;= 1'b0;
+
+        // Hardware events set IRQ status.
+        // Event set has priority over software clear in the same cycle.
+        if (irq_done_event_i) begin
+            irq_status_o[0] &lt;= 1'b1;
+        end else if (
+            wr_en &amp;&amp;
+            (wr_offset == REG_IRQ_STATUS) &amp;&amp;
+            wr_strb[0] &amp;&amp;
+            wr_data[0]
+        ) begin
+            irq_status_o[0] &lt;= 1'b0;
+        end
+
+        if (irq_error_event_i) begin
+            irq_status_o[1] &lt;= 1'b1;
+        end else if (
+            wr_en &amp;&amp;
+            (wr_offset == REG_IRQ_STATUS) &amp;&amp;
+            wr_strb[0] &amp;&amp;
+            wr_data[1]
+        ) begin
+            irq_status_o[1] &lt;= 1'b0;
+        end
+
+        if (wr_en) begin
+            case (wr_offset)
+                REG_CONTROL: begin
+                    if (wr_strb[0]) begin
+                        enable_o &lt;= wr_data[0];
+                        mode_o   &lt;= wr_data[2:1];
+                    end
+                end
+
+                REG_COMMAND: begin
+                    if (wr_strb[0]) begin
+                        start_pulse_o &lt;= wr_data[0];
+                        clear_pulse_o &lt;= wr_data[1];
+                    end
+                end
+
+                REG_DATA_IN: begin
+                    // Byte-enable write using WSTRB-equivalent strobes.
+                    for (byte_index = 0; byte_index &lt; 4; byte_index = byte_index + 1) begin
+                        if (wr_strb[byte_index]) begin
+                            data_in_o[byte_index*8 +: 8] &lt;=
+                                wr_data[byte_index*8 +: 8];
+                        end
+                    end
+                end
+
+                default: begin
+                    // RO / reserved / unmapped writes have no effect.
+                end
+            endcase
+        end
+    end
+end
+
+always @(*) begin
+    case (rd_offset)
+        REG_CONTROL: begin
+            rd_data = {29'h0, mode_o, enable_o};
+        end
+
+        REG_STATUS: begin
+            rd_data = {29'h0, error_i, done_i, busy_i};
+        end
+
+        REG_COMMAND: begin
+            // W1P command register has no retained state.
+            rd_data = 32'h0000_0000;
+        end
+
+        REG_IRQ_STATUS: begin
+            rd_data = {30'h0, irq_status_o};
+        end
+
+        REG_DATA_IN: begin
+            rd_data = data_in_o;
+        end
+
+        REG_DATA_OUT: begin
+            rd_data = data_out_i;
+        end
+
+        REG_VERSION: begin
+            rd_data = VERSION_VALUE;
+        end
+
+        REG_ID: begin
+            rd_data = ID_VALUE;
+        end
+
+        default: begin
+            rd_data = 32'h0000_0000;
+        end
+    endcase
+end
+
+endmodule
+</code></pre></div><p>어댑터의 주소 폭은 기본 32비트이고 실제 레지스터 선택에는 하위 8비트만 사용됩니다. bank는 AXI 핸드셰이크를 직접 처리하지 않고 wr_en과 wr_offset/wr_data/wr_strb를 사용합니다. 읽기는 rd_offset에 따른 조합 rd_data이며 어댑터가 AR 수락 시 값을 저장합니다.</p>
+<div class="teach-note"><h3>구조도 읽기 · 버스 처리와 레지스터 의미를 분리한다</h3><p>왼쪽 어댑터는 AW·W를 각각 저장하고 둘이 준비되면 wr_en·offset·data·strb를 만듭니다. 오른쪽 bank는 이 단순 인터페이스로 레지스터를 갱신합니다. 따라서 bank는 AW가 먼저 왔는지 알 필요가 없습니다. 두 모듈은 TB 아래 형제 인스턴스 dut·bank이며 bank가 dut의 자식은 아닙니다.</p><p>읽기 bank 출력은 주소에 즉시 반응하는 조합 경로지만, 버스의 RDATA는 AR 수락 에지에 별도 레지스터로 잡힙니다. 이 차이가 응답 대기 중 다른 주소를 제시해도 RDATA가 유지되는 이유입니다.</p><h4>reference_rtl/axi4lite_slave_adapter.v · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-5</td><td><code class="teach-fragment">module axi4lite_slave_adapter #(
+    parameter integer C_S_AXI_ADDR_WIDTH = 32
+)(
+    input  wire                          s_axi_aclk,
+    input  wire                          s_axi_aresetn,</code></td><td>모듈 매개변수는 AXI 주소 폭(기본32비트)입니다. s_axi_aclk에서 상태를 갱신하고 s_axi_aresetn은 낮을 때 리셋됩니다.</td></tr><tr><td>7-11</td><td><code class="teach-fragment">    // AXI4-Lite Write Address Channel
+    input  wire [C_S_AXI_ADDR_WIDTH-1:0] s_axi_awaddr,
+    input  wire [2:0]                    s_axi_awprot,
+    input  wire                          s_axi_awvalid,
+    output wire                          s_axi_awready,</code></td><td>AW(Write Address, 쓰기 주소): 주소·보호 속성·valid는 마스터가 보내고 ready는 슬레이브가 반환합니다. 주소만 독립적으로 수락합니다.</td></tr><tr><td>13-17</td><td><code class="teach-fragment">    // AXI4-Lite Write Data Channel
+    input  wire [31:0]                   s_axi_wdata,
+    input  wire [3:0]                    s_axi_wstrb,
+    input  wire                          s_axi_wvalid,
+    output wire                          s_axi_wready,</code></td><td>W(Write Data, 쓰기 데이터): 32비트 데이터와 4비트 strobe를 받습니다. strobe 한 비트는 8비트 바이트 하나를 선택합니다.</td></tr><tr><td>19-22</td><td><code class="teach-fragment">    // AXI4-Lite Write Response Channel
+    output reg  [1:0]                    s_axi_bresp,
+    output reg                           s_axi_bvalid,
+    input  wire                          s_axi_bready,</code></td><td>B(Write Response, 쓰기 응답): bresp는 응답 코드, bvalid는 유효 응답, bready는 마스터의 수락 준비입니다.</td></tr><tr><td>24-28</td><td><code class="teach-fragment">    // AXI4-Lite Read Address Channel
+    input  wire [C_S_AXI_ADDR_WIDTH-1:0] s_axi_araddr,
+    input  wire [2:0]                    s_axi_arprot,
+    input  wire                          s_axi_arvalid,
+    output wire                          s_axi_arready,</code></td><td>AR(Read Address, 읽기 주소): AW와 별개로 읽기 주소를 수락합니다.</td></tr><tr><td>30-34</td><td><code class="teach-fragment">    // AXI4-Lite Read Data Channel
+    output reg  [31:0]                   s_axi_rdata,
+    output reg  [1:0]                    s_axi_rresp,
+    output reg                           s_axi_rvalid,
+    input  wire                          s_axi_rready,</code></td><td>R(Read Data, 읽기 데이터): 읽은 32비트 값과 응답 코드를 유지하고 마스터 ready를 기다립니다.</td></tr><tr><td>36-44</td><td><code class="teach-fragment">    // Bus-independent register access interface
+    output wire                          wr_en,
+    output wire [7:0]                    wr_offset,
+    output wire [31:0]                   wr_data,
+    output wire [3:0]                    wr_strb,
+
+    output wire [7:0]                    rd_offset,
+    input  wire [31:0]                   rd_data
+);</code></td><td>bank는 AXI 전체를 알 필요 없이 쓰기 enable·offset·data·strobe와 읽기 offset·data만 사용합니다. 출력·입력 방향이 bank 관점과 반대인 포트도 확인합니다.</td></tr><tr><td>46-55</td><td><code class="teach-fragment">// AXI response code used by this basic slave.
+localparam [1:0] AXI_RESP_OKAY = 2&#x27;b00;
+
+// Write Address and Write Data are independent AXI channels.
+// Each channel is buffered separately until both are available.
+reg                          aw_stored;
+reg [C_S_AXI_ADDR_WIDTH-1:0] awaddr_stored;
+reg                          w_stored;
+reg [31:0]                   wdata_stored;
+reg [3:0]                    wstrb_stored;</code></td><td>OKAY는 2&#x27;b00입니다. aw_stored와 w_stored는 주소·데이터가 각각 보관되었다는 플래그이고 뒤의 저장 변수는 실제 payload입니다.</td></tr><tr><td>57-65</td><td><code class="teach-fragment">wire write_commit;
+
+// Single-outstanding-write policy:
+// Do not accept a new write while a response is pending.
+assign s_axi_awready =
+    s_axi_aresetn &amp;&amp; !aw_stored &amp;&amp; !s_axi_bvalid;
+
+assign s_axi_wready =
+    s_axi_aresetn &amp;&amp; !w_stored &amp;&amp; !s_axi_bvalid;</code></td><td>주소를 아직 받지 않고 응답도 없을 때 AWREADY를 올립니다. WREADY도 자신의 저장 여부만 독립적으로 봅니다. resetn이 0이면 둘 다 차단합니다.</td></tr><tr><td>67-75</td><td><code class="teach-fragment">// Register-bank write occurs only after BOTH address and data
+// channels have completed their independent handshakes.
+assign write_commit =
+    aw_stored &amp;&amp; w_stored &amp;&amp; !s_axi_bvalid;
+
+assign wr_en     = write_commit;
+assign wr_offset = awaddr_stored[7:0];
+assign wr_data   = wdata_stored;
+assign wr_strb   = wstrb_stored;</code></td><td>write_commit은 두 저장 플래그가 1이고 B 응답이 없을 때 참입니다. wr_en은 이를 bank에 전달합니다. wr_offset은 저장 주소의 하위8비트로 0x110과 0x10이 같은 offset 0x10을 선택합니다. 전체 주소 해독은 외부 시스템이 담당해야 합니다.</td></tr><tr><td>77-88</td><td><code class="teach-fragment">// Read side accepts one address only when no previous R response
+// is waiting for the master.
+assign s_axi_arready =
+    s_axi_aresetn &amp;&amp; !s_axi_rvalid;
+
+// custom_register_bank read path is combinational.
+// The address presented during AR handshake selects rd_data.
+assign rd_offset = s_axi_araddr[7:0];
+
+// AWPROT / ARPROT are not used by this educational register slave.
+wire unused_prot;
+assign unused_prot = ^{s_axi_awprot, s_axi_arprot};</code></td><td>이전 R 응답이 없을 때만 AR을 받습니다. rd_offset은 현재 AR 주소 하위 8비트이며 bank는 이를 조합 해석합니다. unused_prot는 보호 속성을 소비할 뿐 권한 검사를 구현하지 않습니다.</td></tr><tr><td>90-99</td><td><code class="teach-fragment">always @(posedge s_axi_aclk) begin
+    if (!s_axi_aresetn) begin
+        aw_stored     &lt;= 1&#x27;b0;
+        awaddr_stored &lt;= {C_S_AXI_ADDR_WIDTH{1&#x27;b0}};
+        w_stored      &lt;= 1&#x27;b0;
+        wdata_stored  &lt;= 32&#x27;h0000_0000;
+        wstrb_stored  &lt;= 4&#x27;b0000;
+        s_axi_bresp   &lt;= AXI_RESP_OKAY;
+        s_axi_bvalid  &lt;= 1&#x27;b0;
+    end else begin</code></td><td>상승 에지에서 동기 리셋합니다. 저장 플래그, 데이터, B 응답을 초기화합니다. 주소폭만큼 0을 반복한 연결식이 주소 초기값입니다.</td></tr><tr><td>100-104</td><td><code class="teach-fragment">        // Capture Write Address independently.
+        if (s_axi_awready &amp;&amp; s_axi_awvalid) begin
+            aw_stored     &lt;= 1&#x27;b1;
+            awaddr_stored &lt;= s_axi_awaddr;
+        end</code></td><td>AWREADY와 AWVALID가 동시에 참인 상승 에지에서 주소를 저장합니다. 이후 live AWADDR가 바뀌어도 저장값으로 쓰기를 처리합니다.</td></tr><tr><td>106-111</td><td><code class="teach-fragment">        // Capture Write Data independently.
+        if (s_axi_wready &amp;&amp; s_axi_wvalid) begin
+            w_stored     &lt;= 1&#x27;b1;
+            wdata_stored &lt;= s_axi_wdata;
+            wstrb_stored &lt;= s_axi_wstrb;
+        end</code></td><td>W도 독립 수락하여 데이터와 바이트 선택을 함께 저장합니다. AW와 W가 반드시 같은 에지일 필요가 없습니다.</td></tr><tr><td>113-122</td><td><code class="teach-fragment">        // Once both parts exist, pulse wr_en through write_commit
+        // and create the AXI B response.
+        if (write_commit) begin
+            aw_stored    &lt;= 1&#x27;b0;
+            w_stored     &lt;= 1&#x27;b0;
+            s_axi_bresp  &lt;= AXI_RESP_OKAY;
+            s_axi_bvalid &lt;= 1&#x27;b1;
+        end else if (s_axi_bvalid &amp;&amp; s_axi_bready) begin
+            s_axi_bvalid &lt;= 1&#x27;b0;
+        end</code></td><td>두 저장 플래그가 이전 에지에서 모두 참이 되면 다음 에지에 bank 쓰기와 BVALID 등록이 일어납니다. BREADY와 BVALID가 함께 참이면 응답을 내립니다. 새 commit과 기존 B 소비는 이 구조에서 별개입니다.</td></tr><tr><td>123-124</td><td><code class="teach-fragment">    end
+end</code></td><td>쓰기 순차 절차를 닫습니다. 읽기 절차와 병렬 동작합니다.</td></tr><tr><td>126-130</td><td><code class="teach-fragment">always @(posedge s_axi_aclk) begin
+    if (!s_axi_aresetn) begin
+        s_axi_rdata  &lt;= 32&#x27;h0000_0000;
+        s_axi_rresp  &lt;= AXI_RESP_OKAY;
+        s_axi_rvalid &lt;= 1&#x27;b0;</code></td><td>읽기 응답의 데이터·코드·valid를 동기 리셋합니다.</td></tr><tr><td>131-139</td><td><code class="teach-fragment">    end else begin
+        // Capture the selected register value at AR handshake.
+        if (s_axi_arready &amp;&amp; s_axi_arvalid) begin
+            s_axi_rdata  &lt;= rd_data;
+            s_axi_rresp  &lt;= AXI_RESP_OKAY;
+            s_axi_rvalid &lt;= 1&#x27;b1;
+        end else if (s_axi_rvalid &amp;&amp; s_axi_rready) begin
+            s_axi_rvalid &lt;= 1&#x27;b0;
+        end</code></td><td>AR 수락 에지에 조합 bank rd_data를 저장하고 RVALID를 올립니다. 이후 AR 주소가 변해도 저장한 RDATA는 유지됩니다. RREADY가 참인 에지에서 RVALID를 내립니다.</td></tr><tr><td>140-143</td><td><code class="teach-fragment">    end
+end
+
+endmodule</code></td><td>읽기 순차 절차와 모듈 정의를 닫습니다.</td></tr></tbody></table></details><h4>reference_rtl/custom_register_bank.v · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-13</td><td><code class="teach-fragment">module custom_register_bank (
+    input  wire        clk,
+    input  wire        resetn,
+
+    // Bus-independent register access interface.
+    // SoC 12 will connect this interface to AXI4-Lite.
+    input  wire        wr_en,
+    input  wire [7:0]  wr_offset,
+    input  wire [31:0] wr_data,
+    input  wire [3:0]  wr_strb,
+
+    input  wire [7:0]  rd_offset,
+    output reg  [31:0] rd_data,</code></td><td>bank는 clk와 resetn, 주소·데이터·strobe 기반 단순 쓰기와 조합 읽기 인터페이스를 받습니다. AXI 채널 자체는 외부 adapter가 처리합니다.</td></tr><tr><td>15-21</td><td><code class="teach-fragment">    // Hardware status / event inputs
+    input  wire        busy_i,
+    input  wire        done_i,
+    input  wire        error_i,
+    input  wire        irq_done_event_i,
+    input  wire        irq_error_event_i,
+    input  wire [31:0] data_out_i,</code></td><td>회로 상태와 이벤트 입력입니다. STATUS는 상태 입력을 읽고 IRQ는 이벤트를 기억합니다. DATA_OUT은 외부 회로에서 온 값입니다.</td></tr><tr><td>23-30</td><td><code class="teach-fragment">    // Control outputs
+    output reg         enable_o,
+    output reg  [1:0]  mode_o,
+    output reg         start_pulse_o,
+    output reg         clear_pulse_o,
+    output reg  [31:0] data_in_o,
+    output reg  [1:0]  irq_status_o
+);</code></td><td>CONTROL의 enable·mode, COMMAND의 펄스, DATA_IN 저장값, IRQ 상태를 실제 출력으로 노출합니다.</td></tr><tr><td>32-39</td><td><code class="teach-fragment">localparam [7:0] REG_CONTROL    = 8&#x27;h00;
+localparam [7:0] REG_STATUS     = 8&#x27;h04;
+localparam [7:0] REG_COMMAND    = 8&#x27;h08;
+localparam [7:0] REG_IRQ_STATUS = 8&#x27;h0C;
+localparam [7:0] REG_DATA_IN    = 8&#x27;h10;
+localparam [7:0] REG_DATA_OUT   = 8&#x27;h14;
+localparam [7:0] REG_VERSION    = 8&#x27;h18;
+localparam [7:0] REG_ID         = 8&#x27;h1C;</code></td><td>8개 32비트 레지스터 offset은 0x00~0x1C에 4바이트 간격으로 정의됩니다. 현재 시험은 CONTROL·DATA_IN·DATA_OUT·VERSION·ID·미매핑 주소를 접근합니다.</td></tr><tr><td>41-44</td><td><code class="teach-fragment">localparam [31:0] VERSION_VALUE = 32&#x27;h0001_0000;
+localparam [31:0] ID_VALUE      = 32&#x27;h524D_4150; // ASCII &quot;RMAP&quot;
+
+integer byte_index;</code></td><td>VERSION과 ID는 상수입니다. 0x524D4150은 R/M/A/P의 ASCII 코드(52/4D/41/50)를 나열한 32비트 값입니다. byte_index는 DATA_IN 바이트 선택 반복 변수입니다.</td></tr><tr><td>46-54</td><td><code class="teach-fragment">always @(posedge clk) begin
+    if (!resetn) begin
+        enable_o      &lt;= 1&#x27;b0;
+        mode_o        &lt;= 2&#x27;b00;
+        start_pulse_o &lt;= 1&#x27;b0;
+        clear_pulse_o &lt;= 1&#x27;b0;
+        data_in_o     &lt;= 32&#x27;h0000_0000;
+        irq_status_o  &lt;= 2&#x27;b00;
+    end else begin</code></td><td>상승 에지에서 resetn=0이면 모든 저장 제어·펄스·데이터·IRQ를 초기화합니다. T5는 실제 대기 B/R 응답과 저장 상태가 존재하는 것을 확인한 뒤 reset합니다.</td></tr><tr><td>55-58</td><td><code class="teach-fragment">        // W1P pulses are one clock wide by default.
+        start_pulse_o &lt;= 1&#x27;b0;
+        clear_pulse_o &lt;= 1&#x27;b0;
+</code></td><td>COMMAND 펄스는 정상 에지마다 기본값 0으로 예약합니다. 같은 에지에 유효한 COMMAND 쓰기가 있으면 뒤의 대입이 선택된 펄스를 1로 설정할 수 있습니다.</td></tr><tr><td>59-70</td><td><code class="teach-fragment">        // Hardware events set IRQ status.
+        // Event set has priority over software clear in the same cycle.
+        if (irq_done_event_i) begin
+            irq_status_o[0] &lt;= 1&#x27;b1;
+        end else if (
+            wr_en &amp;&amp;
+            (wr_offset == REG_IRQ_STATUS) &amp;&amp;
+            wr_strb[0] &amp;&amp;
+            wr_data[0]
+        ) begin
+            irq_status_o[0] &lt;= 1&#x27;b0;
+        end</code></td><td>IRQ bit0은 done 이벤트가 우선입니다. 이벤트가 없을 때만 주소·strobe[0]·wr_data[0] 조건으로 W1C(Write One to Clear, 1을 쓰면 해제)를 수행합니다.</td></tr><tr><td>72-81</td><td><code class="teach-fragment">        if (irq_error_event_i) begin
+            irq_status_o[1] &lt;= 1&#x27;b1;
+        end else if (
+            wr_en &amp;&amp;
+            (wr_offset == REG_IRQ_STATUS) &amp;&amp;
+            wr_strb[0] &amp;&amp;
+            wr_data[1]
+        ) begin
+            irq_status_o[1] &lt;= 1&#x27;b0;
+        end</code></td><td>IRQ bit1도 error 이벤트가 해당 비트의 W1C 해제보다 우선합니다. 이 장에서 두 이벤트 입력은 0이며 IRQ 충돌 시험은 제22장에 해당합니다.</td></tr><tr><td>83-90</td><td><code class="teach-fragment">        if (wr_en) begin
+            case (wr_offset)
+                REG_CONTROL: begin
+                    if (wr_strb[0]) begin
+                        enable_o &lt;= wr_data[0];
+                        mode_o   &lt;= wr_data[2:1];
+                    end
+                end</code></td><td>CONTROL은 첫 바이트 strobe가 1이면 bit0을 enable, bits[2:1]을 mode에 저장합니다. 5는 enable1/mode10, 7은 enable1/mode11입니다.</td></tr><tr><td>92-97</td><td><code class="teach-fragment">                REG_COMMAND: begin
+                    if (wr_strb[0]) begin
+                        start_pulse_o &lt;= wr_data[0];
+                        clear_pulse_o &lt;= wr_data[1];
+                    end
+                end</code></td><td>COMMAND의 두 비트는 각각 start/clear 펄스를 구동합니다. 이 장의 자극은 COMMAND 쓰기를 시험하지 않습니다.</td></tr><tr><td>99-107</td><td><code class="teach-fragment">                REG_DATA_IN: begin
+                    // Byte-enable write using WSTRB-equivalent strobes.
+                    for (byte_index = 0; byte_index &lt; 4; byte_index = byte_index + 1) begin
+                        if (wr_strb[byte_index]) begin
+                            data_in_o[byte_index*8 +: 8] &lt;=
+                                wr_data[byte_index*8 +: 8];
+                        end
+                    end
+                end</code></td><td>byte_index*8 +: 8은 [7:0], [15:8], [23:16], [31:24]를 선택합니다. strobe0101이면 byte0과 byte2만 갱신합니다. strobe0000은 모든 저장값을 유지합니다.</td></tr><tr><td>109-115</td><td><code class="teach-fragment">                default: begin
+                    // RO / reserved / unmapped writes have no effect.
+                end
+            endcase
+        end
+    end
+end</code></td><td>RO·reserved·미매핑 주소 쓰기는 저장 변화 없이 무시합니다. T4는 VERSION과 미매핑 FC의 쓰기 후 읽기값을 확인합니다. adapter는 이때도 OKAY 응답을 반환합니다.</td></tr><tr><td>117-121</td><td><code class="teach-fragment">always @(*) begin
+    case (rd_offset)
+        REG_CONTROL: begin
+            rd_data = {29&#x27;h0, mode_o, enable_o};
+        end</code></td><td>CONTROL 읽기는 29비트0, mode2비트, enable1비트를 연결합니다. mode10/enable1이면 0x00000005입니다.</td></tr><tr><td>123-130</td><td><code class="teach-fragment">        REG_STATUS: begin
+            rd_data = {29&#x27;h0, error_i, done_i, busy_i};
+        end
+
+        REG_COMMAND: begin
+            // W1P command register has no retained state.
+            rd_data = 32&#x27;h0000_0000;
+        end</code></td><td>STATUS는 실제 입력 상태 3비트를 연결하고, COMMAND는 저장 상태가 없으므로 0을 돌려줍니다.</td></tr><tr><td>132-138</td><td><code class="teach-fragment">        REG_IRQ_STATUS: begin
+            rd_data = {30&#x27;h0, irq_status_o};
+        end
+
+        REG_DATA_IN: begin
+            rd_data = data_in_o;
+        end</code></td><td>IRQ는 저장된 두 비트, DATA_IN은 저장된 32비트를 반환합니다.</td></tr><tr><td>140-150</td><td><code class="teach-fragment">        REG_DATA_OUT: begin
+            rd_data = data_out_i;
+        end
+
+        REG_VERSION: begin
+            rd_data = VERSION_VALUE;
+        end
+
+        REG_ID: begin
+            rd_data = ID_VALUE;
+        end</code></td><td>DATA_OUT은 외부 입력, VERSION과 ID는 상수를 반환합니다. 읽기 데이터의 출처가 서로 다름을 구별합니다.</td></tr><tr><td>152-158</td><td><code class="teach-fragment">        default: begin
+            rd_data = 32&#x27;h0000_0000;
+        end
+    endcase
+end
+
+endmodule</code></td><td>미매핑 주소는 0을 돌려주며 조합 case를 닫습니다. 전체 주소 오류 응답을 제공하는 설계는 아닙니다.</td></tr></tbody></table></details></div>
+</section>
+<section class="section" id="s02"><h2><span class="num">02</span>다섯 채널과 시간 계약</h2><table><thead><tr><th>채널</th><th>payload</th><th>수락 조건</th></tr></thead><tbody><tr><td>AW (쓰기 주소)</td><td>AWADDR, AWPROT</td><td>AWVALID &amp;&amp; AWREADY</td></tr><tr><td>W (쓰기 데이터)</td><td>WDATA, WSTRB</td><td>WVALID &amp;&amp; WREADY</td></tr><tr><td>B (쓰기 응답)</td><td>BRESP</td><td>BVALID &amp;&amp; BREADY</td></tr><tr><td>AR (읽기 주소)</td><td>ARADDR, ARPROT</td><td>ARVALID &amp;&amp; ARREADY</td></tr><tr><td>R (읽기 데이터)</td><td>RDATA, RRESP</td><td>RVALID &amp;&amp; RREADY</td></tr></tbody></table><p>AW와 W는 서로 다른 상승 에지에서 수락될 수 있습니다. aw_stored와 w_stored가 모두 1이 된 뒤 write_commit이 활성화되고 다음 상승 에지에서 bank에 쓰기가 반영됩니다. 이때 두 저장 플래그를 지우고 BVALID를 올립니다. BREADY=0이면 BVALID와 BRESP를 보존하며 새 AW/W를 수락하지 않습니다. AR은 독립적으로 진행할 수 있고 RVALID가 대기하는 동안 새 AR을 수락하지 않습니다.</p><table><thead><tr><th>상승 에지</th><th>AW 먼저</th><th>W 먼저</th><th>동시 도착</th></tr></thead><tbody><tr><td>E0</td><td>AW 수락</td><td>W 수락</td><td>AW/W 수락</td></tr><tr><td>E1</td><td>대기</td><td>대기</td><td>commit·B 생성</td></tr><tr><td>E2</td><td>W 수락(예시)</td><td>AW 수락(예시)</td><td>B 대기 또는 수락</td></tr><tr><td>E3</td><td>commit·B 생성</td><td>commit·B 생성</td><td>이전 응답 종료 후 새 거래</td></tr></tbody></table><p>표의 commit은 해당 상승 에지에서 wr_en을 bank가 샘플링하는 사건이며 응답은 에지 이후 관찰됩니다. E2의 두 번째 수락 시점은 설명을 위한 예시입니다. TB는 하강 에지에 입력을 변경하며 모니터는 상승 에지의 핸드셰이크를 집계합니다.</p>
+<div class="teach-note"><h3>판서 · AW와 W가 동시에 와도 쓰기는 다음 에지다</h3><p>10ns 주기의 E0에서 AW/W가 모두 수락되면 에지 전 aw_stored·w_stored는0입니다. E0의 NBA 갱신 후 둘이1이 되어 wr_en이 올라가고, E1에서 bank가 이를 샘플링하여 저장합니다. E1 뒤 BVALID1이 보입니다. E0에서 버스 수락과 bank 쓰기가 동시에 일어난다고 읽으면 한 클록을 놓칩니다.</p><p>BREADY0에서 BVALID1·BRESP00을 유지해야 하며, 이 구현은 다음 AW/W의 ready도0으로 막습니다. 응답을 소비한 에지 뒤에야 ready가 복귀하므로 한 에지에 이전 B 완료와 새 AW 수락을 겹치는 처리량 최적화는 없습니다. 읽기와 쓰기는 독립적으로 각각 한 미결 거래를 허용합니다.</p><h4>핵심 구문 ① · 다섯 채널의 전달 방향과 수락 조건</h4><table><thead><tr><th scope="col">채널</th><th scope="col">보내는 쪽 → 받는 쪽</th><th scope="col">실제 수락 조건</th><th scope="col">전송 내용</th></tr></thead><tbody><tr><td>AW</td><td>마스터 → adapter</td><td>awvalid &amp;&amp; awready</td><td>awaddr</td></tr><tr><td>W</td><td>마스터 → adapter</td><td>wvalid &amp;&amp; wready</td><td>wdata, wstrb</td></tr><tr><td>B</td><td>adapter → 마스터</td><td>bvalid &amp;&amp; bready</td><td>bresp</td></tr><tr><td>AR</td><td>마스터 → adapter</td><td>arvalid &amp;&amp; arready</td><td>araddr</td></tr><tr><td>R</td><td>adapter → 마스터</td><td>rvalid &amp;&amp; rready</td><td>rdata, rresp</td></tr></tbody></table><p>수락은 해당 신호 두 개가 모두 1인 상승 에지에서 일어납니다. VALID는 정보가 유효하다는 표시, READY는 수신 준비 표시입니다. READY가 먼저 1이어도 되고 VALID가 먼저 1이어도 됩니다. 주소와 데이터의 순서는 강제되지 않습니다.</p><h4>핵심 구문 ② · 저장 플래그와 commit</h4><table><thead><tr><th scope="col">실제 식</th><th scope="col">조건의 의미</th></tr></thead><tbody><tr><td><code>s_axi_aresetn &amp;&amp; !aw_stored &amp;&amp; !s_axi_bvalid</code></td><td>리셋 해제·미저장 주소·이전 응답 없음</td></tr><tr><td><code>s_axi_aresetn &amp;&amp; !w_stored &amp;&amp; !s_axi_bvalid</code></td><td>데이터 쪽은 주소 저장 여부와 독립</td></tr><tr><td><code>aw_stored &amp;&amp; w_stored &amp;&amp; !s_axi_bvalid</code></td><td>저장된 두 payload로 한 번 쓰기</td></tr><tr><td><code>wr_offset=awaddr_stored[7:0]</code></td><td>live 주소가 아니라 저장 주소의 하위8비트</td></tr><tr><td><code>s_axi_aresetn &amp;&amp; !s_axi_rvalid</code></td><td>이전 읽기 응답이 없을 때만 새 AR 수락</td></tr></tbody></table><p>예를 들어 AW가 E0, W가 E3에 수락되는 경우 E0 뒤에는 aw_stored만1입니다. E3의 NBA(비차단 대입 갱신) 후 두 플래그가1이 되어 wr_en이 상승합니다. bank는 E4 상승 에지에 저장하고 같은 에지 뒤 BVALID가1이 됩니다. 이 표의 E0~E4는 설명용 상대 클록이며 실제 측정 시간이 아닙니다.</p><table><thead><tr><th scope="col">상승 에지</th><th scope="col">이벤트</th><th scope="col">에지 직후 aw_stored/w_stored</th><th scope="col">wr_en</th><th scope="col">BVALID</th></tr></thead><tbody><tr><td>E0</td><td>AW 수락</td><td>10</td><td>0</td><td>0</td></tr><tr><td>E1~E2</td><td>W 대기</td><td>10</td><td>0</td><td>0</td></tr><tr><td>E3</td><td>W 수락</td><td>11</td><td>1</td><td>0</td></tr><tr><td>E4</td><td>bank commit</td><td>00</td><td>0</td><td>1</td></tr><tr><td>E5~E6</td><td>BREADY=0</td><td>00</td><td>0</td><td>1</td></tr><tr><td>E7</td><td>B 수락</td><td>00</td><td>0</td><td>0</td></tr></tbody></table><p>반대로 W가 먼저 와도 저장 플래그 순서만 바뀝니다. 이 구현의 read/write 경로는 별도 순차 블록이어서 동시에 미결 읽기와 쓰기 응답을 가질 수 있지만 같은 방향의 여러 미결 거래를 허용하지 않습니다.</p></div>
+</section>
+<section class="section" id="s03"><h2><span class="num">03</span>레지스터 맵과 WSTRB</h2><table><thead><tr><th>Offset</th><th>레지스터</th><th>계약</th></tr></thead><tbody><tr><td>0x00</td><td>REG_CONTROL</td><td>bit 0 enable, bits 2:1 mode · byte 0</td></tr><tr><td>0x04</td><td>REG_STATUS</td><td>bit 2 error, bit 1 done, bit 0 busy · RO</td></tr><tr><td>0x08</td><td>REG_COMMAND</td><td>bit 0 start, bit 1 clear · W1P, 읽기 0</td></tr><tr><td>0x0C</td><td>REG_IRQ_STATUS</td><td>bit 0 done, bit 1 error · W1C, event 우선</td></tr><tr><td>0x10</td><td>REG_DATA_IN</td><td>32비트, byte별 WSTRB</td></tr><tr><td>0x14</td><td>REG_DATA_OUT</td><td>하드웨어 data_out_i · RO</td></tr><tr><td>0x18</td><td>REG_VERSION</td><td>0x00010000 · RO</td></tr><tr><td>0x1C</td><td>REG_ID</td><td>0x524D4150 (RMAP) · RO</td></tr></tbody></table><p>RO(알오, 읽기 전용), W1P(더블유원피, 1 쓰기 펄스), W1C(더블유원씨, 1 쓰기 해제)를 구분합니다. COMMAND와 IRQ의 실제 펄스·이벤트 경합은 이 장의 시험 범위에 포함되지 않습니다.</p><table><thead><tr><th>바이트</th><th>3 [31:24]</th><th>2 [23:16]</th><th>1 [15:8]</th><th>0 [7:0]</th></tr></thead><tbody><tr><td>기존</td><td>11</td><td>22</td><td>33</td><td>44</td></tr><tr><td>새 데이터</td><td>AA</td><td>BB</td><td>CC</td><td>DD</td></tr><tr><td>WSTRB=0101</td><td>0</td><td>1</td><td>0</td><td>1</td></tr><tr><td>결과</td><td>11</td><td>BB</td><td>33</td><td>DD</td></tr></tbody></table><p>WSTRB(라이트 스트로브, 바이트 쓰기 활성 신호)가 0인 바이트는 기존 값이 유지됩니다. 0000은 레지스터 변화가 없어도 이 어댑터에서는 정상 쓰기 거래와 OKAY 응답을 생성합니다. 미매핑 쓰기와 RO 쓰기는 무시되며 미매핑 읽기는 0, 응답은 OKAY입니다. 이는 이 구현의 정책이지 모든 AXI 슬레이브의 일반 규칙이 아닙니다. 주소 0x110은 하위 8비트 0x10으로 해석됩니다. 상위 주소 디코딩은 외부 시스템에서 담당해야 합니다.</p>
+<div class="teach-note"><h3>수치 계산 · WSTRB는 비트가 아니라 바이트를 선택한다</h3><p>기존11223344에 새AABBCCDD·WSTRB0101을 쓰면 byte0의44가DD, byte2의22가BB로 바뀌어11BB33DD입니다. byte1의33과 byte3의11은 보존됩니다. byte_index*8 +: 8은 시작0·8·16·24에서 각각8비트를 고르는 구문입니다.</p><p>CONTROL의5=2진101은 enable=1, mode=10입니다. WSTRB0000도 버스 거래는 수락·commit·OKAY 응답을 만들지만 데이터는 바뀌지 않습니다. 미매핑 주소를 오류 응답으로 만드는 회로도 가능하나 현재 스냅샷은 무시/읽기0 정책입니다. 주소110과10의 별칭은 하위8비트만 쓰기 때문에 발생합니다.</p><h4>핵심 구문 ③ · indexed part-select의 바이트별 의미</h4><table><thead><tr><th scope="col">byte_index</th><th scope="col">시작 비트</th><th scope="col">선택 범위</th><th scope="col">기존 11223344</th><th scope="col">신규 AABBCCDD</th><th scope="col">WSTRB 0101</th><th scope="col">결과</th></tr></thead><tbody><tr><td>0</td><td>0</td><td>[7:0]</td><td>44</td><td>DD</td><td>1</td><td>DD</td></tr><tr><td>1</td><td>8</td><td>[15:8]</td><td>33</td><td>CC</td><td>0</td><td>33</td></tr><tr><td>2</td><td>16</td><td>[23:16]</td><td>22</td><td>BB</td><td>1</td><td>BB</td></tr><tr><td>3</td><td>24</td><td>[31:24]</td><td>11</td><td>AA</td><td>0</td><td>11</td></tr></tbody></table><p><code>data_in_o[byte_index*8 +: 8] &lt;= wr_data[byte_index*8 +: 8]</code>는 시작 비트부터 위쪽으로 8비트를 선택합니다. byte_index=2이면 [23:16]입니다. 반복문의 각 조건은 해당 바이트 strobe를 따로 검사하므로 나머지 바이트는 유지됩니다. 상위 바이트부터 다시 읽으면 11 BB 33 DD입니다.</p><p>32비트 CONTROL의 <code>{29'h0,mode_o,enable_o}</code>는 bit31~3을0, bit2~1을 mode, bit0을 enable로 연결합니다. mode=2'b10, enable=1이면 하위3비트는101, 읽기값은5입니다. 7을 쓰면 mode=11, enable=1입니다.</p><table><thead><tr><th scope="col">접근</th><th scope="col">이 구현의 정책</th><th scope="col">현재 TB 검증 범위</th></tr></thead><tbody><tr><td>DATA_IN strobe F</td><td>모든 바이트 갱신</td><td>T1</td></tr><tr><td>DATA_IN strobe 5</td><td>byte0/2만 갱신</td><td>T2</td></tr><tr><td>DATA_IN strobe 0</td><td>저장 유지, 응답은 OKAY</td><td>T4</td></tr><tr><td>VERSION 쓰기</td><td>상수 유지, 응답은 OKAY</td><td>T4</td></tr><tr><td>FC 미매핑</td><td>쓰기 무시, 읽기0</td><td>T4</td></tr><tr><td>0x110 읽기</td><td>하위8비트10으로 별칭</td><td>T4</td></tr><tr><td>COMMAND/IRQ</td><td>펄스와 W1C/event 우선</td><td>코드 설명만, 동적 시험 없음</td></tr></tbody></table></div>
+</section>
+<section class="section" id="s04"><h2><span class="num">04</span>검증 시나리오와 독립 판정</h2><table><thead><tr><th>시험</th><th>주요 자극</th><th>기대</th></tr></thead><tbody><tr><td>T1</td><td>AW → W, 전체 쓰기</td><td>DATA_IN 11223344</td></tr><tr><td>T2</td><td>W → AW, WSTRB 0101</td><td>DATA_IN 11BB33DD</td></tr><tr><td>T3</td><td>CONTROL 쓰기 및 VERSION/ID 읽기</td><td>enable=1, mode=2, 상수 유지</td></tr><tr><td>T4</td><td>동시 AW/W, WSTRB 0000, RO/미매핑 쓰기, 별칭·DATA_OUT 읽기</td><td>기존 값 유지, 0xFC 읽기 0, 0x110 별칭</td></tr><tr><td>T5</td><td>B/R 대기 상태에서 reset</td><td>응답 취소·CONTROL/DATA_IN 초기화</td></tr></tbody></table><p>수락된 AWADDR와 WDATA/WSTRB를 각각 saved_aw, saved_w, saved_strb에 저장하고 실제 wr_en 에지에서 비교합니다. 수락 후 live 입력을 일부러 변경하므로 저장 로직 없이 현재 버스값을 쓰는 결함을 검출할 수 있습니다. 읽기 주소도 수락 뒤 변경하여 RDATA가 조합 rd_data를 그대로 따라가는 결함을 확인합니다. 대기 중 응답 코드와 valid도 검사합니다.</p><p>T5는 마지막 쓰기 commit 이후 B 응답을 받지 않은 상태에서 AR을 수락시킵니다. BVALID와 RVALID가 모두 1인 것을 확인한 후 resetn을 낮춥니다. 동기 리셋 이후 응답과 저장 상태가 초기화되어야 합니다. 이때 완료되지 않은 B/R은 정상 응답 수에 포함하지 않습니다.</p>
+<div class="teach-note"><h3>검증 의도 · 수락 후 입력을 바꾸는 이유</h3><p>send_aw는 수락 뒤 live 주소를FC로, send_w는 데이터를DEADBEEF·strobe0000으로 바꿉니다. DUT가 저장값 대신 현재 버스값을 사용하면 COMMIT_CONTRACT가 실패합니다. read_expect도 AR 수락 뒤 다른 주소를 넣어 RDATA 저장과 대기 유지를 시험합니다.</p><p>T5는 마지막 쓰기가 반영되고 BVALID·RVALID가 실제로 기다리는 상태를 먼저 증명한 뒤 리셋합니다. 아무 응답도 없는 상태에서 리셋하고 ‘대기 응답 취소’를 검증했다고 말할 수 없기 때문입니다. 취소된 응답은 정상 완료 집계에서 제외합니다.</p><h4>핵심 구문 ④ · 왜 수락 뒤 live 값을 바꾸는가</h4><table><thead><tr><th scope="col">Task</th><th scope="col">수락된 값</th><th scope="col">수락 뒤 변경</th><th scope="col">검출 목적</th></tr></thead><tbody><tr><td>send_aw(0x10)</td><td>AWADDR=10</td><td>AWADDR=FC</td><td>저장 주소 사용</td></tr><tr><td>send_w(11223344,F)</td><td>WDATA=11223344, WSTRB=F</td><td>DEADBEEF, 0</td><td>저장 데이터 및 strobe 사용</td></tr><tr><td>read_expect(0x10,...)</td><td>ARADDR=10</td><td>ARADDR=18</td><td>RDATA가 AR 수락 시 저장되었는지 확인</td></tr></tbody></table><p>수락 이후 VALID를 내렸으므로 변경된 입력은 새 거래가 아닙니다. monitor가 saved_aw/saved_w/saved_strb를 실제 handshake에서 저장하고 wr_en에 비교하므로 adapter가 live 값을 잘못 사용하면 검출됩니다. read_expect는 captured와 RDATA를 비교해 현재 ARADDR에 따라 응답이 바뀌지 않아야 한다는 계약을 검사합니다.</p><h4>핵심 구문 ⑤ · Backpressure와 응답 소비</h4><p>finish_b에서 BREADY는 기본0입니다. BVALID1을 발견한 뒤에도 repeat(3) 동안 BVALID1·BRESP00·AWREADY0·WREADY0을 확인합니다. 이후 BREADY를 올려 다음 상승 에지에 한 번만 소비하고 다음 하강 에지에 BVALID0을 확인합니다. read_expect도 RREADY0에서 세 하강 에지 동안 RDATA/RRESP/RVALID 유지와 ARREADY0을 검사합니다. 이는 정해진 대기 구간의 검증이며 모든 가능한 stall 길이와 모든 에지의 프로토콜을 완전 검증한 것은 아닙니다.</p></div>
+</section>
+<section class="section" id="s05"><h2><span class="num">05</span>테스트벤치 전체 코드</h2><div class="codeblock"><div class="codebar"><span>tb/ch15/tb_axi4lite_registers.sv · SystemVerilog</span></div><pre tabindex="0"><code>`timescale 1ns/1ps
+// 제15장: 기존 AXI4-Lite 어댑터 + 레지스터 뱅크를 읽기 전용 DUT로 검증.
+// AW/W 독립 수락, B/R 대기 유지, WSTRB 부분 쓰기, Reset을 자동 판정한다.
+module tb_axi4lite_registers;
+    reg clk=0, resetn=0;
+    always #5 clk=~clk;
+    reg [31:0] awaddr=0, wdata=0, araddr=0;
+    reg [3:0] wstrb=0;
+    reg awvalid=0, wvalid=0, bready=0, arvalid=0, rready=0;
+    wire awready,wready,bvalid,arready,rvalid;
+    wire [1:0] bresp,rresp;
+    wire [31:0] rdata;
+    wire wr_en;
+    wire [7:0] wr_offset,rd_offset;
+    wire [31:0] wr_data,rd_data;
+    wire [3:0] wr_strb;
+    wire enable_o,start_pulse_o,clear_pulse_o;
+    wire [1:0] mode_o,irq_status_o;
+    wire [31:0] data_in_o;
+    integer checks=0, commits=0;
+    integer aw_count=0, w_count=0, b_count=0, ar_count=0, r_count=0;
+    reg [31:0] saved_aw, saved_w;
+    reg [3:0] saved_strb;
+    reg [31:0] captured;
+
+    axi4lite_slave_adapter dut (
+        .s_axi_aclk(clk), .s_axi_aresetn(resetn),
+        .s_axi_awaddr(awaddr), .s_axi_awprot(3'b0),
+        .s_axi_awvalid(awvalid), .s_axi_awready(awready),
+        .s_axi_wdata(wdata), .s_axi_wstrb(wstrb),
+        .s_axi_wvalid(wvalid), .s_axi_wready(wready),
+        .s_axi_bresp(bresp), .s_axi_bvalid(bvalid), .s_axi_bready(bready),
+        .s_axi_araddr(araddr), .s_axi_arprot(3'b0),
+        .s_axi_arvalid(arvalid), .s_axi_arready(arready),
+        .s_axi_rdata(rdata), .s_axi_rresp(rresp),
+        .s_axi_rvalid(rvalid), .s_axi_rready(rready),
+        .wr_en(wr_en), .wr_offset(wr_offset), .wr_data(wr_data),
+        .wr_strb(wr_strb), .rd_offset(rd_offset), .rd_data(rd_data)
+    );
+    custom_register_bank bank (
+        .clk(clk), .resetn(resetn), .wr_en(wr_en),
+        .wr_offset(wr_offset), .wr_data(wr_data), .wr_strb(wr_strb),
+        .rd_offset(rd_offset), .rd_data(rd_data),
+        .busy_i(1'b0), .done_i(1'b0), .error_i(1'b0),
+        .irq_done_event_i(1'b0), .irq_error_event_i(1'b0),
+        .data_out_i(32'h12345678), .enable_o(enable_o),
+        .mode_o(mode_o), .start_pulse_o(start_pulse_o),
+        .clear_pulse_o(clear_pulse_o), .data_in_o(data_in_o),
+        .irq_status_o(irq_status_o)
+    );
+    // (추가) 실제 수락 및 저장된 payload를 BFM과 독립적으로 검증.
+    always @(posedge clk) if(resetn) begin
+        if(wr_en === 1'b1) begin
+            if(aw_count!=commits+1 || w_count!=commits+1 ||
+               wr_offset !== saved_aw[7:0] || wr_data !== saved_w ||
+               wr_strb !== saved_strb)
+                $fatal(1,&quot;FAIL COMMIT_CONTRACT&quot;);
+            commits++;
+        end
+        if(awvalid &amp;&amp; awready) begin
+            aw_count++; saved_aw=awaddr;
+        end
+        if(wvalid &amp;&amp; wready) begin
+            w_count++; saved_w=wdata; saved_strb=wstrb;
+        end
+        if(bvalid &amp;&amp; bready) begin
+            if(bresp !== 2'b00 || b_count&gt;=commits)
+                $fatal(1,&quot;FAIL B_TRANSACTION&quot;);
+            b_count++;
+        end
+        if(arvalid &amp;&amp; arready) ar_count++;
+        if(rvalid &amp;&amp; rready) begin
+            if(rresp !== 2'b00 || r_count&gt;=ar_count)
+                $fatal(1,&quot;FAIL R_TRANSACTION&quot;);
+            r_count++;
+        end
+    end
+
+    task automatic send_aw(input [31:0] address);
+        integer guard;
+        begin
+            @(negedge clk);
+            awaddr=address; awvalid=1;
+            guard=0;
+            while(awready !== 1'b1) begin
+                @(negedge clk);
+                guard=guard+1;
+                if(guard&gt;100) $fatal(1,&quot;FAIL AW_TIMEOUT&quot;);
+            end
+            @(posedge clk);
+            @(negedge clk);
+            awvalid=0;
+            // (추가) 수락 이후 주소를 바꿔 저장 여부를 검증한다.
+            awaddr=32'h000000FC;
+        end
+    endtask
+
+    task automatic send_w(input [31:0] data,input [3:0] strobe);
+        integer guard;
+        begin
+            @(negedge clk);
+            wdata=data; wstrb=strobe; wvalid=1;
+            guard=0;
+            while(wready !== 1'b1) begin
+                @(negedge clk);
+                guard=guard+1;
+                if(guard&gt;100) $fatal(1,&quot;FAIL W_TIMEOUT&quot;);
+            end
+            @(posedge clk);
+            @(negedge clk);
+            wvalid=0;
+            // (추가) 수락 이후 live 데이터와 스트로브를 변경한다.
+            wdata=32'hDEADBEEF; wstrb=4'b0000;
+        end
+    endtask
+
+    task automatic finish_b;
+        integer guard;
+        begin
+            guard=0;
+            while(bvalid !== 1'b1) begin
+                @(negedge clk);
+                guard=guard+1;
+                if(guard&gt;100) $fatal(1,&quot;FAIL B_TIMEOUT&quot;);
+            end
+            if(bresp !== 2'b00) $fatal(1,&quot;FAIL BRESP&quot;);
+            // 응답을 받지 않는 동안 BVALID는 내려가면 안 된다.
+            repeat(3) begin
+                @(negedge clk);
+                if(bvalid !== 1'b1 || bresp !== 2'b00 || awready !== 1'b0 ||
+                   wready !== 1'b0) $fatal(1,&quot;FAIL B_HOLD&quot;);
+            end
+            bready=1;
+            @(posedge clk);
+            @(negedge clk);
+            bready=0;
+            if(bvalid !== 1'b0) $fatal(1,&quot;FAIL B_CLEAR&quot;);
+            checks=checks+1;
+        end
+    endtask
+
+    task automatic read_expect(input [31:0] address,input [31:0] expected);
+        integer guard;
+        begin
+            @(negedge clk);
+            araddr=address; arvalid=1;
+            guard=0;
+            while(arready !== 1'b1) begin
+                @(negedge clk);
+                guard=guard+1;
+                if(guard&gt;100) $fatal(1,&quot;FAIL AR_TIMEOUT&quot;);
+            end
+            @(posedge clk);
+            @(negedge clk);
+            arvalid=0;
+            if(rvalid !== 1'b1 || rresp !== 2'b00 || rdata !== expected)
+                $fatal(1,&quot;FAIL READ addr=%h got=%h exp=%h&quot;,address,rdata,expected);
+            captured=rdata;
+            // (추가) 다른 주소를 제시해도 캡처한 R payload는 유지되어야 한다.
+            araddr=(address[7:0]==8'h18)?32'h1C:32'h18;
+            repeat(3) begin
+                @(negedge clk);
+                if(rvalid !== 1'b1 || rresp !== 2'b00 || arready !== 1'b0 ||
+                   rdata !== captured) $fatal(1,&quot;FAIL R_HOLD&quot;);
+            end
+            rready=1;
+            @(posedge clk);
+            @(negedge clk);
+            rready=0;
+            if(rvalid !== 1'b0) $fatal(1,&quot;FAIL R_CLEAR&quot;);
+            checks=checks+1;
+        end
+    endtask
+
+    initial begin
+        #20000;
+        $fatal(1,&quot;FAIL GLOBAL_TIMEOUT&quot;);
+    end
+
+`ifdef VCD
+    initial begin
+        $dumpfile(&quot;ch15_axi4lite.vcd&quot;);
+        $dumpvars(0,tb_axi4lite_registers);
+    end
+`endif
+    initial begin
+        repeat(4) @(negedge clk);
+        if(awready !== 1'b0 || wready !== 1'b0 ||
+           arready !== 1'b0) $fatal(1,&quot;FAIL RESET_READY&quot;);
+        resetn=1;
+        @(negedge clk);
+
+        // T1: AW를 먼저 보내고 W가 오기 전에는 commit하지 않는다.
+        send_aw(32'h10);
+        repeat(3) @(negedge clk);
+        if(commits!=0 || bvalid !== 1'b0) $fatal(1,&quot;FAIL AW_ONLY&quot;);
+        send_w(32'h11223344,4'b1111);
+        finish_b();
+        read_expect(32'h10,32'h11223344);
+        $display(&quot;T1_AW_BEFORE_W_PASS&quot;);
+
+        // T2: W를 먼저 보내도 독립 버퍼에 보관된다.
+        send_w(32'hAABBCCDD,4'b0101);
+        repeat(3) @(negedge clk);
+        if(commits!=1 || bvalid !== 1'b0) $fatal(1,&quot;FAIL W_ONLY&quot;);
+        send_aw(32'h10);
+        finish_b();
+        read_expect(32'h10,32'h11BB33DD);
+        $display(&quot;T2_W_BEFORE_AW_WSTRB_PASS&quot;);
+
+        // T3: CONTROL, VERSION, ID 및 읽기 응답 유지.
+        send_aw(32'h00);
+        send_w(32'h00000005,4'b0001);
+        finish_b();
+        read_expect(32'h00,32'h00000005);
+        read_expect(32'h18,32'h00010000);
+        read_expect(32'h1C,32'h524D4150);
+        if(enable_o !== 1'b1 || mode_o !== 2'b10)
+            $fatal(1,&quot;FAIL CONTROL_OUTPUT&quot;);
+        $display(&quot;T3_CONTROL_RO_PASS&quot;);
+
+        // (추가) T4: 동시 AW/W, zero strobe, RO 및 미매핑 쓰기.
+        fork
+            send_aw(32'h10);
+            send_w(32'hFFFFFFFF,4'b0000);
+        join
+        finish_b();
+        read_expect(32'h10,32'h11BB33DD);
+        send_aw(32'h18); send_w(32'hFFFFFFFF,4'b1111);
+        finish_b();
+        read_expect(32'h18,32'h00010000);
+        send_aw(32'hFC); send_w(32'hFFFFFFFF,4'b1111);
+        finish_b();
+        read_expect(32'hFC,32'h00000000);
+        read_expect(32'h110,32'h11BB33DD); // 하위 8비트 주소 별칭
+        read_expect(32'h14,32'h12345678);
+        $display(&quot;T4_ZERO_RO_ALIAS_PASS&quot;);
+
+        // (변경) T5: B/R 응답이 실제로 대기 중일 때 리셋.
+        send_aw(32'h00); send_w(32'h00000007,4'b0001);
+        @(negedge clk);
+        if(bvalid !== 1'b1 || bresp !== 2'b00 || enable_o !== 1'b1 ||
+           mode_o !== 2'b11 || data_in_o !== 32'h11BB33DD)
+            $fatal(1,&quot;FAIL RESET_B_PRECONDITION&quot;);
+        araddr=32'h10; arvalid=1;
+        @(posedge clk);
+        @(negedge clk); arvalid=0;
+        if(rvalid !== 1'b1 || rdata !== 32'h11BB33DD || bvalid !== 1'b1)
+            $fatal(1,&quot;FAIL RESET_R_PRECONDITION&quot;);
+        resetn=0;
+        repeat(3) @(negedge clk);
+        if(bvalid !== 1'b0 || rvalid !== 1'b0 ||
+           enable_o !== 1'b0 || data_in_o !== 32'b0)
+            $fatal(1,&quot;FAIL RESET_CLEAR&quot;);
+        resetn=1;
+        @(negedge clk);
+        read_expect(32'h10,32'h00000000);
+        read_expect(32'h00,32'h00000000);
+        if(commits!=7 || checks!=18 || aw_count!=7 || w_count!=7 ||
+           b_count!=6 || ar_count!=13 || r_count!=12)
+            $fatal(1,&quot;FAIL COUNTS commits=%0d checks=%0d&quot;,commits,checks);
+        $display(&quot;T5_RESET_PENDING_PASS&quot;);
+        $display(&quot;PASS CH15 commits=%0d checks=%0d&quot;,commits,checks);
+        $finish;
+    end
+endmodule
+</code></pre></div><table><thead><tr><th>코드</th><th>역할</th></tr></thead><tbody><tr><td>send_aw / send_w</td><td>주소와 데이터의 독립 구동·수락 후 입력 변경</td></tr><tr><td>fork ... join</td><td>동시 AW/W 구동</td></tr><tr><td>always @(posedge clk)</td><td>채널 수락 및 실제 쓰기 commit 독립 집계</td></tr><tr><td>saved_aw / saved_w / saved_strb</td><td>수락된 입력의 기대 payload 보존</td></tr><tr><td>finish_b</td><td>B 응답 및 대기 중 유지 확인</td></tr><tr><td>read_expect</td><td>R 응답값·코드·대기 유지 검사</td></tr><tr><td>RESET_B/R_PRECONDITION</td><td>실제 응답이 대기 중인지 확인</td></tr><tr><td>checks / commits / *_count</td><td>전체 시험 완료 및 누락 검출</td></tr></tbody></table><p>commit 7회 중 마지막 B 응답은 리셋으로 취소됩니다. AR 13회 중 마지막 리셋 전 읽기의 R 응답도 취소됩니다. 따라서 완료된 B 6회와 R 12회로 총 18개 checks가 됩니다. 카운터는 테스트 전체의 관찰 기록이므로 DUT 리셋에서 초기화하지 않습니다.</p>
+<div class="teach-note"><h3>전체 코드 · 계수마다 사건의 단위가 다르다</h3><p>마지막 AW/W 수락과 commit은 각각7회지만 B 완료는6회입니다. AR은13회, R 완료는12회이며 각각 한 응답을 리셋으로 취소했습니다. checks18은 finish_b6회+정상 read_expect12회입니다. 이 계수들은 회로의 총 비교 조건 수와 같지 않습니다.</p><p>모니터는 commit 검사를 그 에지의 새 수락 집계보다 먼저 합니다. 이전에 수락한 주소·데이터로 쓰기가 이루어져야 한다는 어댑터의 한 클록 계약과 맞습니다. TB 계수는 resetn0 동안 증가를 멈추지만 초기화하지 않아 리셋 전후 전체 실행을 합산합니다.</p><h4>핵심 구문 ⑥ · BFM과 독립 관찰 계수의 역할</h4><p>BFM(Bus Functional Model, 버스 기능 모델)은 send_aw/send_w/finish_b/read_expect 같은 task를 통해 버스 거래를 구성합니다. 별도 always @(posedge clk)는 실제 공개 handshake와 wr_en을 관찰합니다. 두 경로를 분리하여 task 호출 횟수만 맞는 것을 성공으로 오인하지 않습니다.</p><p><code>aw_count!=commits+1 || w_count!=commits+1</code>는 현재 commit에 필요한 AW와 W가 각각 한 개씩 먼저 수락되었는지 검사합니다. commit을 먼저 비교하고 그 에지의 AW/W 수락 계수를 나중에 증가시키므로 새 수락값으로 이전 commit을 정당화할 수 없습니다. 주소 하위8비트·데이터·strobe까지 비교합니다.</p><table><thead><tr><th scope="col">시나리오 종료</th><th scope="col">누적 AW/W</th><th scope="col">누적 commit</th><th scope="col">누적 B 완료</th><th scope="col">누적 AR</th><th scope="col">누적 R 완료</th><th scope="col">checks</th></tr></thead><tbody><tr><td>T1</td><td>1/1</td><td>1</td><td>1</td><td>1</td><td>1</td><td>2</td></tr><tr><td>T2</td><td>2/2</td><td>2</td><td>2</td><td>2</td><td>2</td><td>4</td></tr><tr><td>T3</td><td>3/3</td><td>3</td><td>3</td><td>5</td><td>5</td><td>8</td></tr><tr><td>T4</td><td>6/6</td><td>6</td><td>6</td><td>10</td><td>10</td><td>16</td></tr><tr><td>T5 reset 직전</td><td>7/7</td><td>7</td><td>6</td><td>11</td><td>10</td><td>16</td></tr><tr><td>T5 reset 후 두 읽기</td><td>7/7</td><td>7</td><td>6</td><td>13</td><td>12</td><td>18</td></tr></tbody></table><p>T5에서 CONTROL7은 이미 반영되었고 BREADY와 RREADY는0입니다. BVALID1/RVALID1의 실제 전제와 읽기 데이터까지 확인한 뒤 resetn을0으로 내려 응답을 취소합니다. monitor 계수는 reset 중 초기화하지 않으므로 reset 전후를 합산합니다. checks는 finish_b 6회와 read_expect 12회 완료를 합한 값이며 모든 비교 조건의 총수는 아닙니다.</p><h4>tb/ch15/tb_axi4lite_registers.sv · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-6</td><td><code class="teach-fragment">`timescale 1ns/1ps
+// 제15장: 기존 AXI4-Lite 어댑터 + 레지스터 뱅크를 읽기 전용 DUT로 검증.
+// AW/W 독립 수락, B/R 대기 유지, WSTRB 부분 쓰기, Reset을 자동 판정한다.
+module tb_axi4lite_registers;
+    reg clk=0, resetn=0;
+    always #5 clk=~clk;</code></td><td>시간 단위 1ns, 정밀도 1ps입니다. clk를 5ns마다 반전시켜 10ns 주기를 만들며 resetn은 초기 0입니다.</td></tr><tr><td>7-12</td><td><code class="teach-fragment">    reg [31:0] awaddr=0, wdata=0, araddr=0;
+    reg [3:0] wstrb=0;
+    reg awvalid=0, wvalid=0, bready=0, arvalid=0, rready=0;
+    wire awready,wready,bvalid,arready,rvalid;
+    wire [1:0] bresp,rresp;
+    wire [31:0] rdata;</code></td><td>AW/W/AR의 주소·데이터와 마스터 valid/ready를 reg로 구동합니다. 슬레이브 ready·B/R valid·응답·읽기 데이터는 wire로 관찰합니다.</td></tr><tr><td>13-19</td><td><code class="teach-fragment">    wire wr_en;
+    wire [7:0] wr_offset,rd_offset;
+    wire [31:0] wr_data,rd_data;
+    wire [3:0] wr_strb;
+    wire enable_o,start_pulse_o,clear_pulse_o;
+    wire [1:0] mode_o,irq_status_o;
+    wire [31:0] data_in_o;</code></td><td>adapter와 bank 사이의 실제 접근선과 bank의 제어 출력입니다. AXI 거래와 내부 register commit을 따로 확인할 수 있습니다.</td></tr><tr><td>20-24</td><td><code class="teach-fragment">    integer checks=0, commits=0;
+    integer aw_count=0, w_count=0, b_count=0, ar_count=0, r_count=0;
+    reg [31:0] saved_aw, saved_w;
+    reg [3:0] saved_strb;
+    reg [31:0] captured;</code></td><td>checks는 정상 응답 검사 완료 수, commits는 bank 쓰기 수입니다. 각 채널 handshake를 따로 세고 saved_aw/w/strb에는 실제 수락 payload를 보관합니다. captured는 읽기 응답 유지 검사값입니다.</td></tr><tr><td>26-32</td><td><code class="teach-fragment">    axi4lite_slave_adapter dut (
+        .s_axi_aclk(clk), .s_axi_aresetn(resetn),
+        .s_axi_awaddr(awaddr), .s_axi_awprot(3&#x27;b0),
+        .s_axi_awvalid(awvalid), .s_axi_awready(awready),
+        .s_axi_wdata(wdata), .s_axi_wstrb(wstrb),
+        .s_axi_wvalid(wvalid), .s_axi_wready(wready),
+        .s_axi_bresp(bresp), .s_axi_bvalid(bvalid), .s_axi_bready(bready),</code></td><td>dut는 AXI adapter 인스턴스입니다. 클록/reset과 AW/W/B 채널을 연결합니다. AWPROT는 0으로 고정합니다.</td></tr><tr><td>33-39</td><td><code class="teach-fragment">        .s_axi_araddr(araddr), .s_axi_arprot(3&#x27;b0),
+        .s_axi_arvalid(arvalid), .s_axi_arready(arready),
+        .s_axi_rdata(rdata), .s_axi_rresp(rresp),
+        .s_axi_rvalid(rvalid), .s_axi_rready(rready),
+        .wr_en(wr_en), .wr_offset(wr_offset), .wr_data(wr_data),
+        .wr_strb(wr_strb), .rd_offset(rd_offset), .rd_data(rd_data)
+    );</code></td><td>AR/R 채널 및 내부 bank 접근 포트를 연결합니다. 읽기 주소와 읽기 응답도 분리됩니다.</td></tr><tr><td>40-46</td><td><code class="teach-fragment">    custom_register_bank bank (
+        .clk(clk), .resetn(resetn), .wr_en(wr_en),
+        .wr_offset(wr_offset), .wr_data(wr_data), .wr_strb(wr_strb),
+        .rd_offset(rd_offset), .rd_data(rd_data),
+        .busy_i(1&#x27;b0), .done_i(1&#x27;b0), .error_i(1&#x27;b0),
+        .irq_done_event_i(1&#x27;b0), .irq_error_event_i(1&#x27;b0),
+        .data_out_i(32&#x27;h12345678), .enable_o(enable_o),</code></td><td>bank는 dut와 별개 인스턴스입니다. wr/rd 접근을 연결하며 상태·이벤트 입력은 0, DATA_OUT은 0x12345678로 고정합니다.</td></tr><tr><td>47-50</td><td><code class="teach-fragment">        .mode_o(mode_o), .start_pulse_o(start_pulse_o),
+        .clear_pulse_o(clear_pulse_o), .data_in_o(data_in_o),
+        .irq_status_o(irq_status_o)
+    );</code></td><td>실제 제어/상태 출력선을 연결합니다. COMMAND와 IRQ의 실제 동적 이벤트 시험은 이 TB에 없습니다.</td></tr><tr><td>51-59</td><td><code class="teach-fragment">    // (추가) 실제 수락 및 저장된 payload를 BFM과 독립적으로 검증.
+    always @(posedge clk) if(resetn) begin
+        if(wr_en === 1&#x27;b1) begin
+            if(aw_count!=commits+1 || w_count!=commits+1 ||
+               wr_offset !== saved_aw[7:0] || wr_data !== saved_w ||
+               wr_strb !== saved_strb)
+                $fatal(1,&quot;FAIL COMMIT_CONTRACT&quot;);
+            commits++;
+        end</code></td><td>상승 에지의 wr_en을 먼저 검사합니다. aw_count와 w_count가 각각 commits+1이어야 하고 실제 저장 payload가 saved_*와 일치해야 합니다. commit이 먼저 발생하거나 중복되면 COMMIT_CONTRACT입니다.</td></tr><tr><td>60-65</td><td><code class="teach-fragment">        if(awvalid &amp;&amp; awready) begin
+            aw_count++; saved_aw=awaddr;
+        end
+        if(wvalid &amp;&amp; wready) begin
+            w_count++; saved_w=wdata; saved_strb=wstrb;
+        end</code></td><td>AW/W handshake를 따로 세고 주소·데이터·strobe를 저장합니다. 현재 에지에 새로 수락한 값은 앞의 commit 비교 뒤에 기록하므로 한 에지 앞서 수락되어야 하는 계약을 검증합니다.</td></tr><tr><td>66-70</td><td><code class="teach-fragment">        if(bvalid &amp;&amp; bready) begin
+            if(bresp !== 2&#x27;b00 || b_count&gt;=commits)
+                $fatal(1,&quot;FAIL B_TRANSACTION&quot;);
+            b_count++;
+        end</code></td><td>BVALID&amp;&amp;BREADY에서 응답 00 및 선행 commit 존재를 확인합니다. BVALID가 올라온 것만으로 완료 수를 늘리지 않습니다.</td></tr><tr><td>71-77</td><td><code class="teach-fragment">        if(arvalid &amp;&amp; arready) ar_count++;
+        if(rvalid &amp;&amp; rready) begin
+            if(rresp !== 2&#x27;b00 || r_count&gt;=ar_count)
+                $fatal(1,&quot;FAIL R_TRANSACTION&quot;);
+            r_count++;
+        end
+    end</code></td><td>AR handshake 수를 세고 R 수락 시 OKAY 및 선행 읽기 주소가 있는지 검사합니다. resetn=0 동안 계수는 보존되며 증가하지 않습니다.</td></tr><tr><td>79-84</td><td><code class="teach-fragment">    task automatic send_aw(input [31:0] address);
+        integer guard;
+        begin
+            @(negedge clk);
+            awaddr=address; awvalid=1;
+            guard=0;</code></td><td>automatic task send_aw는 32비트 address를 지역 인자로 받습니다. 하강 에지에 주소와 valid를 구동하여 다음 상승 에지 수락을 준비합니다.</td></tr><tr><td>85-89</td><td><code class="teach-fragment">            while(awready !== 1&#x27;b1) begin
+                @(negedge clk);
+                guard=guard+1;
+                if(guard&gt;100) $fatal(1,&quot;FAIL AW_TIMEOUT&quot;);
+            end</code></td><td>AWREADY가 정확히1이 될 때까지 하강 에지를 기다립니다. guard&gt;100이면 101번째 반복에서 AW_TIMEOUT입니다. 미정 ready도 대기 대상으로 처리합니다.</td></tr><tr><td>90-96</td><td><code class="teach-fragment">            @(posedge clk);
+            @(negedge clk);
+            awvalid=0;
+            // (추가) 수락 이후 주소를 바꿔 저장 여부를 검증한다.
+            awaddr=32&#x27;h000000FC;
+        end
+    endtask</code></td><td>다음 상승 에지를 지나 하강 에지에 AWVALID를 내립니다. 수락된 주소 대신 FC를 제시해 DUT가 저장 주소를 사용하는지 시험합니다.</td></tr><tr><td>98-103</td><td><code class="teach-fragment">    task automatic send_w(input [31:0] data,input [3:0] strobe);
+        integer guard;
+        begin
+            @(negedge clk);
+            wdata=data; wstrb=strobe; wvalid=1;
+            guard=0;</code></td><td>send_w는 32비트 데이터와 4비트 strobe를 독립 입력으로 받습니다. 하강 에지에 WDATA/WSTRB/WVALID를 설정합니다.</td></tr><tr><td>104-108</td><td><code class="teach-fragment">            while(wready !== 1&#x27;b1) begin
+                @(negedge clk);
+                guard=guard+1;
+                if(guard&gt;100) $fatal(1,&quot;FAIL W_TIMEOUT&quot;);
+            end</code></td><td>WREADY가 정확히1일 때까지 최대 기한 내 대기합니다. AW의 도착 순서와 관계없이 독립적으로 실행할 수 있습니다.</td></tr><tr><td>109-115</td><td><code class="teach-fragment">            @(posedge clk);
+            @(negedge clk);
+            wvalid=0;
+            // (추가) 수락 이후 live 데이터와 스트로브를 변경한다.
+            wdata=32&#x27;hDEADBEEF; wstrb=4&#x27;b0000;
+        end
+    endtask</code></td><td>수락 에지 뒤 valid를 내리고 live WDATA를 DEADBEEF, strobe를0000으로 바꿉니다. commit에서는 이전 수락 payload가 사용되어야 합니다.</td></tr><tr><td>117-125</td><td><code class="teach-fragment">    task automatic finish_b;
+        integer guard;
+        begin
+            guard=0;
+            while(bvalid !== 1&#x27;b1) begin
+                @(negedge clk);
+                guard=guard+1;
+                if(guard&gt;100) $fatal(1,&quot;FAIL B_TIMEOUT&quot;);
+            end</code></td><td>finish_b는 BVALID가 올라올 때까지 대기하며 기한을 넘기면 B_TIMEOUT입니다. 아직 BREADY는 0이므로 응답 소비는 발생하지 않습니다.</td></tr><tr><td>126-132</td><td><code class="teach-fragment">            if(bresp !== 2&#x27;b00) $fatal(1,&quot;FAIL BRESP&quot;);
+            // 응답을 받지 않는 동안 BVALID는 내려가면 안 된다.
+            repeat(3) begin
+                @(negedge clk);
+                if(bvalid !== 1&#x27;b1 || bresp !== 2&#x27;b00 || awready !== 1&#x27;b0 ||
+                   wready !== 1&#x27;b0) $fatal(1,&quot;FAIL B_HOLD&quot;);
+            end</code></td><td>BRESP00을 확인하고 세 하강 에지 동안 BVALID/BRESP를 유지하며 AWREADY/WREADY가 0인지 검사합니다. 이 adapter의 단일 미결 쓰기 정책을 확인합니다.</td></tr><tr><td>133-140</td><td><code class="teach-fragment">            bready=1;
+            @(posedge clk);
+            @(negedge clk);
+            bready=0;
+            if(bvalid !== 1&#x27;b0) $fatal(1,&quot;FAIL B_CLEAR&quot;);
+            checks=checks+1;
+        end
+    endtask</code></td><td>BREADY를 올리고 다음 상승 에지에서 응답을 소비합니다. 하강 에지에 ready를 내리고 BVALID=0을 확인한 뒤 checks를 증가시킵니다.</td></tr><tr><td>142-147</td><td><code class="teach-fragment">    task automatic read_expect(input [31:0] address,input [31:0] expected);
+        integer guard;
+        begin
+            @(negedge clk);
+            araddr=address; arvalid=1;
+            guard=0;</code></td><td>read_expect는 읽을 주소와 독립 기대값을 입력받습니다. 하강 에지에 ARADDR/ARVALID를 구동합니다.</td></tr><tr><td>148-152</td><td><code class="teach-fragment">            while(arready !== 1&#x27;b1) begin
+                @(negedge clk);
+                guard=guard+1;
+                if(guard&gt;100) $fatal(1,&quot;FAIL AR_TIMEOUT&quot;);
+            end</code></td><td>ARREADY가 정확히1이 될 때까지 기한 내 대기합니다. 이전 R 응답 대기 상태에서는 새로운 주소를 받을 수 없습니다.</td></tr><tr><td>153-158</td><td><code class="teach-fragment">            @(posedge clk);
+            @(negedge clk);
+            arvalid=0;
+            if(rvalid !== 1&#x27;b1 || rresp !== 2&#x27;b00 || rdata !== expected)
+                $fatal(1,&quot;FAIL READ addr=%h got=%h exp=%h&quot;,address,rdata,expected);
+            captured=rdata;</code></td><td>AR 수락 상승 에지 후 하강 에지에 ARVALID를 내립니다. RVALID1/OKAY/기대 RDATA를 확인하고 captured에 값을 저장합니다.</td></tr><tr><td>159-165</td><td><code class="teach-fragment">            // (추가) 다른 주소를 제시해도 캡처한 R payload는 유지되어야 한다.
+            araddr=(address[7:0]==8&#x27;h18)?32&#x27;h1C:32&#x27;h18;
+            repeat(3) begin
+                @(negedge clk);
+                if(rvalid !== 1&#x27;b1 || rresp !== 2&#x27;b00 || arready !== 1&#x27;b0 ||
+                   rdata !== captured) $fatal(1,&quot;FAIL R_HOLD&quot;);
+            end</code></td><td>live ARADDR를 VERSION 또는 ID로 변경합니다. ARVALID는0인 상태이므로 새 거래가 아닙니다. 세 하강 에지 동안 저장된 RDATA/RRESP/RVALID와 ARREADY0을 검사합니다.</td></tr><tr><td>166-173</td><td><code class="teach-fragment">            rready=1;
+            @(posedge clk);
+            @(negedge clk);
+            rready=0;
+            if(rvalid !== 1&#x27;b0) $fatal(1,&quot;FAIL R_CLEAR&quot;);
+            checks=checks+1;
+        end
+    endtask</code></td><td>RREADY를 올려 다음 상승 에지에 응답을 소비합니다. 다음 하강 에지에서 RVALID0을 확인한 후 checks를 증가시킵니다.</td></tr><tr><td>175-179</td><td><code class="teach-fragment">    initial begin
+        #20000;
+        $fatal(1,&quot;FAIL GLOBAL_TIMEOUT&quot;);
+    end
+</code></td><td>독립 watchdog은 20000ns=20µs에 전체 타임아웃을 발생시킵니다. 교착을 정상 종료로 오인하지 않습니다.</td></tr><tr><td>180-185</td><td><code class="teach-fragment">`ifdef VCD
+    initial begin
+        $dumpfile(&quot;ch15_axi4lite.vcd&quot;);
+        $dumpvars(0,tb_axi4lite_registers);
+    end
+`endif</code></td><td>VCD 매크로가 정의되면 파형 파일을 만들고 top 이하 신호를 덤프합니다. -DVCD 컴파일 옵션과 대응합니다.</td></tr><tr><td>186-192</td><td><code class="teach-fragment">    initial begin
+        repeat(4) @(negedge clk);
+        if(awready !== 1&#x27;b0 || wready !== 1&#x27;b0 ||
+           arready !== 1&#x27;b0) $fatal(1,&quot;FAIL RESET_READY&quot;);
+        resetn=1;
+        @(negedge clk);
+</code></td><td>초기 4하강 에지 뒤 reset 동안 세 ready가 0임을 확인하고 resetn을1로 해제합니다.</td></tr><tr><td>193-200</td><td><code class="teach-fragment">        // T1: AW를 먼저 보내고 W가 오기 전에는 commit하지 않는다.
+        send_aw(32&#x27;h10);
+        repeat(3) @(negedge clk);
+        if(commits!=0 || bvalid !== 1&#x27;b0) $fatal(1,&quot;FAIL AW_ONLY&quot;);
+        send_w(32&#x27;h11223344,4&#x27;b1111);
+        finish_b();
+        read_expect(32&#x27;h10,32&#x27;h11223344);
+        $display(&quot;T1_AW_BEFORE_W_PASS&quot;);</code></td><td>T1은 AW 0x10만 먼저 수락하고 세 하강 에지를 기다립니다. commit0/BVALID0을 확인한 후 W11223344/F를 보내고 B를 완료해 읽기값을 확인합니다.</td></tr><tr><td>202-209</td><td><code class="teach-fragment">        // T2: W를 먼저 보내도 독립 버퍼에 보관된다.
+        send_w(32&#x27;hAABBCCDD,4&#x27;b0101);
+        repeat(3) @(negedge clk);
+        if(commits!=1 || bvalid !== 1&#x27;b0) $fatal(1,&quot;FAIL W_ONLY&quot;);
+        send_aw(32&#x27;h10);
+        finish_b();
+        read_expect(32&#x27;h10,32&#x27;h11BB33DD);
+        $display(&quot;T2_W_BEFORE_AW_WSTRB_PASS&quot;);</code></td><td>T2는 W AABBCCDD/0101을 먼저 보내고 commit 수가1에 머무는지 검사합니다. 이후 AW 0x10을 보내면 두 바이트만 바뀐 11BB33DD가 되어야 합니다.</td></tr><tr><td>211-220</td><td><code class="teach-fragment">        // T3: CONTROL, VERSION, ID 및 읽기 응답 유지.
+        send_aw(32&#x27;h00);
+        send_w(32&#x27;h00000005,4&#x27;b0001);
+        finish_b();
+        read_expect(32&#x27;h00,32&#x27;h00000005);
+        read_expect(32&#x27;h18,32&#x27;h00010000);
+        read_expect(32&#x27;h1C,32&#x27;h524D4150);
+        if(enable_o !== 1&#x27;b1 || mode_o !== 2&#x27;b10)
+            $fatal(1,&quot;FAIL CONTROL_OUTPUT&quot;);
+        $display(&quot;T3_CONTROL_RO_PASS&quot;);</code></td><td>CONTROL에5와 strobe0001을 쓰고 실제 read 5, VERSION00010000, ID524D4150을 확인합니다. enable1/mode10의 물리 출력도 검사합니다.</td></tr><tr><td>222-228</td><td><code class="teach-fragment">        // (추가) T4: 동시 AW/W, zero strobe, RO 및 미매핑 쓰기.
+        fork
+            send_aw(32&#x27;h10);
+            send_w(32&#x27;hFFFFFFFF,4&#x27;b0000);
+        join
+        finish_b();
+        read_expect(32&#x27;h10,32&#x27;h11BB33DD);</code></td><td>fork/join으로 AW와 W task를 병행합니다. 둘 다 다음 하강 에지에 구동되며 둘의 수락 후 commit이 발생합니다. strobe0000이므로 DATA_IN은 11BB33DD를 유지합니다.</td></tr><tr><td>229-234</td><td><code class="teach-fragment">        send_aw(32&#x27;h18); send_w(32&#x27;hFFFFFFFF,4&#x27;b1111);
+        finish_b();
+        read_expect(32&#x27;h18,32&#x27;h00010000);
+        send_aw(32&#x27;hFC); send_w(32&#x27;hFFFFFFFF,4&#x27;b1111);
+        finish_b();
+        read_expect(32&#x27;hFC,32&#x27;h00000000);</code></td><td>VERSION과 미매핑 FC에 FFFFFFFF/F를 쓰고 OKAY 응답을 소비합니다. VERSION은 상수, FC는0으로 읽혀야 합니다.</td></tr><tr><td>235-237</td><td><code class="teach-fragment">        read_expect(32&#x27;h110,32&#x27;h11BB33DD); // 하위 8비트 주소 별칭
+        read_expect(32&#x27;h14,32&#x27;h12345678);
+        $display(&quot;T4_ZERO_RO_ALIAS_PASS&quot;);</code></td><td>0x110은 하위8비트가10이므로 DATA_IN과 별칭입니다. DATA_OUT은 외부 고정 입력 12345678입니다. T4 완료를 기록합니다.</td></tr><tr><td>239-244</td><td><code class="teach-fragment">        // (변경) T5: B/R 응답이 실제로 대기 중일 때 리셋.
+        send_aw(32&#x27;h00); send_w(32&#x27;h00000007,4&#x27;b0001);
+        @(negedge clk);
+        if(bvalid !== 1&#x27;b1 || bresp !== 2&#x27;b00 || enable_o !== 1&#x27;b1 ||
+           mode_o !== 2&#x27;b11 || data_in_o !== 32&#x27;h11BB33DD)
+            $fatal(1,&quot;FAIL RESET_B_PRECONDITION&quot;);</code></td><td>T5는 CONTROL7 쓰기의 B 응답을 소비하지 않고 실제 BVALID1, BRESP00, enable1/mode11, 기존 DATA_IN을 확인합니다. reset 전에 쓰기가 반영되었다는 전제입니다.</td></tr><tr><td>245-249</td><td><code class="teach-fragment">        araddr=32&#x27;h10; arvalid=1;
+        @(posedge clk);
+        @(negedge clk); arvalid=0;
+        if(rvalid !== 1&#x27;b1 || rdata !== 32&#x27;h11BB33DD || bvalid !== 1&#x27;b1)
+            $fatal(1,&quot;FAIL RESET_R_PRECONDITION&quot;);</code></td><td>AR 0x10을 제시해 수락 후 ARVALID를 내립니다. RREADY를 올리지 않고 실제 RVALID1과 DATA_IN 값, BVALID1을 동시에 확인합니다.</td></tr><tr><td>250-256</td><td><code class="teach-fragment">        resetn=0;
+        repeat(3) @(negedge clk);
+        if(bvalid !== 1&#x27;b0 || rvalid !== 1&#x27;b0 ||
+           enable_o !== 1&#x27;b0 || data_in_o !== 32&#x27;b0)
+            $fatal(1,&quot;FAIL RESET_CLEAR&quot;);
+        resetn=1;
+        @(negedge clk);</code></td><td>두 응답이 미결인 상태에서 resetn을0으로 내리고 세 하강 에지를 기다립니다. B/R valid와 enable/data가 초기화되었는지 확인한 뒤 reset을 해제합니다.</td></tr><tr><td>257-261</td><td><code class="teach-fragment">        read_expect(32&#x27;h10,32&#x27;h00000000);
+        read_expect(32&#x27;h00,32&#x27;h00000000);
+        if(commits!=7 || checks!=18 || aw_count!=7 || w_count!=7 ||
+           b_count!=6 || ar_count!=13 || r_count!=12)
+            $fatal(1,&quot;FAIL COUNTS commits=%0d checks=%0d&quot;,commits,checks);</code></td><td>reset 후 DATA_IN과 CONTROL을0으로 읽습니다. commit7, checks18, AW7/W7/B6/AR13/R12를 모두 요구합니다. 취소 응답은 완료 수에 포함되지 않습니다.</td></tr><tr><td>262-266</td><td><code class="teach-fragment">        $display(&quot;T5_RESET_PENDING_PASS&quot;);
+        $display(&quot;PASS CH15 commits=%0d checks=%0d&quot;,commits,checks);
+        $finish;
+    end
+endmodule</code></td><td>모든 조건을 통과한 뒤 T5와 PASS를 출력하고 $finish로 종료합니다. $finish 자체가 성공을 뜻하지는 않습니다.</td></tr></tbody></table></details></div>
+</section>
+<section class="section" id="s06"><h2><span class="num">06</span>Ubuntu 실행 · Vivado XSIM 우선</h2><div class="codeblock"><div class="codebar"><span>Ubuntu · XSIM</span></div><pre tabindex="0"><code># Vivado 설치 경로의 settings64.sh를 source한 뒤 실행
+command -v xvlog xelab xsim
+mkdir -p .build/ch15/xsim
+cd .build/ch15/xsim
+xvlog ../../../reference_rtl/axi4lite_slave_adapter.v
+xvlog ../../../reference_rtl/custom_register_bank.v
+xvlog -sv ../../../tb/ch15/tb_axi4lite_registers.sv
+xelab -debug typical tb_axi4lite_registers -s ch15_sim
+xsim ch15_sim -runall
+# 파형 관찰
+xsim ch15_sim -gui</code></pre></div><p>xvlog는 소스 분석, xelab은 테스트벤치 연결, xsim은 실행 및 GUI 관찰입니다. awvalid/awready, wvalid/wready, dut.aw_stored, dut.w_stored, wr_en, bvalid/bready, arvalid/arready, rvalid/rready, rdata 및 resetn을 파형에 추가합니다.</p><h3>Icarus 대체 실행</h3><div class="codeblock"><div class="codebar"><span>scripts/run_ch15.sh · Bash</span></div><pre tabindex="0"><code>#!/usr/bin/env bash
+# 사용: bash scripts/run_ch15.sh
+# 원본 RTL은 읽기 전용; 시뮬레이션 산출물은 .build/ch15에만 생성한다.
+set -euo pipefail
+ROOT=&quot;$(cd &quot;$(dirname &quot;${BASH_SOURCE[0]}&quot;)/..&quot; &amp;&amp; pwd)&quot;
+RTL=&quot;${RTL_DIR:-$ROOT/reference_rtl}&quot;
+for f in axi4lite_slave_adapter.v custom_register_bank.v; do
+  if [[ ! -f &quot;$RTL/$f&quot; ]]; then
+    echo &quot;NOT_RUN: missing $RTL/$f&quot; &gt;&amp;2
+    exit 2
+  fi
+done
+if ! command -v iverilog &gt;/dev/null 2&gt;&amp;1 || ! command -v vvp &gt;/dev/null 2&gt;&amp;1; then
+  echo &quot;NOT_RUN: Icarus Verilog not installed&quot; &gt;&amp;2
+  exit 2
+fi
+RTL=&quot;$(realpath &quot;$RTL&quot;)&quot;
+mkdir -p &quot;$ROOT/.build/ch15&quot;
+cd &quot;$ROOT/.build/ch15&quot;
+iverilog -g2012 -DVCD -s tb_axi4lite_registers -o sim \
+  &quot;$RTL/axi4lite_slave_adapter.v&quot; &quot;$RTL/custom_register_bank.v&quot; \
+  &quot;$ROOT/tb/ch15/tb_axi4lite_registers.sv&quot;
+vvp sim | tee simulation.log
+grep -Fxq 'PASS CH15 commits=7 checks=18' simulation.log
+</code></pre></div><div class="codeblock"><div class="codebar"><span>Ubuntu · 실습 루트에서 실행</span></div><pre tabindex="0"><code>sudo apt update
+sudo apt install iverilog
+bash scripts/run_ch15.sh</code></pre></div><p>apt update는 목록 갱신, apt install은 설치, bash는 자동 실행입니다. -DVCD는 파형 기록을 활성화합니다. 결과는 .build/ch15에 저장되며 정상 종료와 정확한 PASS 문자열을 함께 검사합니다.</p>
+<div class="teach-note"><h3>실습 지도 · 파형에서 거래 경계를 찾는다</h3><p>AWVALID가 올라간 시간보다 AWVALID·AWREADY가 함께1인 상승 에지에 표식을 둡니다. W도 별도로 표시한 뒤 wr_en 에지와 BVALID 발생을 연결합니다. 대기 동안 valid·payload가 유지되고 ready가 돌아왔을 때 한 번만 완료되는지 확인합니다.</p><p>두 RTL과 TB의 의존성을 그대로 유지합니다. 원본 Icarus 실측 PASS는 보존 결과이며 이번 교수용 제작의 새 RTL_SIM은 <strong>NOT_RUN</strong>입니다. HTML 정합성·반례·브라우저 결과와 구별합니다.</p><h4>scripts/run_ch15.sh · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-6</td><td><code class="teach-fragment">#!/usr/bin/env bash
+# 사용: bash scripts/run_ch15.sh
+# 원본 RTL은 읽기 전용; 시뮬레이션 산출물은 .build/ch15에만 생성한다.
+set -euo pipefail
+ROOT=&quot;$(cd &quot;$(dirname &quot;${BASH_SOURCE[0]}&quot;)/..&quot; &amp;&amp; pwd)&quot;
+RTL=&quot;${RTL_DIR:-$ROOT/reference_rtl}&quot;</code></td><td>Bash 실행기는 실패·미정 변수·파이프 오류를 감지하도록 설정합니다. ROOT와 RTL_DIR을 정합니다.</td></tr><tr><td>7-12</td><td><code class="teach-fragment">for f in axi4lite_slave_adapter.v custom_register_bank.v; do
+  if [[ ! -f &quot;$RTL/$f&quot; ]]; then
+    echo &quot;NOT_RUN: missing $RTL/$f&quot; &gt;&amp;2
+    exit 2
+  fi
+done</code></td><td>원본 RTL 두 파일이 있는지 확인합니다. 없으면 NOT_RUN과 exit2로 종료합니다.</td></tr><tr><td>13-16</td><td><code class="teach-fragment">if ! command -v iverilog &gt;/dev/null 2&gt;&amp;1 || ! command -v vvp &gt;/dev/null 2&gt;&amp;1; then
+  echo &quot;NOT_RUN: Icarus Verilog not installed&quot; &gt;&amp;2
+  exit 2
+fi</code></td><td>iverilog와 vvp를 확인합니다. 도구 부재는 성공이 아닙니다.</td></tr><tr><td>17-19</td><td><code class="teach-fragment">RTL=&quot;$(realpath &quot;$RTL&quot;)&quot;
+mkdir -p &quot;$ROOT/.build/ch15&quot;
+cd &quot;$ROOT/.build/ch15&quot;</code></td><td>RTL을 절대 경로로 변환하고 장별 .build/ch15 폴더를 생성한 뒤 이동합니다.</td></tr><tr><td>20-22</td><td><code class="teach-fragment">iverilog -g2012 -DVCD -s tb_axi4lite_registers -o sim \
+  &quot;$RTL/axi4lite_slave_adapter.v&quot; &quot;$RTL/custom_register_bank.v&quot; \
+  &quot;$ROOT/tb/ch15/tb_axi4lite_registers.sv&quot;</code></td><td>iverilog -g2012로 SystemVerilog를 분석하며 -DVCD로 파형 기능을 활성화합니다. -s는 top, -o sim은 실행 파일입니다. 두 RTL과 TB를 함께 입력합니다.</td></tr><tr><td>23-24</td><td><code class="teach-fragment">vvp sim | tee simulation.log
+grep -Fxq &#x27;PASS CH15 commits=7 checks=18&#x27; simulation.log</code></td><td>vvp로 실행하고 tee로 로그를 보존합니다. grep -Fxq는 정확히 일치하는 전체 PASS 행이 존재하는지 검사합니다. pipefail과 함께 실행 실패도 반영합니다.</td></tr></tbody></table></details></div>
+</section>
+<section class="section" id="s07"><h2><span class="num">07</span>예상 결과와 오류 분석</h2><p>다음은 계약을 독립 계산한 예상 출력입니다. 실제 시뮬레이터 로그가 아닙니다.</p><div class="codeblock"><div class="codebar"><span>예상 콘솔 출력</span></div><pre tabindex="0"><code>T1_AW_BEFORE_W_PASS
+T2_W_BEFORE_AW_WSTRB_PASS
+T3_CONTROL_RO_PASS
+T4_ZERO_RO_ALIAS_PASS
+T5_RESET_PENDING_PASS
+PASS CH15 commits=7 checks=18</code></pre></div><table><thead><tr><th>오류</th><th>점검 항목</th></tr></thead><tbody><tr><td>COMMIT_CONTRACT</td><td>AW/W 수락 수, 저장된 주소·데이터·WSTRB</td></tr><tr><td>AW_ONLY / W_ONLY</td><td>한 채널만 도착했을 때 쓰기 금지</td></tr><tr><td>B_HOLD / R_HOLD</td><td>대기 중 응답 코드·데이터·valid 유지</td></tr><tr><td>READ</td><td>레지스터 offset, byte enable, RO·별칭 정책</td></tr><tr><td>RESET_B/R_PRECONDITION</td><td>실제로 대기하는 응답의 존재</td></tr><tr><td>RESET_CLEAR / COUNTS</td><td>리셋 결과와 전체 수락·완료 수</td></tr></tbody></table><p>이 검증은 범용 스냅샷의 단일 미결 쓰기·읽기 정책에 한정합니다. 모든 AXI4-Lite 규격 적합성, 보호 속성, 미정값 입력, 동시 읽기·쓰기의 모든 경합, COMMAND/IRQ 이벤트 및 최신 PWM/IRQ IP의 오류 응답 정책까지 입증하지 않습니다. 다음 제16장은 정수 MAC과 파이프라인 연산 검증으로 확장합니다.</p>
+<div class="execution-evidence" data-evidence="v59"><h3>2026-11-26 실제 실행 결과</h3><p>Icarus Verilog 12.0 · 종료 코드 0 · <strong>PASS</strong>. 정상 실행과 정의된 오류 검출 조건을 장별 실행기로 확인했습니다.</p><div class="codeblock"><div class="codebar"><span>저장소 루트 · Bash · 실행 재현 명령</span></div><pre tabindex="0"><code>bash scripts/run_chapter.sh 15</code></pre></div><div class="codeblock"><div class="codebar"><span>실제 로그 발췌 · 예상 출력과 구별</span></div><pre tabindex="0"><code>T1_AW_BEFORE_W_PASS
+T2_W_BEFORE_AW_WSTRB_PASS
+T3_CONTROL_RO_PASS
+T4_ZERO_RO_ALIAS_PASS
+T5_RESET_PENDING_PASS
+PASS CH15 commits=7 checks=18</code></pre></div><p><a href="https://github.com/Yuul-Jung/system_verilog_uvm_tb/blob/2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708/docs/evidence/v59/README.md#ch15">실행 명령·종료 코드·공개 로그 및 해시 확인</a>. 위의 예상 파형은 코드에서 계산한 도식이며, 실측 파형 이미지는 별도로 수록하지 않았습니다.</p></div>
+
+<div class="teach-note"><h3>예상 문답 · 채널 독립과 구현 정책</h3><p><strong>주소 없이 데이터부터 와도 되나요?</strong> 이 어댑터는 W를 따로 저장하므로 가능합니다. AW와 W가 모두 저장되기 전에는 쓰지 않습니다.</p><p><strong>RO에 쓰면 반드시 SLVERR인가요?</strong> 현재 구현은 값을 바꾸지 않고 OKAY를 보냅니다. 응답 정책은 실제 주변장치 사양으로 정해야 하며 이 스냅샷의 정책을 모든 IP에 일반화하지 않습니다.</p><p><strong>COMMAND와 IRQ도 검증됐나요?</strong> 전체 RTL과 행별 의미는 설명하지만 현재 자극은 명령 펄스·이벤트 경합을 시험하지 않습니다. 향후 확장에서는 한 클록 펄스와 event 우선 W1C를 별도 시나리오로 확인해야 합니다.</p><h4>추가 교수용 문답</h4><p><strong>AW와 W가 같은 상승 에지에 수락되면 그 에지에 바로 bank에 쓰나요?</strong> 이 adapter는 저장 플래그를 비차단 대입으로 갱신하므로 다음 상승 에지에 bank가 wr_en을 읽습니다. 다른 구현은 달라질 수 있습니다.</p><p><strong>WSTRB가 0000이면 쓰기 거래가 없는 것인가요?</strong> AW/W는 수락되고 commit 및 B 응답도 발생합니다. bank 내부의 모든 바이트가 선택되지 않아 저장만 유지됩니다.</p><p><strong>RDATA는 읽기 주소와 항상 조합 연결인가요?</strong> bank의 rd_data는 조합 출력이지만 AXI RDATA는 AR 수락 때 등록된 값입니다. 이후 주소가 바뀌어도 R 수락까지 유지합니다.</p><p><strong>reset 뒤 B6과 commit7이 다른 것은 오류인가요?</strong> 이 장에서는 마지막 쓰기를 반영한 뒤 B를 소비하지 않고 reset으로 취소합니다. 실제 취소 전제와 각 계수를 함께 확인하므로 이 차이는 의도된 시험 결과입니다.</p></div>
+</section>
+<div class="chapter-links" id="chapter-links"></div></main></div><footer class="footer">RTL TESTBENCH · SYSTEMVERILOG · UVM · CH15 교수용 v02 · 원본 v03 · PASS</footer><script>window.COURSE={"title":"RTL · SystemVerilog · UVM 교수용 해설서","short_title":"SV UVM TEACH","home_label":"전체 교수용 해설서","chapters":[{"id":"ch01","number":1,"title":"테스트벤치의 첫 실행","file":"ch01_teacher_v02.html"},{"id":"ch02","number":2,"title":"Clock·Reset·이벤트","file":"ch02_teacher_v01.html"},{"id":"ch03","number":3,"title":"반복 자극과 작업 분리","file":"ch03_teacher_v01.html"},{"id":"ch04","number":4,"title":"PASS/FAIL 자동 판정","file":"ch04_teacher_v01.html"},{"id":"ch05","number":5,"title":"검증 자료형과 타입","file":"ch05_teacher_v01.html"},{"id":"ch06","number":6,"title":"배열·큐·패키지","file":"ch06_teacher_v01.html"},{"id":"ch07","number":7,"title":"인터페이스·타이밍 분리","file":"ch07_teacher_v01.html"},{"id":"ch08","number":8,"title":"객체와 제약 기반 입력","file":"ch08_teacher_v01.html"},{"id":"ch09","number":9,"title":"참조 모델·스코어보드","file":"ch09_teacher_v01.html"},{"id":"ch10","number":10,"title":"경계조건·오류 주입","file":"ch10_teacher_v01.html"},{"id":"ch11","number":11,"title":"시간적 속성 검사","file":"ch11_teacher_v01.html"},{"id":"ch12","number":12,"title":"기능 커버리지","file":"ch12_teacher_v01.html"},{"id":"ch13","number":13,"title":"UART 스트림 검증","file":"ch13_teacher_v01.html"},{"id":"ch14","number":14,"title":"FIFO 및 흐름 제어","file":"ch14_teacher_v01.html"},{"id":"ch15","number":15,"title":"AXI4-Lite 레지스터 검증","file":"ch15_teacher_v02.html"},{"id":"ch16","number":16,"title":"MAC·NPU 정수 연산 검증","file":"ch16_teacher_v01.html"},{"id":"ch17","number":17,"title":"최소 UVM 환경","file":"ch17_teacher_v01.html"},{"id":"ch18","number":18,"title":"Sequence에서 Driver까지","file":"ch18_teacher_v02.html"},{"id":"ch19","number":19,"title":"Monitor·Agent·Scoreboard","file":"ch19_teacher_v02.html"},{"id":"ch20","number":20,"title":"Factory·Config·Objection","file":"ch20_teacher_v02.html"},{"id":"ch21","number":21,"title":"UVM 레지스터 추상화","file":"ch21_teacher_v02.html"},{"id":"ch22","number":22,"title":"다중 Agent·VIP","file":"ch22_teacher_v02.html"},{"id":"ch23","number":23,"title":"NPU 통합 정답 비교","file":"ch23_teacher_v01.html"},{"id":"ch24","number":24,"title":"회귀·CI·검증 보고","file":"ch24_teacher_v01.html"}]};</script><script src="assets/site.js"></script></body></html>
