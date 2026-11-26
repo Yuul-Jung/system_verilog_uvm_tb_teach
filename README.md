@@ -38,7 +38,7 @@ Pages는 `main` 루트의 정적 HTML을 제공합니다. `.nojekyll`로 원본 
 - [제16장 · MAC·NPU 정수 연산 검증](ch16_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch16_v01.md)
 - [제17장 · 최소 UVM 환경](ch17_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch17_v01.md)
 - [제18장 · Sequence에서 Driver까지](ch18_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch18_v01.md)
-- [제19장 · Monitor·Agent·Scoreboard](ch19_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch19_v01.md)
+- [제19장 · Monitor·Agent·Scoreboard](ch19_teacher_v02.html) · [검증 기록](docs/VALIDATION_ch19_v02.md)
 - [제20장 · Factory·Config·Objection](ch20_teacher_v02.html) · [검증 기록](docs/VALIDATION_ch20_v02.md)
 - [제21장 · UVM 레지스터 추상화](ch21_teacher_v02.html) · [검증 기록](docs/VALIDATION_ch21_v02.md)
 - [제22장 · 다중 Agent·VIP](ch22_teacher_v02.html) · [검증 기록](docs/VALIDATION_ch22_v02.md)
@@ -51,3 +51,5 @@ Pages는 `main` 루트의 정적 HTML을 제공합니다. `.nojekyll`로 원본 
 교수용 해설 보강 v27: 제22장 v02에서 두 Agent·Virtual Sequencer, Analysis Imp, AR 수락 시각과 IRQ 예상 상태, commit 큐, W1C 동시 충돌 및 구문별 해설을 보강했다. [제22장 v02 검증](docs/VALIDATION_ch22_v02.md). 신규 브라우저·공개 Pages 검사는 별도 수행 대상이다.
 
 교수용 해설 보강 v28: 제20장 v02에서 Factory 타입 선택과 virtual 호출, Config DB의 인자 및 동일 객체, 마지막 요청 완료와 활성 표본 24개의 차이, 부정 시험을 보강했다. [제20장 v02 검증](docs/VALIDATION_ch20_v02.md). 신규 브라우저·공개 Pages 검사는 별도 수행 대상이다.
+
+교수용 해설 보강 v29: 제19장 v02에서 요청/관찰 객체, 분석 port/imp, 독립 모델의 시각별 상태, 4상태 비교, Agent의 생성/연결 및 완료 조건을 보강했다. [제19장 v02 검증](docs/VALIDATION_ch19_v02.md). 신규 브라우저·공개 Pages 검사는 별도 수행 대상이다.
