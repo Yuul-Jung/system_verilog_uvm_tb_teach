@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v05",
+  "version": "v06",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -64,6 +64,21 @@
       "source_tb": "tb/ch04/tb_pwm_pass_fail.sv",
       "rtl_simulation": "NOT_RUN",
       "original_execution": "PASS"
+    },
+    {
+      "id": "ch05",
+      "number": 5,
+      "title": "검증 자료형과 타입",
+      "slug": "ch05_teacher",
+      "version": "v01",
+      "source_html": "ch05_verification_types_v05.html",
+      "source_version": "v05",
+      "source_blob": "1c818b81e1872acd19f4972aa3ba6efc7487cb33",
+      "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
+      "source_course_version": "v60",
+      "source_tb": "tb/ch05/tb_uart_types.sv",
+      "rtl_simulation": "NOT_RUN",
+      "original_execution": "PASS"
     }
   ],
   "planned_chapters": [
@@ -105,7 +120,7 @@
       "title": "검증 자료형과 타입",
       "source_html": "ch05_verification_types_v05.html",
       "source_version": "v05",
-      "status": "planned"
+      "status": "published"
     },
     {
       "id": "ch06",

@@ -47,6 +47,12 @@
       "number": 4,
       "title": "PASS/FAIL 자동 판정",
       "file": "ch04_teacher_v01.html"
+    },
+    {
+      "id": "ch05",
+      "number": 5,
+      "title": "검증 자료형과 타입",
+      "file": "ch05_teacher_v01.html"
     }
   ]
 };

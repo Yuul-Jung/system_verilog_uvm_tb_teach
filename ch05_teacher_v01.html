@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="UART Echo의 검증 데이터를 자료형과 구조체로 표현"><title>교수용 해설서 · 제05장 · 검증 자료형과 타입 · RTL Testbench · SystemVerilog · UVM 실무 검증</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/site.css"><style>.teach-note{margin:18px 0 4px;padding:15px 18px;background:#f8f7fc;border:1px solid #dddaee;border-left:4px solid #4635b1;border-radius:6px;overflow-wrap:anywhere}.teach-note h3{margin:0 0 10px;color:#4635b1}.teach-note h4{margin:14px 0 6px}.teach-note p{margin:8px 0}.teach-note summary{cursor:pointer;font-weight:600;margin:10px 0}.teach-fragment{white-space:pre-wrap;overflow-wrap:anywhere;display:block;min-width:140px}.teach-note table{margin:10px 0}.teach-note td{vertical-align:top}@media(max-width:860px){.teach-note{padding:12px}.teach-note td{min-width:68px}}.teach-note details table{min-width:680px}.teach-note details th:first-child,.teach-note details td:first-child{min-width:60px;white-space:nowrap}.teach-note details .teach-fragment{min-width:250px}</style></head><body data-chapter="ch05">
+<a class="access-skip" href="#main-content" style="position:absolute;left:-9999px;top:0">본문 바로가기</a>
+<button type="button" class="mobile-menu" id="mobile-menu" aria-controls="course-nav" aria-expanded="false">☰ 장·목차</button><div class="shade" id="shade"></div>
+<header class="hero"><div class="hero-inner"><p class="kicker">교수용 해설서 · 제2부 · SYSTEMVERILOG 문법</p><h1>제05장 · 검증 자료형과 타입</h1><p>UART Echo의 검증 데이터를 자료형과 구조체로 표현</p>
+<div class="chips"><span class="chip">6부 · 24장</span><span class="chip">4상태·2상태 · 구조체</span><span class="chip">기존 RTL 재사용</span></div></div></header>
+<div class="wrap"><nav class="toc" id="course-nav" aria-label="장과 절 탐색"></nav>
+<main class="content" id="main-content"><p>원본 제05장 · v05의 절·그림·전체 코드·실습을 보존한 교수용 해설서입니다.</p>
+<section class="section" id="s00"><h2><span class="num">00</span>개요 · 검증 데이터에 의미를 부여한다</h2><p>제1부에서는 입력 자극을 반복하고 기대값과 실제값을 비교했습니다. 제2부에서는 SystemVerilog(시스템베릴로그, 하드웨어 설계·검증 언어)의 자료형을 이용해 복잡해지는 검증 데이터를 체계적으로 관리합니다. 제05장은 데이터를 표현하고, 사례에 이름을 붙이고, 관련 신호를 하나로 묶는 기초입니다.</p><p><strong>선행 설계 학습안내서:</strong> Basys3 소형 NPU 실습(<code>amd_soc_npu</code>) 제1장 UART 계산기 03절 「서브젝트 1-1 · UART 에코」, <code>uart_echo_controller.v</code>. 이 장은 에코 제어기만 검증합니다.</p>
+<div class="teach-note"><h3>교수용 이론 · 자료형은 오류를 보이게 하는 선택</h3><p>데이터·유효·준비를 제각각 전달하면 인자 순서를 바꾸거나 다른 사례의 값을 섞기 쉽습니다. 이 장은 관련 값을 struct로 묶고, 사례에는 enum 이름을 붙여 시험 의도를 코드에 남깁니다. 자료형은 표현을 편하게 할 뿐 아니라 X를 보존할지 없앨지도 결정하므로 검증 결과에 직접 영향을 줍니다.</p><p>제01장의 동일한 에코 회로를 다시 사용합니다. 회로 기능을 더한 것이 아니라 TB의 데이터 모델과 자동 비교를 확장한 것입니다. 이후 배열·큐는 여러 묶음을 관리하고, 객체는 한 묶음에 동작과 제약까지 더합니다.</p></div>
+</section>
+<section class="section" id="s01"><h2><span class="num">01</span>검증 대상 · 원본 RTL과 포트 계약</h2><p>이 회로는 수신 측 데이터와 유효 신호를 송신 측으로 전달하고, 송신 측 준비 신호를 수신 측으로 되돌립니다. 클록·리셋·저장 레지스터가 없는 조합회로입니다. 자료형을 새로 정의하는 곳은 TB(Testbench, 테스트벤치)이며 원본 RTL을 변경하지 않습니다.</p><div class="codeblock"><div class="codebar"><span>reference_rtl/uart_echo_controller.v · Verilog</span></div><pre tabindex="0"><code>// (추가) 준비 단계 UART Echo controller: pure combinational stream transfer.
+module uart_echo_controller(
+    input wire [7:0] rx_data_i,
+    input wire rx_valid_i,
+    output wire rx_ready_o,
+    output wire [7:0] tx_data_o,
+    output wire tx_valid_o,
+    input wire tx_ready_i
+);
+    assign rx_ready_o=tx_ready_i;
+    assign tx_valid_o=rx_valid_i;
+    assign tx_data_o=rx_data_i;
+endmodule
+</code></pre></div><table><thead><tr><th>입력</th><th>출력</th><th>폭·동작</th></tr></thead><tbody><tr><td><code>rx_data_i</code></td><td><code>tx_data_o</code></td><td>8비트 그대로 전달</td></tr><tr><td><code>rx_valid_i</code></td><td><code>tx_valid_o</code></td><td>1비트 유효 신호 전달</td></tr><tr><td><code>tx_ready_i</code></td><td><code>rx_ready_o</code></td><td>1비트 준비 신호 역방향 전달</td></tr></tbody></table><p>유효와 준비가 모두 1이면 일반적인 클록 기반 스트림에서는 샘플링 에지에 전송이 수락됩니다. 이 DUT에는 클록이 없으므로 이번 TB는 전송 횟수가 아닌 세 조합 연결을 확인합니다. 각 사례는 독립 자극이며, 대기 상태에서 다음 입력으로 바꾸는 것은 완전한 Ready/Valid 프로토콜 시험이 아닙니다.</p>
+<div class="teach-note"><h3>회로와 자료구조의 경계</h3><p>실제 DUT는 세 assign뿐입니다. 뒤에서 등장하는 sample과 kind는 TB 안의 변수이며 포트나 DUT 레지스터가 아닙니다. sample.ready를 tx_ready_i에 쓰면 DUT가 rx_ready_o로 되돌려 줍니다. ready의 방향을 data와 같은 방향으로 읽지 않도록 포트 표의 입력·출력을 먼저 따라갑니다.</p><h4>reference_rtl/uart_echo_controller.v · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-2</td><td><code class="teach-fragment">// (추가) 준비 단계 UART Echo controller: pure combinational stream transfer.
+module uart_echo_controller(</code></td><td>조합 스트림 전달기라는 주석과 모듈 정의입니다. UART 직렬 프레임 처리기는 아닙니다.</td></tr><tr><td>3</td><td><code class="teach-fragment">    input wire [7:0] rx_data_i,</code></td><td>수신 바이트 8비트 입력입니다. 0~255 또는 X/Z를 포함한 논리값을 전달할 수 있습니다.</td></tr><tr><td>4-5</td><td><code class="teach-fragment">    input wire rx_valid_i,
+    output wire rx_ready_o,</code></td><td>앞단에서 valid를 받고 앞단으로 ready를 되돌립니다. 이름 끝 i/o는 DUT 기준 방향입니다.</td></tr><tr><td>6-9</td><td><code class="teach-fragment">    output wire [7:0] tx_data_o,
+    output wire tx_valid_o,
+    input wire tx_ready_i
+);</code></td><td>뒤쪽에 8비트 데이터와 valid를 출력하고 뒤쪽의 ready를 받습니다. 입력 3개·출력 3개입니다.</td></tr><tr><td>10</td><td><code class="teach-fragment">    assign rx_ready_o=tx_ready_i;</code></td><td>뒤쪽의 준비 상태를 앞쪽으로 전달하는 역방향 연결입니다.</td></tr><tr><td>11</td><td><code class="teach-fragment">    assign tx_valid_o=rx_valid_i;</code></td><td>입력 valid를 그대로 전달합니다. ready가 0이라고 valid를 강제로 내리지 않습니다.</td></tr><tr><td>12</td><td><code class="teach-fragment">    assign tx_data_o=rx_data_i;</code></td><td>입력 8비트를 그대로 연결합니다. 정상값뿐 아니라 X/Z도 전파되는 4상태 모델입니다. 저장하거나 변환하지 않습니다.</td></tr><tr><td>13</td><td><code class="teach-fragment">endmodule</code></td><td>모듈 정의를 닫습니다. 세 assign은 병렬 관계이며 클록·리셋·내부 버퍼가 없습니다.</td></tr></tbody></table></details></div>
+</section>
+<section class="section" id="s02"><h2><span class="num">02</span>logic과 bit · 미정값을 보존하는 이유</h2><p><code>logic</code>(로직, 4상태 변수형)은 0, 1, X(미정), Z(고임피던스)를 표현합니다. <code>bit</code>(비트, 2상태 변수형)는 0과 1만 표현하고 X/Z를 대입하면 해당 비트를 0으로 변환합니다. 하드웨어의 미정 상태를 발견해야 하는 검증에서는 이러한 차이가 중요합니다.</p><table><thead><tr><th>입력값</th><th>logic [7:0]</th><th>bit [7:0]</th></tr></thead><tbody><tr><td><code>8'h41</code></td><td>01000001</td><td>01000001</td></tr><tr><td><code>8'hx5</code></td><td>xxxx0101</td><td>00000101</td></tr><tr><td><code>8'hz5</code></td><td>zzzz0101</td><td>00000101 (설명용 추가 예)</td></tr></tbody></table><p>실제 TB는 <code>8'hx5</code>를 DUT에 입력하고 <code>four_state_copy</code>와 <code>compact_copy</code>에 복사합니다. 4상태 비교 연산자 <code>!==</code>를 사용하면 X가 예상대로 보존되었는지 확인할 수 있습니다. 이 예제에서 X 일치는 의도적인 검사이며 정상 유효 데이터가 X인 것을 허용한다는 의미는 아닙니다.</p>
+<div class="teach-note"><h3>판서 · X가 사라지면 원인을 복구할 수 없다</h3><p><code>8'hx5</code>를 8비트로 풀면 <code>xxxx_0101</code>입니다. 하위 네 비트 0101은 알려져 있고 상위 네 비트는 미정입니다. logic 변수에 복사하면 그대로지만 bit 변수에 대입하면 미정 네 비트가 각각 0으로 변해 <code>0000_0101=8'h05</code>가 됩니다. 복사 뒤에는 원래 05였는지 x5였는지 구분할 수 없습니다.</p><p>따라서 DUT 포트를 보기 전에 bit로 변환하면 초기화·연결 결함을 숨길 수 있습니다. bit는 미정 상태가 필요 없는 시험용 플래그 등에서 유용할 수 있지만, 미정값을 발견해야 하는 관찰 경로에는 4상태를 유지합니다. 이 시험에서 x5를 기대값으로 허용한 것은 ‘의도한 X 전파’를 확인하기 위한 특수 사례이며 정상 데이터가 X여도 괜찮다는 뜻이 아닙니다.</p></div>
+</section>
+<section class="section" id="s03"><h2><span class="num">03</span>typedef·enum · 검증 사례의 이름</h2><p><code>typedef</code>(타입디프, 자료형에 이름을 부여하는 선언)는 정의한 타입을 여러 선언에서 재사용하게 합니다. <code>enum</code>(이넘, 열거형)은 특정 값에 의미 있는 이름을 붙입니다.</p><div class="codeblock"><div class="codebar"><span>SystemVerilog · case_kind_t</span></div><pre tabindex="0"><code>typedef enum logic [1:0] {
+    CASE_IDLE  = 2'd0,
+    CASE_SEND  = 2'd1,
+    CASE_STALL = 2'd2,
+    CASE_XDATA = 2'd3
+} case_kind_t;</code></pre></div><table><thead><tr><th>사례</th><th>data</th><th>valid</th><th>ready</th><th>관찰 의미</th></tr></thead><tbody><tr><td>CASE_IDLE (0)</td><td>00</td><td>0</td><td>1</td><td>유효하지 않은 입력</td></tr><tr><td>CASE_SEND (1)</td><td>41</td><td>1</td><td>1</td><td>정상 데이터 전달</td></tr><tr><td>CASE_STALL (2)</td><td>42</td><td>1</td><td>0</td><td>준비 신호 LOW의 조합 출력</td></tr><tr><td>CASE_XDATA (3)</td><td>x5</td><td>1</td><td>1</td><td>의도적인 X 전달</td></tr></tbody></table><p><code>kind</code>는 TB가 시험하고 있는 사례를 기록합니다. DUT 내부에 존재하는 FSM(유한상태머신) 상태가 아닙니다.</p>
+<div class="teach-note"><h3>교수용 설명 · enum은 이 TB의 사례 이름이다</h3><p><code>logic [1:0]</code>은 두 비트이고 CASE_IDLE=00, CASE_SEND=01, CASE_STALL=10, CASE_XDATA=11입니다. <code>case_kind_t kind</code>라고 선언하면 kind가 어떤 의미의 값인지 타입과 이름으로 드러납니다. kind의 변화는 주 initial이 호출한 순서에 따른 기록입니다. DUT가 이 상태에 따라 분기하는 FSM을 구현한 것이 아닙니다.</p><p>typedef는 새 회로를 만드는 문장이 아니라 타입의 이름을 정의하는 문장입니다. enum을 정의했다고 DUT의 valid/ready가 자동으로 제어되지도 않습니다. 실제 입력 대입은 run_case 안에 있으므로 명칭·변수·구동 구문을 구별해 읽습니다.</p></div>
+</section>
+<section class="section" id="s04"><h2><span class="num">04</span>packed struct · 10비트 데이터 표현</h2><p><code>struct packed</code>(스트럭트 팩트, 비트 단위로 연속 배치된 구조체)는 여러 필드를 하나의 벡터처럼 묶습니다. 선언 순서가 상위에서 하위 비트로 이어집니다.</p><div class="codeblock"><div class="codebar"><span>SystemVerilog · uart_sample_t</span></div><pre tabindex="0"><code>typedef struct packed {
+    logic [7:0] data;
+    logic       valid;
+    logic       ready;
+} uart_sample_t;</code></pre></div><figure style="margin:16px 0;overflow-x:auto"><div style="min-width:650px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 256" role="img" aria-labelledby="ch05title ch05desc">
+<title id="ch05title">uart_sample_t의 10비트 배치</title><desc id="ch05desc">data는 비트 9부터 2, valid는 비트 1, ready는 비트 0이다. CASE_SEND 예시는 01000001, 1, 1이다.</desc>
+<rect width="900" height="256" fill="white"/>
+<g font-family="Noto Sans CJK KR,sans-serif" fill="#172439" text-anchor="middle">
+<text x="450" y="32" font-size="20" font-weight="bold">uart_sample_t · struct packed (10비트)</text>
+<g stroke="#1F3A5F" stroke-width="2"><rect x="30" y="70" width="600" height="62" fill="#EDF4FD"/><rect x="630" y="70" width="120" height="62" fill="#F7F9FC"/><rect x="750" y="70" width="120" height="62" fill="#F7F9FC"/></g>
+<g font-size="16" font-weight="bold"><text x="330" y="96">data [9:2]</text><text x="690" y="96">valid [1]</text><text x="810" y="96">ready [0]</text></g>
+<g font-size="14"><text x="330" y="119">logic [7:0]</text><text x="690" y="119">logic</text><text x="810" y="119">logic</text></g>
+<text x="450" y="158" font-size="15" font-weight="bold">CASE_SEND · 입력값 배치</text>
+<g stroke="#1F3A5F" stroke-width="1.5" fill="white"><rect x="30" y="174" width="600" height="42"/><rect x="630" y="174" width="120" height="42"/><rect x="750" y="174" width="120" height="42"/><path d="M105 174V216 M180 174V216 M255 174V216 M330 174V216 M405 174V216 M480 174V216 M555 174V216"/></g>
+<g font-size="17"><text x="67.5" y="201">0</text><text x="142.5" y="201">1</text><text x="217.5" y="201">0</text><text x="292.5" y="201">0</text><text x="367.5" y="201">0</text><text x="442.5" y="201">0</text><text x="517.5" y="201">0</text><text x="592.5" y="201">1</text><text x="690" y="201">1</text><text x="810" y="201">1</text></g>
+<text x="450" y="240" font-size="14">8'h41 (ASCII A) · valid=1 · ready=1</text>
+</g></svg>
+</div><figcaption>실제 구조체 필드의 비트 위치. data[9:2]는 구조체 전체의 위치이며 data 필드 자체의 인덱스는 [7:0]입니다. 각 칸은 설명을 위해 너비를 조정했습니다.</figcaption></figure><p><code>run_case(CASE_SEND, {8'h41, 1'b1, 1'b1});</code>에서 중괄호는 Concatenation(컨캐터네이션, 비트 연결)입니다. 8+1+1의 10비트를 <code>uart_sample_t</code> 인자로 전달하면 <code>data</code>, <code>valid</code>, <code>ready</code>로 구분하여 읽습니다. 구조체의 필드 대입 패턴 <code>'{...}</code>도 SystemVerilog 문법이지만, 여기서는 도구별 지원 차이를 줄이기 위해 같은 비트 폭의 연결 표현을 사용합니다.</p>
+<div class="teach-note"><h3>비트 연결을 풀어 읽기 · 10비트가 세 필드가 되는 과정</h3><p>선언 순서가 상위 필드부터 배치되므로 전체 sample[9:2]는 data, sample[1]은 valid, sample[0]은 ready입니다. data 필드 안에서는 여전히 data[7:0]입니다. <code>{8'h41, 1'b1, 1'b1}</code>은 <code>01000001_1_1</code>이고, 무부호 정수로 읽으면 65×4+2+1=263입니다.</p><p>shift로 생각하면 데이터 65를 두 비트 왼쪽으로 옮긴 260에 valid의 자리값 2와 ready의 자리값 1을 더한 것입니다. 이 풀이는 비트 배치 이해용이며 원본 실행 코드를 바꾼 대체 구현이 아닙니다. packed는 필드를 연속된 비트 묶음으로 표현한다는 뜻이고, 여러 샘플을 시간 순서로 저장하는 배열은 다음 장의 개념입니다.</p></div>
+</section>
+<section class="section" id="s05"><h2><span class="num">05</span>전체 테스트벤치 · 자료형을 사용한 검증</h2><p><code>run_case()</code>는 사례 이름과 구조체를 받아 세 DUT 입력에 대입하고 1ns 뒤 실제 출력과 기대값을 비교합니다. 이 1ns는 TB 관찰을 위한 시간이며 하드웨어 지연이 아닙니다.</p><div class="codeblock"><div class="codebar"><span>tb/ch05/tb_uart_types.sv · SystemVerilog</span></div><pre tabindex="0"><code>`timescale 1ns/1ps
+// 제05장: SystemVerilog 자료형으로 UART Echo의 입력·출력을 모델링한다.
+// 기존 uart_echo_controller는 수정하지 않는다.
+// DUT는 조합 논리이므로 클록·리셋·지연된 UART 직렬 비트는 없다.
+module tb_uart_types;
+    // (추가) 4상태 logic: X/Z를 포함한 신호 검증에 사용한다.
+    logic [7:0] rx_data_i;
+    logic       rx_valid_i;
+    logic       tx_ready_i;
+    wire        rx_ready_o;
+    wire [7:0]  tx_data_o;
+    wire        tx_valid_o;
+
+    // (추가) typedef + enum: 검증 단계 이름을 숫자 대신 타입으로 지정한다.
+    typedef enum logic [1:0] {
+        CASE_IDLE  = 2'd0,
+        CASE_SEND  = 2'd1,
+        CASE_STALL = 2'd2,
+        CASE_XDATA = 2'd3
+    } case_kind_t;
+
+    // (추가) packed struct: 한 번의 스트림 입력을 하나의 값으로 묶는다.
+    typedef struct packed {
+        logic [7:0] data;
+        logic       valid;
+        logic       ready;
+    } uart_sample_t;
+
+    // (추가) bit는 2상태 값만 저장한다. X/Z를 저장하면 0으로 변환된다.
+    bit [7:0] compact_copy;
+    logic [7:0] four_state_copy;
+    uart_sample_t sample;
+    case_kind_t  kind;
+    integer checks = 0;
+    integer failures = 0;
+
+    // 실제 원본 RTL의 여섯 포트를 이름 그대로 연결한다.
+    uart_echo_controller dut (
+        .rx_data_i(rx_data_i),
+        .rx_valid_i(rx_valid_i),
+        .rx_ready_o(rx_ready_o),
+        .tx_data_o(tx_data_o),
+        .tx_valid_o(tx_valid_o),
+        .tx_ready_i(tx_ready_i)
+    );
+
+    // (추가) 입력 적용 후 조합 회로가 안정될 시간을 1ns 제공한다.
+    // 출력은 rx_ready_o=tx_ready_i, tx_valid_o=rx_valid_i,
+    // tx_data_o=rx_data_i의 관계를 그대로 만족해야 한다.
+    task automatic run_case(
+        input case_kind_t next_kind,
+        input uart_sample_t next_sample
+    );
+        begin
+            kind = next_kind;
+            sample = next_sample;
+            rx_data_i  = sample.data;
+            rx_valid_i = sample.valid;
+            tx_ready_i = sample.ready;
+            #1;
+
+            checks = checks + 1;
+            if ((rx_ready_o !== sample.ready) ||
+                (tx_valid_o !== sample.valid) ||
+                (tx_data_o !== sample.data)) begin
+                failures = failures + 1;
+                $error(&quot;MISMATCH kind=%0d data=%h valid=%b ready=%b&quot;,
+                    kind, tx_data_o, tx_valid_o, rx_ready_o);
+            end else begin
+                $display(&quot;MATCH kind=%0d data=%h valid=%b ready=%b&quot;,
+                    kind, tx_data_o, tx_valid_o, rx_ready_o);
+            end
+        end
+    endtask
+
+`ifdef VCD
+    // (변경) Icarus 실행에서 VCD 파형을 기록한다.
+    initial begin
+        $dumpfile(&quot;ch05_uart_types.vcd&quot;);
+        $dumpvars(0, tb_uart_types);
+    end
+`endif
+
+    initial begin
+        $display(&quot;=== CH05 SYSTEMVERILOG TYPES START ===&quot;);
+
+        // 입력 데이터가 있어도 valid=0이면 전송은 유효하지 않다.
+        // (변경) packed struct와 같은 10비트의 연결 표현을 사용한다.
+        // data[9:2], valid[1], ready[0] 순서로 구성된다.
+        run_case(CASE_IDLE, {8'h00, 1'b0, 1'b1});
+
+        // valid=1, ready=1이면 전송 가능 상태이다. 실제 수락 이벤트를 측정하지 않는다.
+        run_case(CASE_SEND, {8'h41, 1'b1, 1'b1});
+
+        // ready=0이면 이 입력 사례에서는 출력 valid와 data가 그대로 전달된다.
+        run_case(CASE_STALL, {8'h42, 1'b1, 1'b0});
+
+        // logic과 원본 조합 DUT는 X를 보존하는지 확인할 수 있다.
+        run_case(CASE_XDATA, {8'hx5, 1'b1, 1'b1});
+        four_state_copy = rx_data_i;
+        compact_copy = rx_data_i;
+
+        checks = checks + 1;
+        if (four_state_copy !== 8'hx5) begin
+            failures = failures + 1;
+            $error(&quot;4STATE_COPY_MISMATCH&quot;);
+        end
+
+        checks = checks + 1;
+        if (compact_copy !== 8'h05) begin
+            failures = failures + 1;
+            $error(&quot;2STATE_CONVERSION_MISMATCH&quot;);
+        end
+
+        $display(&quot;TYPE logic=%h bit=%h&quot;, four_state_copy, compact_copy);
+        // (추가) 입력 사례 또는 자료형 비교 누락 방지.
+        if (checks != 6)
+            $fatal(1, &quot;FAIL COUNT checks=%0d expected=6&quot;, checks);
+        if (failures == 0) begin
+            $display(&quot;PASS checks=%0d failures=0&quot;, checks);
+            $finish;
+        end else begin
+            $fatal(1, &quot;FAIL checks=%0d failures=%0d&quot;, checks, failures);
+        end
+    end
+
+    initial begin
+        #100;
+        $fatal(1, &quot;TIMEOUT: testbench did not finish&quot;);
+    end
+endmodule
+</code></pre></div><table><thead><tr><th>코드</th><th>역할</th></tr></thead><tbody><tr><td><code>kind = next_kind</code></td><td>시험 사례 이름 기록</td></tr><tr><td><code>sample = next_sample</code></td><td>10비트 입력 묶음을 복사</td></tr><tr><td><code>rx_data_i = sample.data</code> 등</td><td>세 입력 포트에 필드별 대입</td></tr><tr><td><code>#1</code></td><td>조합 출력 안정화 후 관찰</td></tr><tr><td><code>!==</code>와 <code>||</code></td><td>세 포트 중 하나라도 기대값과 다르면 사례 실패</td></tr><tr><td><code>four_state_copy</code></td><td>X를 그대로 보존</td></tr><tr><td><code>compact_copy</code></td><td>X를 0으로 변환</td></tr><tr><td><code>checks</code> · <code>failures</code></td><td>사례 검사 4회 + 타입 검사 2회 집계</td></tr></tbody></table><p>세 포트 비교는 각 사례당 하나의 검사로 집계합니다. 4개 사례에서 총 12개의 포트 조건을 비교하지만 <code>checks</code>는 4만 증가하고, 타입 검사 두 개를 더해 6이 됩니다.</p>
+<div class="teach-note"><h3>전체 TB의 동작과 집계 단위</h3><p>run_case는 사례 이름·10비트 입력 묶음을 받아 세 신호에 풀어 쓰고 1ns 뒤 세 연결을 동시에 비교합니다. task 호출이 반환한 뒤 다음 사례를 수행하므로 네 비교는 1·2·3·4ns입니다. 여기에는 클록 생성이나 reset 절차가 없습니다.</p><p>한 사례에서 포트 세 개가 모두 틀려도 OR로 묶은 조건은 한 번 참이 되어 failures를 한 번 늘립니다. 따라서 failures는 틀린 비트 수가 아니라 이 코드에서 정의한 실패 검사 수입니다. checks=4사례+2타입 변환=6이며 세 포트 조건은 실제로 4×3=12개를 평가합니다.</p><h4>tb/ch05/tb_uart_types.sv · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-5</td><td><code class="teach-fragment">`timescale 1ns/1ps
+// 제05장: SystemVerilog 자료형으로 UART Echo의 입력·출력을 모델링한다.
+// 기존 uart_echo_controller는 수정하지 않는다.
+// DUT는 조합 논리이므로 클록·리셋·지연된 UART 직렬 비트는 없다.
+module tb_uart_types;</code></td><td>시간 규격과 검증 대상·범위 주석, 최상위 TB 선언입니다. UART 직렬 비트나 클록이 없음을 명시합니다.</td></tr><tr><td>6-12</td><td><code class="teach-fragment">    // (추가) 4상태 logic: X/Z를 포함한 신호 검증에 사용한다.
+    logic [7:0] rx_data_i;
+    logic       rx_valid_i;
+    logic       tx_ready_i;
+    wire        rx_ready_o;
+    wire [7:0]  tx_data_o;
+    wire        tx_valid_o;</code></td><td>DUT 입력은 TB가 값을 대입하는 4상태 logic, 출력은 DUT가 구동하는 wire입니다. 8비트 데이터와 1비트 제어 폭을 유지합니다.</td></tr><tr><td>14-20</td><td><code class="teach-fragment">    // (추가) typedef + enum: 검증 단계 이름을 숫자 대신 타입으로 지정한다.
+    typedef enum logic [1:0] {
+        CASE_IDLE  = 2&#x27;d0,
+        CASE_SEND  = 2&#x27;d1,
+        CASE_STALL = 2&#x27;d2,
+        CASE_XDATA = 2&#x27;d3
+    } case_kind_t;</code></td><td>두 비트 열거형에 네 사례 이름과 명시적 숫자를 정의합니다. CASE_*는 TB의 사례 분류입니다.</td></tr><tr><td>22-27</td><td><code class="teach-fragment">    // (추가) packed struct: 한 번의 스트림 입력을 하나의 값으로 묶는다.
+    typedef struct packed {
+        logic [7:0] data;
+        logic       valid;
+        logic       ready;
+    } uart_sample_t;</code></td><td>8비트 data와 1비트 valid·ready를 총 10비트 packed 구조체 타입으로 정의합니다. 선언 순서가 전체 벡터의 상위→하위 배치입니다.</td></tr><tr><td>29-35</td><td><code class="teach-fragment">    // (추가) bit는 2상태 값만 저장한다. X/Z를 저장하면 0으로 변환된다.
+    bit [7:0] compact_copy;
+    logic [7:0] four_state_copy;
+    uart_sample_t sample;
+    case_kind_t  kind;
+    integer checks = 0;
+    integer failures = 0;</code></td><td>2상태·4상태 복사 변수, 현재 sample·kind, 검사·실패 카운터를 선언합니다. 두 카운터는 0으로 시작합니다.</td></tr><tr><td>37-45</td><td><code class="teach-fragment">    // 실제 원본 RTL의 여섯 포트를 이름 그대로 연결한다.
+    uart_echo_controller dut (
+        .rx_data_i(rx_data_i),
+        .rx_valid_i(rx_valid_i),
+        .rx_ready_o(rx_ready_o),
+        .tx_data_o(tx_data_o),
+        .tx_valid_o(tx_valid_o),
+        .tx_ready_i(tx_ready_i)
+    );</code></td><td>DUT의 여섯 포트를 실제 이름으로 연결합니다. 구조체 자체를 DUT에 연결하는 것이 아니라 다음 task에서 필드를 신호로 풉니다.</td></tr><tr><td>47-53</td><td><code class="teach-fragment">    // (추가) 입력 적용 후 조합 회로가 안정될 시간을 1ns 제공한다.
+    // 출력은 rx_ready_o=tx_ready_i, tx_valid_o=rx_valid_i,
+    // tx_data_o=rx_data_i의 관계를 그대로 만족해야 한다.
+    task automatic run_case(
+        input case_kind_t next_kind,
+        input uart_sample_t next_sample
+    );</code></td><td>사례 타입과 입력 구조체를 인자로 받는 automatic task를 선언합니다. 시간 대기 #1은 이 task 안의 관찰용 선택입니다.</td></tr><tr><td>54-60</td><td><code class="teach-fragment">        begin
+            kind = next_kind;
+            sample = next_sample;
+            rx_data_i  = sample.data;
+            rx_valid_i = sample.valid;
+            tx_ready_i = sample.ready;
+            #1;</code></td><td>인자를 현재 변수로 복사하고 data·valid·ready를 세 입력에 대입한 뒤 1ns 기다립니다. ready는 tx_ready_i로 구동합니다.</td></tr><tr><td>62-68</td><td><code class="teach-fragment">            checks = checks + 1;
+            if ((rx_ready_o !== sample.ready) ||
+                (tx_valid_o !== sample.valid) ||
+                (tx_data_o !== sample.data)) begin
+                failures = failures + 1;
+                $error(&quot;MISMATCH kind=%0d data=%h valid=%b ready=%b&quot;,
+                    kind, tx_data_o, tx_valid_o, rx_ready_o);</code></td><td>사례당 checks를 한 번 증가시킵니다. 세 출력 중 하나라도 해당 필드와 !==이면 failures를 한 번 증가시키고 불일치 출력을 기록합니다.</td></tr><tr><td>69-74</td><td><code class="teach-fragment">            end else begin
+                $display(&quot;MATCH kind=%0d data=%h valid=%b ready=%b&quot;,
+                    kind, tx_data_o, tx_valid_o, rx_ready_o);
+            end
+        end
+    endtask</code></td><td>세 출력이 모두 맞으면 MATCH를 출력합니다. kind는 숫자, data는 16진수, valid·ready는 이진수로 표시한 뒤 task를 반환합니다.</td></tr><tr><td>76-82</td><td><code class="teach-fragment">`ifdef VCD
+    // (변경) Icarus 실행에서 VCD 파형을 기록한다.
+    initial begin
+        $dumpfile(&quot;ch05_uart_types.vcd&quot;);
+        $dumpvars(0, tb_uart_types);
+    end
+`endif</code></td><td>VCD 옵션이 있으면 현재 TB 계층의 신호를 기록합니다. 파형 기록 선택과 자동 비교는 별개입니다.</td></tr><tr><td>84-90</td><td><code class="teach-fragment">    initial begin
+        $display(&quot;=== CH05 SYSTEMVERILOG TYPES START ===&quot;);
+
+        // 입력 데이터가 있어도 valid=0이면 전송은 유효하지 않다.
+        // (변경) packed struct와 같은 10비트의 연결 표현을 사용한다.
+        // data[9:2], valid[1], ready[0] 순서로 구성된다.
+        run_case(CASE_IDLE, {8&#x27;h00, 1&#x27;b0, 1&#x27;b1});</code></td><td>시작을 출력하고 IDLE 입력 00/0/1을 10비트로 연결해 전달합니다. 유효하지 않아도 데이터선은 그대로 전달되어야 합니다.</td></tr><tr><td>92-96</td><td><code class="teach-fragment">        // valid=1, ready=1이면 전송 가능 상태이다. 실제 수락 이벤트를 측정하지 않는다.
+        run_case(CASE_SEND, {8&#x27;h41, 1&#x27;b1, 1&#x27;b1});
+
+        // ready=0이면 이 입력 사례에서는 출력 valid와 data가 그대로 전달된다.
+        run_case(CASE_STALL, {8&#x27;h42, 1&#x27;b1, 1&#x27;b0});</code></td><td>SEND 41/1/1과 STALL 42/1/0을 각각 실행합니다. STALL은 ready를 내린 독립 조합 사례이며 수락 전 데이터 유지 규약을 전부 시험하지 않습니다.</td></tr><tr><td>98-101</td><td><code class="teach-fragment">        // logic과 원본 조합 DUT는 X를 보존하는지 확인할 수 있다.
+        run_case(CASE_XDATA, {8&#x27;hx5, 1&#x27;b1, 1&#x27;b1});
+        four_state_copy = rx_data_i;
+        compact_copy = rx_data_i;</code></td><td>XDATA x5/1/1을 실행한 뒤 현재 rx_data_i를 logic과 bit 변수에 각각 복사합니다. 아직 X를 보존한 원본 값을 두 경로에 공급합니다.</td></tr><tr><td>103-107</td><td><code class="teach-fragment">        checks = checks + 1;
+        if (four_state_copy !== 8&#x27;hx5) begin
+            failures = failures + 1;
+            $error(&quot;4STATE_COPY_MISMATCH&quot;);
+        end</code></td><td>logic 복사가 정확히 x5인지 확인하는 다섯 번째 검사입니다. X를 0으로 바꿨다면 오류로 기록합니다.</td></tr><tr><td>109-113</td><td><code class="teach-fragment">        checks = checks + 1;
+        if (compact_copy !== 8&#x27;h05) begin
+            failures = failures + 1;
+            $error(&quot;2STATE_CONVERSION_MISMATCH&quot;);
+        end</code></td><td>bit 복사가 정확히 05인지 확인하는 여섯 번째 검사입니다. 4상태→2상태 변환 규칙을 검사합니다.</td></tr><tr><td>115-118</td><td><code class="teach-fragment">        $display(&quot;TYPE logic=%h bit=%h&quot;, four_state_copy, compact_copy);
+        // (추가) 입력 사례 또는 자료형 비교 누락 방지.
+        if (checks != 6)
+            $fatal(1, &quot;FAIL COUNT checks=%0d expected=6&quot;, checks);</code></td><td>두 복사값을 보여 주고 총 checks=6인지 확인합니다. 시험 누락으로 failures=0이 된 경우를 그대로 승인하지 않습니다.</td></tr><tr><td>119-125</td><td><code class="teach-fragment">        if (failures == 0) begin
+            $display(&quot;PASS checks=%0d failures=0&quot;, checks);
+            $finish;
+        end else begin
+            $fatal(1, &quot;FAIL checks=%0d failures=%0d&quot;, checks, failures);
+        end
+    end</code></td><td>누적 실패가 없으면 PASS와 정상 종료, 있으면 FAIL Fatal로 끝냅니다. MATCH 한 행만으로 전체 PASS를 판단하지 않습니다.</td></tr><tr><td>127-131</td><td><code class="teach-fragment">    initial begin
+        #100;
+        $fatal(1, &quot;TIMEOUT: testbench did not finish&quot;);
+    end
+endmodule</code></td><td>별도 initial은 100ns까지 정상 종료하지 않으면 TIMEOUT으로 비정상 종료합니다. 정상 네 사례는 4ns에 끝나므로 대기하지 않습니다.</td></tr></tbody></table></details></div>
+</section>
+<section class="section" id="s06"><h2><span class="num">06</span>실행 · Ubuntu / Vivado XSIM</h2><p>아래 경로를 만든 후 01절의 전체 RTL과 05절의 전체 TB를 각각 저장합니다. 별도의 설계 저장소나 보드는 필요하지 않습니다.</p><div class="codeblock"><div class="codebar"><span>Ubuntu 터미널 · 폴더 준비</span></div><pre tabindex="0"><code>mkdir -p ch05_lab/reference_rtl ch05_lab/tb/ch05
+cd ch05_lab</code></pre></div><div class="codeblock"><div class="codebar"><span>Ubuntu 터미널 · Vivado XSIM</span></div><pre tabindex="0"><code># Vivado 설치 경로의 settings64.sh를 source한 뒤 실행
+command -v xvlog xelab xsim
+mkdir -p .build/ch05/xsim
+cd .build/ch05/xsim
+xvlog ../../../reference_rtl/uart_echo_controller.v
+xvlog -sv ../../../tb/ch05/tb_uart_types.sv
+xelab -debug typical tb_uart_types -s ch05_sim
+xsim ch05_sim -runall
+# 같은 폴더에서 파형 GUI 실행
+xsim ch05_sim -gui</code></pre></div><table><thead><tr><th>명령</th><th>기능</th></tr></thead><tbody><tr><td>xvlog</td><td>RTL 및 SystemVerilog 분석</td></tr><tr><td>xelab</td><td>DUT와 TB 연결, 스냅샷 생성</td></tr><tr><td>xsim</td><td>시뮬레이션 실행 또는 GUI 파형 확인</td></tr></tbody></table><p>파형 창에 여섯 포트, <code>kind</code>, <code>sample</code>, <code>four_state_copy</code>, <code>compact_copy</code>를 추가합니다. GUI에서 Run All을 실행합니다.</p><h3>대체 실행 · Icarus Verilog</h3><div class="codeblock"><div class="codebar"><span>Ubuntu 터미널 · 실습 폴더 루트</span></div><pre tabindex="0"><code>mkdir -p .build/ch05/iverilog
+iverilog -g2012 -DVCD -s tb_uart_types \
+  -o .build/ch05/iverilog/sim \
+  reference_rtl/uart_echo_controller.v tb/ch05/tb_uart_types.sv
+(cd .build/ch05/iverilog &amp;&amp; vvp ./sim)</code></pre></div><p><code>-DVCD</code>는 VCD(Value Change Dump, 신호 변화 기록)를 활성화합니다. 설치 버전의 열거형·구조체·태스크 인자 지원을 확인하며, 지원 부족으로 컴파일에 실패하면 XSIM을 사용합니다. Icarus 실행 시 <code>.build/ch05/iverilog/ch05_uart_types.vcd</code>가 생성됩니다.</p>
+<div class="teach-note"><h3>실습 지도 · 언어 옵션과 DUT 연결</h3><p><code>xvlog -sv</code> 또는 <code>iverilog -g2012</code>가 필요한 이유는 TB의 logic·typedef·enum·struct를 SystemVerilog 문법으로 분석해야 하기 때문입니다. 원본 DUT는 Verilog로 그대로 분석합니다. packed struct 인자와 10비트 연결 표현은 원본 도구 호환 선택이며 다른 표기로 임의 변경하지 않습니다.</p><p>독립 실습은 위 두 전체 코드를 지정한 경로에 저장한 뒤 직접 명령으로 실행합니다. 실행 증거의 원본 저장소 runner 명령은 해당 저장소 전체가 있을 때 사용합니다. 교수용 제작에서 새로운 RTL_SIM은 <strong>NOT_RUN</strong>입니다.</p></div>
+</section>
+<section class="section" id="s07"><h2><span class="num">07</span>예상 결과와 오류 분석</h2><p>최종 PASS 전에 네 입력 사례와 두 자료형 비교가 모두 수행되어 checks가 6인지 확인합니다.</p><p>다음은 원본 연결식과 4상태·2상태 변환 규칙으로 도출한 예상 출력입니다. 실제 시뮬레이터 실행 결과와 대조합니다.</p><div class="codeblock"><div class="codebar"><span>예상 콘솔 출력 · 주요 행</span></div><pre tabindex="0"><code>=== CH05 SYSTEMVERILOG TYPES START ===
+MATCH kind=0 data=00 valid=0 ready=1
+MATCH kind=1 data=41 valid=1 ready=1
+MATCH kind=2 data=42 valid=1 ready=0
+MATCH kind=3 data=x5 valid=1 ready=1
+TYPE logic=x5 bit=05
+PASS checks=6 failures=0</code></pre></div><table><thead><tr><th>시각</th><th>관찰 결과</th></tr></thead><tbody><tr><td>1ns</td><td>CASE_IDLE 비교</td></tr><tr><td>2ns</td><td>CASE_SEND 비교</td></tr><tr><td>3ns</td><td>CASE_STALL 비교</td></tr><tr><td>4ns</td><td>CASE_XDATA 및 두 타입 변환 비교 후 종료</td></tr></tbody></table><table><thead><tr><th>오류</th><th>점검</th></tr></thead><tbody><tr><td>MISMATCH</td><td>세 포트의 비트 폭·방향 및 sample 필드</td></tr><tr><td>4STATE_COPY_MISMATCH</td><td>logic을 bit로 먼저 변환했는지 확인</td></tr><tr><td>2STATE_CONVERSION_MISMATCH</td><td>compact_copy의 bit 선언 확인</td></tr><tr><td>TIMEOUT</td><td>TB 종료 및 실행 상태 확인</td></tr><tr><td>컴파일 오류</td><td>SystemVerilog 옵션과 설치 버전 확인</td></tr></tbody></table><p>다음 제06장에서는 여러 입력 사례와 기대값을 배열·큐·패키지로 관리합니다.</p>
+<div class="execution-evidence" data-evidence="v59"><h3>2026-11-26 실제 실행 결과</h3><p>Icarus Verilog 12.0 · 종료 코드 0 · <strong>PASS</strong>. 정상 실행과 정의된 오류 검출 조건을 장별 실행기로 확인했습니다.</p><div class="codeblock"><div class="codebar"><span>저장소 루트 · Bash · 실행 재현 명령</span></div><pre tabindex="0"><code>bash scripts/run_chapter.sh 05</code></pre></div><div class="codeblock"><div class="codebar"><span>실제 로그 발췌 · 예상 출력과 구별</span></div><pre tabindex="0"><code>PASS checks=6 failures=0</code></pre></div><p><a href="https://github.com/Yuul-Jung/system_verilog_uvm_tb/blob/2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708/docs/evidence/v59/README.md#ch05">실행 명령·종료 코드·공개 로그 및 해시 확인</a>. 위의 예상 파형은 코드에서 계산한 도식이며, 실측 파형 이미지는 별도로 수록하지 않았습니다.</p></div>
+
+<div class="teach-note"><h3>예상 문답과 결과 해석</h3><p><strong>왜 kind=3에서 X가 나와도 MATCH인가요?</strong> 그 사례는 입력 x5가 그대로 출력될 것을 요구합니다. 비교의 정답이 의도적으로 x5이므로 정상입니다. 실제 UART 정상 전송의 유효 바이트를 X로 허용한 시험이 아닙니다.</p><p><strong>logic이면 항상 플립플롭인가요?</strong> 자료형과 회로 구조는 다릅니다. 현재 logic은 task에서 값을 바꾸는 TB 변수입니다. 회로의 저장 여부는 합성 대상 코드와 클록·대입 구조로 판단합니다.</p><p><strong>TYPE logic=x5 bit=05가 무엇을 증명하나요?</strong> 현재 한 패턴의 4상태 보존과 2상태 변환 결과를 확인합니다. 모든 X/Z 조합이나 모든 데이터 패턴을 전수 검사했다는 뜻은 아닙니다. 다음 장에서는 여러 바이트와 기대값을 배열·큐로 늘려 관리합니다.</p></div>
+</section>
+<div class="chapter-links" id="chapter-links"></div></main></div><footer class="footer">RTL TESTBENCH · SYSTEMVERILOG · UVM · CH05 교수용 v01 · 원본 v05 · PASS</footer><script>window.COURSE={"title":"RTL · SystemVerilog · UVM 교수용 해설서","short_title":"SV UVM TEACH","home_label":"전체 교수용 해설서","chapters":[{"id":"ch01","number":1,"title":"테스트벤치의 첫 실행","file":"ch01_teacher_v02.html"},{"id":"ch02","number":2,"title":"Clock·Reset·이벤트","file":"ch02_teacher_v01.html"},{"id":"ch03","number":3,"title":"반복 자극과 작업 분리","file":"ch03_teacher_v01.html"},{"id":"ch04","number":4,"title":"PASS/FAIL 자동 판정","file":"ch04_teacher_v01.html"},{"id":"ch05","number":5,"title":"검증 자료형과 타입","file":"ch05_teacher_v01.html"}]};</script><script src="assets/site.js"></script></body></html>
