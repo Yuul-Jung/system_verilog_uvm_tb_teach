@@ -131,6 +131,12 @@
       "number": 18,
       "title": "Sequence에서 Driver까지",
       "file": "ch18_teacher_v01.html"
+    },
+    {
+      "id": "ch19",
+      "number": 19,
+      "title": "Monitor·Agent·Scoreboard",
+      "file": "ch19_teacher_v01.html"
     }
   ]
 };

@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v19",
+  "version": "v20",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -274,6 +274,21 @@
       "source_tb": "tb/ch18/tb_pwm_sequence_driver.sv",
       "rtl_simulation": "NOT_RUN",
       "original_execution": "PASS"
+    },
+    {
+      "id": "ch19",
+      "number": 19,
+      "title": "Monitor·Agent·Scoreboard",
+      "slug": "ch19_teacher",
+      "version": "v01",
+      "source_html": "ch19_monitor_agent_scoreboard_v05.html",
+      "source_version": "v05",
+      "source_blob": "56bcf0db00b89dbf32524c81d39f5c4aff001c6d",
+      "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
+      "source_course_version": "v60",
+      "source_tb": "tb/ch19/tb_pwm_monitor_agent_scoreboard.sv",
+      "rtl_simulation": "NOT_RUN",
+      "original_execution": "PASS"
     }
   ],
   "planned_chapters": [
@@ -427,7 +442,7 @@
       "title": "Monitor·Agent·Scoreboard",
       "source_html": "ch19_monitor_agent_scoreboard_v05.html",
       "source_version": "v05",
-      "status": "planned"
+      "status": "published"
     },
     {
       "id": "ch20",

@@ -29,4 +29,5 @@
 - [제16장 · MAC·NPU 정수 연산 검증](ch16_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch16_v01.md)
 - [제17장 · 최소 UVM 환경](ch17_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch17_v01.md)
 - [제18장 · Sequence에서 Driver까지](ch18_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch18_v01.md)
+- [제19장 · Monitor·Agent·Scoreboard](ch19_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch19_v01.md)
 <!-- /PUBLISHED -->
