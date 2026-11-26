@@ -43,7 +43,7 @@ Pages는 `main` 루트의 정적 HTML을 제공합니다. `.nojekyll`로 원본 
 - [제21장 · UVM 레지스터 추상화](ch21_teacher_v02.html) · [검증 기록](docs/VALIDATION_ch21_v02.md)
 - [제22장 · 다중 Agent·VIP](ch22_teacher_v02.html) · [검증 기록](docs/VALIDATION_ch22_v02.md)
 - [제23장 · NPU 통합 정답 비교](ch23_teacher_v02.html) · [검증 기록](docs/VALIDATION_ch23_v02.md)
-- [제24장 · 회귀·CI·검증 보고](ch24_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch24_v01.md)
+- [제24장 · 회귀·CI·검증 보고](ch24_teacher_v02.html) · [검증 기록](docs/VALIDATION_ch24_v02.md)
 <!-- /PUBLISHED -->
 
 교수용 해설 보강 v26: 제21장 v02에서 RAL 구문 및 API 인자, 객체 생성, 독립 예측 경로, 실제 행별 풀이를 세분화했다. [제21장 v02 검증](docs/VALIDATION_ch21_v02.md). 기존 v25 화면·Pages 증거는 해당 시점의 기록이며 v02 화면/공개 HTTP 신규 확인은 별도 수행 대상이다.
@@ -59,3 +59,5 @@ Pages는 `main` 루트의 정적 HTML을 제공합니다. `.nojekyll`로 원본 
 교수용 해설 보강 v31: 제15장 v02에서 AXI 5채널, AW/W 독립 수락과 commit, WSTRB 바이트 갱신, 응답 대기·리셋 취소 및 T1~T5 계수를 보강했다. [제15장 v02 검증](docs/VALIDATION_ch15_v02.md). 신규 브라우저·공개 Pages 검사는 별도 수행 대상이다.
 
 교수용 해설 보강 v32: 제23장 v02에서 NPU 데이터 폭·부호 확장·독립 점수 모델·파이프라인·극값 및 거부 조건을 보강했다. busy 쓰기 시험의 RAM 영구 보존 및 정확한 error 펄스 길이 검증 한계도 명시했다. [제23장 v02 검증](docs/VALIDATION_ch23_v02.md). 신규 브라우저·공개 Pages 검사는 별도 수행 대상이다.
+
+교수용 해설 보강 v33: 제24장 v02에서 시드·XOR shift, Python 실행기/API/정규식, 부정 시험, CI 및 보고서 판정을 보강했다. [제24장 v02 검증](docs/VALIDATION_ch24_v02.md). 지정 8장 집중 보강 완료. 신규 브라우저·공개 Pages 및 전체 종합 검증은 별도 수행 대상이다.
