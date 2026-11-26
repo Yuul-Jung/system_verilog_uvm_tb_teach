@@ -1,0 +1,534 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="제12장 기능 커버리지: 실제 PWM RTL 설정 조합을 기록하고 파형을 검증합니다.">
+<title>교수용 해설서 · 제12장 · 기능 커버리지 · RTL 검증 학습안내서</title>
+<link rel="stylesheet" href="assets/site.css"><style>.teach-note{margin:18px 0 4px;padding:15px 18px;background:#f8f7fc;border:1px solid #dddaee;border-left:4px solid #4635b1;border-radius:6px;overflow-wrap:anywhere}.teach-note h3{margin:0 0 10px;color:#4635b1}.teach-note h4{margin:14px 0 6px}.teach-note p{margin:8px 0}.teach-note summary{cursor:pointer;font-weight:600;margin:10px 0}.teach-fragment{white-space:pre-wrap;overflow-wrap:anywhere;display:block;min-width:140px}.teach-note table{margin:10px 0}.teach-note td{vertical-align:top}@media(max-width:860px){.teach-note{padding:12px}.teach-note td{min-width:68px}}.teach-note details table{min-width:680px}.teach-note details th:first-child,.teach-note details td:first-child{min-width:60px;white-space:nowrap}.teach-note details .teach-fragment{min-width:250px}</style></head>
+<body data-chapter="ch12">
+<a class="access-skip" href="#main-content" style="position:absolute;left:-9999px;top:0">본문 바로가기</a>
+<button type="button" class="mobile-menu" id="mobile-menu" aria-controls="course-nav" aria-expanded="false">☰ 장·목차</button><div class="shade" id="shade"></div>
+<header class="hero"><div class="hero-inner"><p class="kicker">교수용 해설서 · 제3부 · 자동 검증·속성·커버리지</p>
+<h1>제12장 · 기능 커버리지</h1>
+<p>테스트가 통과했다는 사실과, 어떤 입력 조합을 실제로 확인했는지를 구별합니다.</p>
+<div class="chips"><span class="chip">PART 03 · CHAPTER 12</span><span class="chip">12개 교차 조합 · 96개 출력 표본</span><span class="chip">DUT 원본 보존</span></div></div></header>
+<div class="wrap"><nav class="toc" id="course-nav" aria-label="부·장·절 탐색"></nav>
+<main class="content" id="main-content"><p>원본 제12장 · v03의 절·그림·전체 코드·실습을 보존한 교수용 해설서입니다.</p>
+<section class="section" id="s00"><h2><span class="num">00</span>개요 · 정답 판정과 검증 범위의 구별</h2><p>제09장은 기대값 비교, 제10장은 경계조건과 오류 주입, 제11장은 시간적 속성을 다뤘습니다. 이번 장에서는 Functional Coverage(펑셔널 커버리지, 기능별 검증 범위)를 사용해 어떤 설정 조합을 시험했는지 기록합니다. PASS와 100% 커버리지는 같은 의미가 아닙니다.</p><p><strong>선행 설계 학습안내서:</strong> 제2부 사용자 AXI IP와 주변장치(<code>amd_soc_p2</code>) 04.2장 「RTL · AXI 풀이」 02절 「설정 Shadow와 출력 Active를 분리」 및 06절 「독립 PWM Core 전체」. 원본 PWM만 검증합니다.</p><div class="codeblock"><div class="codebar"><span>Ubuntu · 폴더 준비</span></div><pre tabindex="0"><code>mkdir -p ch12_lab/reference_rtl ch12_lab/tb/ch12
+cd ch12_lab</code></pre></div><table><thead><tr><th>파일</th><th>역할</th></tr></thead><tbody><tr><td>reference_rtl/pwm_core.v</td><td>원본 DUT</td></tr><tr><td>tb/ch12/tb_pwm_coverage.sv</td><td>기능 커버리지 및 파형 검사</td></tr><tr><td>tb/ch12/run_ch12.sh</td><td>XSIM 실행·보고서 생성</td></tr></tbody></table><p>01절·05절·06절의 전체 코드를 지정 파일로 저장합니다.</p>
+<div class="teach-note"><h3>교수용 이론 · 맞았는가와 해 보았는가는 다른 질문</h3><p>비교기는 관찰한 결과가 기대와 맞는지 묻습니다. 기능 커버리지는 계획한 기능 분류와 조합을 실제로 방문했는지 묻습니다. 두 질문은 서로 대체하지 않습니다. 오류가 없는 좁은 시험도 있고, 많은 조합을 방문했지만 출력은 틀린 시험도 가능합니다.</p><p>이번 TB는 출력 검사를 끝낸 뒤에만 커버리지를 기록하므로 검사를 통과한 적용 조합을 추적합니다. ‘100%’의 의미는 먼저 정의한 bin의 크기와 교차 분류를 알아야 해석할 수 있습니다.</p></div>
+</section>
+<section class="section" id="s01"><h2><span class="num">01</span>원본 RTL과 PWM 출력 계약</h2><p>RESET_PERIOD와 cfg_period는 8클록으로 고정합니다. 클록은 10ns, 한 PWM 주기는 80ns입니다. 대기 설정은 주기 경계에서 활성 설정으로 이동합니다. 리셋은 레지스터에 동기적으로 적용되며 출력은 조합적으로 차단됩니다.</p><div class="codeblock"><div class="codebar"><span>reference_rtl/pwm_core.v · Verilog</span></div><pre tabindex="0"><code>`timescale 1ns/1ps
+// P2-04: 보드와 무관한 단일 채널 범용 PWM 코어.
+// (추가) period와 duty는 클록 횟수 단위. 0%/100%는 지속 LOW/HIGH.
+// (추가) 설정은 주기 마지막 경계에서만 활성값으로 반영.
+module pwm_core #(
+    parameter [31:0] RESET_PERIOD = 32'd100000
+)(
+    input  wire        clk,
+    input  wire        resetn,
+    input  wire        cfg_apply,
+    input  wire [31:0] cfg_period,
+    input  wire [31:0] cfg_duty,
+    input  wire        cfg_enable,
+    input  wire        cfg_polarity,
+    output wire        pwm_out,
+    output reg         pending,
+    output reg [31:0] active_period,
+    output reg [31:0] active_duty,
+    output reg         active_enable,
+    output reg         active_polarity
+);
+    reg [31:0] counter;
+    reg [31:0] shadow_period;
+    reg [31:0] shadow_duty;
+    reg        shadow_enable;
+    reg        shadow_polarity;
+
+    wire boundary = (counter &gt;= active_period - 32'd1);
+    wire duty_high = (counter &lt; active_duty);
+
+    // (주의) enable=0이면 polarity와 관계없이 LOW로 차단.
+    // (설명) 기본 polarity에서 active_duty=0이면 항상 LOW,
+    //         active_duty=active_period이면 항상 HIGH.
+    assign pwm_out = resetn &amp;&amp; active_enable &amp;&amp;
+                     (active_polarity ? !duty_high : duty_high);
+
+    always @(posedge clk) begin
+        if (!resetn) begin
+            counter         &lt;= 32'd0;
+            active_period   &lt;= RESET_PERIOD;
+            active_duty     &lt;= 32'd0;
+            active_enable   &lt;= 1'b0;
+            active_polarity &lt;= 1'b0;
+            shadow_period   &lt;= RESET_PERIOD;
+            shadow_duty     &lt;= 32'd0;
+            shadow_enable   &lt;= 1'b0;
+            shadow_polarity &lt;= 1'b0;
+            pending         &lt;= 1'b0;
+        end else begin
+            if (boundary) begin
+                counter &lt;= 32'd0;
+                if (pending) begin
+                    active_period   &lt;= shadow_period;
+                    active_duty     &lt;= shadow_duty;
+                    active_enable   &lt;= shadow_enable;
+                    active_polarity &lt;= shadow_polarity;
+                    pending         &lt;= 1'b0;
+                end
+            end else begin
+                counter &lt;= counter + 32'd1;
+            end
+            // (추가) 경계와 APPLY가 겹치면 새 값은 다음 경계에 적용.
+            // 여러 APPLY가 겹치면 최종 요청값을 우선하는 단일 Shadow 구조.
+            if (cfg_apply) begin
+                shadow_period   &lt;= cfg_period;
+                shadow_duty     &lt;= cfg_duty;
+                shadow_enable   &lt;= cfg_enable;
+                shadow_polarity &lt;= cfg_polarity;
+                pending         &lt;= 1'b1;
+            end
+        end
+    end
+endmodule
+</code></pre></div><p>정상 극성의 HIGH 개수는 듀티, 반전 극성은 8에서 듀티를 뺀 값입니다. enable이 0이면 극성과 무관하게 LOW입니다. 이번 장에서는 공개 포트만 관찰합니다.</p>
+<div class="teach-note"><h3>같은 PWM 원본으로 조합을 확장한다</h3><p>주기8·듀티0/4/8·허용0/1·극성0/1을 사용합니다. enable0이면 극성에 관계없이 출력0이어야 하고, enable1이면 정상 극성에서 duty만큼 HIGH, 반전 극성에서 8-duty만큼 HIGH입니다. DUT 코드를 바꾸지 않고 입력 조합과 기대식의 범위를 확장합니다.</p><h4>reference_rtl/pwm_core.v · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-4</td><td><code class="teach-fragment">`timescale 1ns/1ps
+// P2-04: 보드와 무관한 단일 채널 범용 PWM 코어.
+// (추가) period와 duty는 클록 횟수 단위. 0%/100%는 지속 LOW/HIGH.
+// (추가) 설정은 주기 마지막 경계에서만 활성값으로 반영.</code></td><td>시간 단위는 ns, 정밀도는 ps입니다. period와 duty는 시간값이 아니라 클록 횟수이며, 새 설정은 주기 끝에서 적용한다는 계약을 주석이 정리합니다.</td></tr><tr><td>5-7</td><td><code class="teach-fragment">module pwm_core #(
+    parameter [31:0] RESET_PERIOD = 32&#x27;d100000
+)(</code></td><td>pwm_core의 모듈·파라미터를 선언합니다. RESET_PERIOD의 기본값 100,000을 TB 인스턴스에서 8로 바꿉니다. 원본 RTL의 기본값을 수정하는 것과 다릅니다.</td></tr><tr><td>8-10</td><td><code class="teach-fragment">    input  wire        clk,
+    input  wire        resetn,
+    input  wire        cfg_apply,</code></td><td>상승 에지 기준 clk, 0일 때 리셋하는 resetn, 설정 요청 cfg_apply입니다. 입력 이름만으로 리셋의 동기·비동기 여부를 판단하지 않고 always의 이벤트 조건을 확인해야 합니다.</td></tr><tr><td>11-14</td><td><code class="teach-fragment">    input  wire [31:0] cfg_period,
+    input  wire [31:0] cfg_duty,
+    input  wire        cfg_enable,
+    input  wire        cfg_polarity,</code></td><td>주기·듀티는 32비트 무부호 값, enable·polarity는 1비트 제어값입니다. 입력을 바꾸는 것과 Active에 적용되는 것은 별개입니다.</td></tr><tr><td>15-21</td><td><code class="teach-fragment">    output wire        pwm_out,
+    output reg         pending,
+    output reg [31:0] active_period,
+    output reg [31:0] active_duty,
+    output reg         active_enable,
+    output reg         active_polarity
+);</code></td><td>pwm_out은 조합 출력입니다. pending과 active_*는 아래 순차 블록에서 갱신하는 상태입니다. 이 reg들은 실제 에지 기반 저장 동작과 연결됩니다.</td></tr><tr><td>22</td><td><code class="teach-fragment">    reg [31:0] counter;</code></td><td>현재 주기의 위치 counter를 32비트로 보존합니다. 8클록 주기라면 0~7을 순환합니다.</td></tr><tr><td>23-26</td><td><code class="teach-fragment">    reg [31:0] shadow_period;
+    reg [31:0] shadow_duty;
+    reg        shadow_enable;
+    reg        shadow_polarity;</code></td><td>Shadow는 다음에 반영할 설정 한 묶음입니다. 여러 요청을 큐처럼 모두 저장하지 않으며 새 요청이 이전 미반영 값을 덮어쓸 수 있습니다.</td></tr><tr><td>28</td><td><code class="teach-fragment">    wire boundary = (counter &gt;= active_period - 32&#x27;d1);</code></td><td>현재 카운터가 active_period-1 이상이면 경계입니다. 8이면 7 이상입니다. 상승 에지에서 읽는 것은 에지 직전 상태이고 NBA 갱신 뒤 counter는 0이 됩니다.</td></tr><tr><td>29</td><td><code class="teach-fragment">    wire duty_high = (counter &lt; active_duty);</code></td><td>counter가 duty보다 작은 동안 duty_high가 1입니다. duty=3일 때 0·1·2 세 위치가 해당됩니다.</td></tr><tr><td>31-35</td><td><code class="teach-fragment">    // (주의) enable=0이면 polarity와 관계없이 LOW로 차단.
+    // (설명) 기본 polarity에서 active_duty=0이면 항상 LOW,
+    //         active_duty=active_period이면 항상 HIGH.
+    assign pwm_out = resetn &amp;&amp; active_enable &amp;&amp;
+                     (active_polarity ? !duty_high : duty_high);</code></td><td>정상 극성은 duty_high, 반전 극성은 그 논리 부정입니다. resetn과 enable의 AND가 바깥에 있어 둘 중 하나가 0이면 polarity와 관계없이 출력 0입니다. resetn 변화는 클록을 기다리지 않고 이 조합 출력에 반영됩니다.</td></tr><tr><td>37-38</td><td><code class="teach-fragment">    always @(posedge clk) begin
+        if (!resetn) begin</code></td><td>순차 블록은 clk 상승 에지에서만 실행합니다. 감지 조건에 negedge resetn이 없으므로 레지스터 리셋은 동기식입니다.</td></tr><tr><td>39-43</td><td><code class="teach-fragment">            counter         &lt;= 32&#x27;d0;
+            active_period   &lt;= RESET_PERIOD;
+            active_duty     &lt;= 32&#x27;d0;
+            active_enable   &lt;= 1&#x27;b0;
+            active_polarity &lt;= 1&#x27;b0;</code></td><td>리셋 에지에서 counter=0, period=RESET_PERIOD, duty=0, enable=0, polarity=0을 예약합니다. 비차단 대입은 우변을 읽고 그 시간 슬롯의 NBA 단계에서 저장값을 갱신합니다.</td></tr><tr><td>44-49</td><td><code class="teach-fragment">            shadow_period   &lt;= RESET_PERIOD;
+            shadow_duty     &lt;= 32&#x27;d0;
+            shadow_enable   &lt;= 1&#x27;b0;
+            shadow_polarity &lt;= 1&#x27;b0;
+            pending         &lt;= 1&#x27;b0;
+        end else begin</code></td><td>대기 설정도 기본값으로 초기화하고 pending을 0으로 지웁니다. 리셋을 풀어도 이전 요청을 자동 복원하지 않습니다.</td></tr><tr><td>50-51</td><td><code class="teach-fragment">            if (boundary) begin
+                counter &lt;= 32&#x27;d0;</code></td><td>주기 끝이면 counter를 0으로 되돌립니다. 경계를 계산하는 기준은 새 요청의 period가 아니라 현재 Active 주기입니다.</td></tr><tr><td>52-58</td><td><code class="teach-fragment">                if (pending) begin
+                    active_period   &lt;= shadow_period;
+                    active_duty     &lt;= shadow_duty;
+                    active_enable   &lt;= shadow_enable;
+                    active_polarity &lt;= shadow_polarity;
+                    pending         &lt;= 1&#x27;b0;
+                end</code></td><td>경계 직전에 pending=1이면 기존 Shadow 네 값을 Active로 복사하고 pending을 0으로 예약합니다. 같은 에지에서 새 Shadow에 쓴 값을 즉시 사용하는 블록이 아닙니다.</td></tr><tr><td>59-61</td><td><code class="teach-fragment">            end else begin
+                counter &lt;= counter + 32&#x27;d1;
+            end</code></td><td>경계가 아니면 counter를 1 증가시킵니다. 설정 요청 여부와 별개로 현재 주기는 진행됩니다.</td></tr><tr><td>62-64</td><td><code class="teach-fragment">            // (추가) 경계와 APPLY가 겹치면 새 값은 다음 경계에 적용.
+            // 여러 APPLY가 겹치면 최종 요청값을 우선하는 단일 Shadow 구조.
+            if (cfg_apply) begin</code></td><td>cfg_apply 검사는 경계 검사와 독립적입니다. 두 조건이 같은 에지에서 모두 참일 수 있습니다. 이 주석은 그때 이전 설정 적용과 새 요청 저장을 구분합니다.</td></tr><tr><td>65-69</td><td><code class="teach-fragment">                shadow_period   &lt;= cfg_period;
+                shadow_duty     &lt;= cfg_duty;
+                shadow_enable   &lt;= cfg_enable;
+                shadow_polarity &lt;= cfg_polarity;
+                pending         &lt;= 1&#x27;b1;</code></td><td>cfg_* 네 값을 Shadow로 저장하고 pending=1을 예약합니다. 같은 always에서 pending에 0과 1을 모두 예약하면 뒤에 실행된 1 대입이 최종 갱신값입니다. 이 장 TB가 동시 요청까지 검증한 것은 아닙니다.</td></tr><tr><td>70-73</td><td><code class="teach-fragment">            end
+        end
+    end
+endmodule</code></td><td>요청 조건, 비리셋 분기, always, module을 차례로 닫습니다. 소스의 들여쓰기 순서와 회로가 매 클록 병렬 갱신되는 의미를 구분합니다.</td></tr></tbody></table></details></div>
+</section>
+<section class="section" id="s02"><h2><span class="num">02</span>Covergroup·Coverpoint·Bins</h2><p>Covergroup(커버그룹, 검증 항목 묶음)은 샘플의 범위를 기록합니다. Coverpoint(커버포인트, 관찰 항목)는 값을 분류하고 bin(빈, 값의 분류 구간)은 방문해야 할 범위를 나타냅니다.</p><table><thead><tr><th>커버포인트</th><th>bin</th><th>범위</th></tr></thead><tbody><tr><td>cp_duty</td><td>zero / middle / full</td><td>0 / 1~7 / 8</td></tr><tr><td>cp_enable</td><td>disabled / enabled</td><td>0 / 1</td></tr><tr><td>cp_polarity</td><td>normal / inverted</td><td>0 / 1</td></tr></tbody></table><p><code>bins middle = {[1:7]};</code>은 1~7을 하나의 bin으로 묶습니다. 이번 시험은 대표값 4만 방문하므로 1·2·3·5·6·7을 시험하지 않습니다. 모든 값을 별도 bin으로 나누는 <code>bins middle[] = {[1:7]};</code>과는 다릅니다. <code>illegal_bins outside = default;</code>는 정상 듀티 범위 외 값을 불법으로 분류합니다. 이 실습은 범위 밖 설정을 실제로 주입하지 않습니다.</p>
+<div class="teach-note"><h3>판서 · 일곱 값을 한 bin으로 묶는 의미</h3><p><code>bins middle = {[1:7]}</code>은 1·2·3·4·5·6·7을 하나의 분류로 묶습니다. 그중 4가 한 번 들어오면 이 bin은 방문한 것입니다. 모든 정수가 각각 시험되었다는 뜻이 아닙니다. 반대로 <code>bins middle[]</code>처럼 배열 bin을 만들면 값별 방문 목표가 달라집니다.</p><p>illegal_bins는 계획상 불법인 값을 분류합니다. 선언이 있다는 것만으로 그 불법 입력을 실제 시험했다는 증거가 되지는 않습니다. 현재 run_case는 0·4·8만 생성하므로 outside를 의도적으로 위반시키는 부정 시험은 없습니다.</p></div>
+</section>
+<section class="section" id="s03"><h2><span class="num">03</span>Cross Coverage · 교차 조합 12개</h2><p>Cross Coverage(크로스 커버리지, 여러 항목의 교차 범위)는 듀티 구간 3개, enable 2개, polarity 2개를 교차합니다. 각각의 값이 모두 관찰되어도 모든 조합을 시험했다는 뜻은 아닙니다.</p><figure style="overflow-x:auto;margin:16px 0"><div style="min-width:650px"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 330" role="img" aria-labelledby="ch12title ch12desc">
+<title id="ch12title">PWM 기능 커버리지 교차 조합</title><desc id="ch12desc">듀티 0, 4, 8과 enable 및 polarity 두 상태를 교차한 12개 사례의 예상 HIGH 개수이다.</desc>
+<rect width="900" height="330" fill="white"/>
+<g font-family="Noto Sans CJK KR,sans-serif" fill="#172439" text-anchor="middle">
+<text x="450" y="30" font-size="20" font-weight="bold">cx_settings · 3 × 2 × 2 = 12개 교차 구간</text>
+<g font-size="14" font-weight="bold"><text x="114" y="72">cp_duty</text><text x="272" y="60">disabled</text><text x="442" y="60">disabled</text><text x="612" y="60">enabled</text><text x="782" y="60">enabled</text></g>
+<g font-size="13"><text x="272" y="80">normal (0)</text><text x="442" y="80">inverted (1)</text><text x="612" y="80">normal (0)</text><text x="782" y="80">inverted (1)</text></g>
+<g fill="#F7F9FC" stroke="#1F3A5F" stroke-width="1.5"><rect x="187" y="94" width="680" height="180"/><path d="M357 94V274 M527 94V274 M697 94V274 M187 154H867 M187 214H867" fill="none"/></g>
+<g font-size="15" font-weight="bold"><text x="114" y="120">zero</text><text x="114" y="180">middle</text><text x="114" y="240">full</text></g>
+<g font-size="12"><text x="114" y="140">duty=0</text><text x="114" y="200">duty=4 (대표값)</text><text x="114" y="260">duty=8</text></g>
+<g font-size="19"><text x="272" y="131">0</text><text x="442" y="131">0</text><text x="612" y="131">0</text><text x="782" y="131">8</text><text x="272" y="191">0</text><text x="442" y="191">0</text><text x="612" y="191">4</text><text x="782" y="191">4</text><text x="272" y="251">0</text><text x="442" y="251">0</text><text x="612" y="251">8</text><text x="782" y="251">0</text></g>
+<text x="450" y="304" font-size="14">각 칸은 한 교차 bin의 예상 HIGH 개수 / 8개 관찰 표본</text>
+</g></svg>
+</div><figcaption>12개 교차 bin과 8개 관찰 표본에서 예상되는 HIGH 개수. 실제 커버리지 측정 결과가 아닙니다.</figcaption></figure><p>전체 합법 입력값을 개별 값으로 세면 9 × 2 × 2 → 36개 조합입니다. 현재 12개 bin의 대표 시험만 실행합니다. <code>get_coverage()</code>는 한 개 생성된 covergroup의 타입 종합 비율이며, 교차 조합의 정확한 방문은 별도의 <code>visited[11:0]</code>로 확인합니다. 12개 비트가 모두 1이면 12개 분류가 시험됐음을 뜻합니다.</p>
+<div class="teach-note"><h3>교차 조합과 독립 방문 비트</h3><p>듀티 세 분류×enable 두 분류×polarity 두 분류=12개 cross bin입니다. 예를 들어 모든 듀티를 enable0에서만 시험하고 enable1은 duty0에서만 시험하면 개별 coverpoint는 모두 방문할 수 있어도 교차 조합은 빠집니다. 표의 한 칸씩을 목표로 삼는 이유입니다.</p><p>bin_index는 듀티 분류0/1/2에 4를 곱하고 enable의 자리값2, polarity의 자리값1을 더합니다. middle·enable1·polarity0이면 1×4+1×2+0=6입니다. 서로 다른 12분류가 0~11에 정확히 대응합니다. 마지막 <code>visited=12'hfff</code>는 열두 비트가 모두1이라는 뜻입니다.</p><p>전체 0~8 듀티 값을 개별적으로 보면 9×2×2=36조합입니다. 현재12개 대표 시험의100%는 이36개 전수 검사와 다릅니다. get_coverage는 타입 종합 비율이고 visited는 정의한 교차 분류의 별도 방문 기록이라 역할을 나누어 읽습니다.</p></div>
+</section>
+<section class="section" id="s04"><h2><span class="num">04</span>검증 절차 · 적용 확인 후 파형과 커버리지</h2><p><code>run_case()</code>는 하강 에지에서 설정 요청 → pending 해제 및 활성 설정 확인 → 8개 출력 표본 검사 → 커버리지 샘플 → visited 집계 순서로 실행됩니다. 적용을 관찰한 하강 에지는 위상 0이며, 이어지는 표본은 위상 1, 2, …, 7, 0입니다. 공개 포트의 적용 완료 시점을 기준으로 추론하며 내부 counter를 읽지 않습니다.</p><table><thead><tr><th>듀티</th><th>enable</th><th>polarity</th><th>위상 1~7, 0의 기대 표본</th><th>HIGH</th></tr></thead><tbody><tr><td>0</td><td>0</td><td>0</td><td>00000000</td><td>0</td></tr><tr><td>0</td><td>0</td><td>1</td><td>00000000</td><td>0</td></tr><tr><td>0</td><td>1</td><td>0</td><td>00000000</td><td>0</td></tr><tr><td>0</td><td>1</td><td>1</td><td>11111111</td><td>8</td></tr><tr><td>4</td><td>0</td><td>0</td><td>00000000</td><td>0</td></tr><tr><td>4</td><td>0</td><td>1</td><td>00000000</td><td>0</td></tr><tr><td>4</td><td>1</td><td>0</td><td>11100001</td><td>4</td></tr><tr><td>4</td><td>1</td><td>1</td><td>00011110</td><td>4</td></tr><tr><td>8</td><td>0</td><td>0</td><td>00000000</td><td>0</td></tr><tr><td>8</td><td>0</td><td>1</td><td>00000000</td><td>0</td></tr><tr><td>8</td><td>1</td><td>0</td><td>11111111</td><td>8</td></tr><tr><td>8</td><td>1</td><td>1</td><td>00000000</td><td>0</td></tr></tbody></table><p>예를 들어 듀티 4, 정상 극성, enable 1의 기대 표본은 11100001입니다. 같은 HIGH 개수라도 순서가 다르면 기존 개수 비교만으로는 검출하지 못하므로 개별 표본의 기대 레벨도 비교합니다. 활성 설정과 pending이 각 표본에서 유지되는지도 확인합니다. 단, 잘못된 적용 시점과 출력이 함께 일관되게 이동하는 일부 결함은 놓칠 수 있습니다. 샘플 사이 순간 글리치, 임의 주기와 연속 요청 전체는 검사 범위 밖입니다.</p>
+<div class="teach-note"><h3>타이밍 풀이 · 왜 표본 위상은 0부터가 아닌가</h3><p>첫 설정은 105ns 상승 에지에 적용되고 110ns 하강 에지에 적용 완료를 발견합니다. 그때 phase0에 해당합니다. 그 다음 표본을 기다리므로 120ns에는115ns에 갱신된 phase1을 읽습니다. 이어 2·3·4·5·6·7·0까지 여덟 위치를 읽습니다.</p><p>정상 극성·듀티4는 phase1·2·3에서1, 4·5·6·7에서0, 다음 phase0에서1이므로 11100001입니다. 반전은 00011110입니다. 둘 다 HIGH4지만 위치가 다릅니다. 현재 코드는 개수뿐 아니라 각 표본의 기대 레벨과 Active 유지도 비교하므로 단순HIGH 개수 검사보다 강합니다.</p><p>이 위상 기준은 공개 적용 시점에서 추론합니다. 적용 시점과 출력이 함께 잘못 이동하는 일부 결함은 놓칠 수 있으므로 정확한 경계 계약을 보는 이전 장의 방법과 함께 사용합니다.</p></div>
+</section>
+<section class="section" id="s05"><h2><span class="num">05</span>테스트벤치 전체 코드</h2><div class="codeblock"><div class="codebar"><span>tb/ch12/tb_pwm_coverage.sv · SystemVerilog</span></div><pre tabindex="0"><code>`timescale 1ns/1ps
+// 제12장: 원본 pwm_core의 설정 조합을 기능 커버리지로 측정한다.
+// 기능 커버리지는 '입력 조합을 실제로 적용했는가'를 기록한다.
+// PWM의 정확한 파형은 8클록 HIGH 개수 검사로 별도 판정한다.
+module tb_pwm_coverage;
+    logic clk = 0;
+    logic resetn = 0;
+    logic cfg_apply = 0;
+    logic [31:0] cfg_period = 32'd8;
+    logic [31:0] cfg_duty = 0;
+    logic cfg_enable = 0;
+    logic cfg_polarity = 0;
+    wire pwm_out, pending, active_enable, active_polarity;
+    wire [31:0] active_period, active_duty;
+    int checks = 0;
+    // (추가) 커버리지 엔진과 별개로 12개 교차 조합을 집계한다.
+    bit [11:0] visited = 12'b0;
+
+    pwm_core #(.RESET_PERIOD(32'd8)) dut (
+        .clk(clk), .resetn(resetn), .cfg_apply(cfg_apply),
+        .cfg_period(cfg_period), .cfg_duty(cfg_duty),
+        .cfg_enable(cfg_enable), .cfg_polarity(cfg_polarity),
+        .pwm_out(pwm_out), .pending(pending),
+        .active_period(active_period), .active_duty(active_duty),
+        .active_enable(active_enable), .active_polarity(active_polarity)
+    );
+    always #5 clk = ~clk;
+
+    // 명시적 sample()을 호출하므로 리셋/설정 대기 구간은 기록하지 않는다.
+    covergroup pwm_cfg_cg with function sample(
+        int unsigned duty, bit en, bit pol
+    );
+        option.per_instance = 1;
+        cp_duty: coverpoint duty {
+            bins zero = {0};
+            bins middle = {[1:7]};
+            bins full = {8};
+            illegal_bins outside = default;
+        }
+        cp_enable: coverpoint en {
+            bins disabled = {0};
+            bins enabled = {1};
+        }
+        cp_polarity: coverpoint pol {
+            bins normal = {0};
+            bins inverted = {1};
+        }
+        cx_settings: cross cp_duty, cp_enable, cp_polarity;
+    endgroup
+    pwm_cfg_cg cov = new();
+
+    task automatic run_case(
+        input logic [31:0] duty,
+        input logic en, input logic pol
+    );
+        int waited;
+        int highs;
+        int expected_highs;
+        int sample_phase, bin_index;
+        logic expected_level;
+        // 음의 에지에서 입력을 바꿔 양의 에지 샘플과 충돌하지 않는다.
+        @(negedge clk);
+        cfg_duty = duty;
+        cfg_enable = en;
+        cfg_polarity = pol;
+        cfg_apply = 1;
+        @(negedge clk);
+        cfg_apply = 0;
+        if (pending !== 1'b1)
+            $fatal(1, &quot;FAIL pending did not assert&quot;);
+
+        // 실제 DUT는 shadow 값을 주기 경계에서 활성화한다.
+        waited = 0;
+        while (pending !== 1'b0 &amp;&amp; waited &lt; 24) begin
+            @(negedge clk);
+            waited++;
+        end
+        if (pending !== 1'b0 || active_period !== 32'd8 ||
+            active_duty !== duty || active_enable !== en ||
+            active_polarity !== pol)
+            $fatal(1, &quot;FAIL apply duty=%0d en=%b pol=%b&quot;, duty, en, pol);
+
+        // 8개의 연속된 PWM 클록을 관찰하면 정확히 한 주기이다.
+        // enable=0이면 polarity와 무관하게 LOW가 유지된다.
+        highs = 0;
+        for (int i = 0; i &lt; 8; i++) begin
+            @(negedge clk);
+            if (pwm_out === 1'bx || pwm_out === 1'bz)
+                $fatal(1, &quot;FAIL unknown pwm_out&quot;);
+            // (추가) 적용 관찰 직후 다음 하강 에지는 phase 1,
+            // 마지막 표본은 다음 주기의 phase 0이다.
+            sample_phase = (i + 1) % 8;
+            expected_level = en &amp;&amp; (pol ? (sample_phase &gt;= int'(duty))
+                                        : (sample_phase &lt; int'(duty)));
+            if (pwm_out !== expected_level)
+                $fatal(1, &quot;FAIL phase duty=%0d phase=%0d actual=%b expected=%b&quot;,
+                       duty, sample_phase, pwm_out, expected_level);
+            if (active_period !== 32'd8 || active_duty !== duty ||
+                active_enable !== en || active_polarity !== pol ||
+                pending !== 1'b0)
+                $fatal(1, &quot;FAIL active state changed during sampling&quot;);
+            if (pwm_out) highs++;
+        end
+        expected_highs = en ? (pol ? 8 - int'(duty) : int'(duty)) : 0;
+        if (highs != expected_highs)
+            $fatal(1, &quot;FAIL waveform duty=%0d en=%b pol=%b high=%0d expected=%0d&quot;,
+                   duty, en, pol, highs, expected_highs);
+
+        // 출력 검사가 끝난 실제 적용 조합만 커버리지에 포함한다.
+        // (변경) 확인한 DUT의 실제 활성 설정으로 샘플링한다.
+        cov.sample(active_duty, active_enable, active_polarity);
+        // (추가) zero/middle/full → 0/1/2, 각 구간에 4개 조합.
+        bin_index = ((duty == 0) ? 0 : (duty == 8) ? 2 : 1) * 4
+                    + int'(en) * 2 + int'(pol);
+        visited[bin_index] = 1'b1;
+        checks++;
+        $display(&quot;CHECK duty=%0d en=%b pol=%b highs=%0d&quot;,
+                 duty, en, pol, highs);
+    endtask
+
+    initial begin
+        #10000;
+        $fatal(1, &quot;FAIL GLOBAL_TIMEOUT&quot;);
+    end
+
+`ifdef VCD
+    // (변경) VCD가 지원되는 실행 환경에서만 활성화한다.
+    initial begin
+        $dumpfile(&quot;ch12_pwm_coverage.vcd&quot;);
+        $dumpvars(0, tb_pwm_coverage);
+    end
+`endif
+    initial begin
+        repeat (3) @(negedge clk);
+        resetn = 1;
+        // 3 듀티 구간 × 2 enable × 2 polarity = 12개 cross bin.
+        for (int d = 0; d &lt; 3; d++) begin
+            for (int e = 0; e &lt; 2; e++) begin
+                for (int p = 0; p &lt; 2; p++) begin
+                    case (d)
+                        0: run_case(32'd0, bit'(e), bit'(p));
+                        1: run_case(32'd4, bit'(e), bit'(p));
+                        2: run_case(32'd8, bit'(e), bit'(p));
+                    endcase
+                end
+            end
+        end
+        if (checks != 12 || visited !== 12'hfff)
+            $fatal(1, &quot;FAIL missing test cases visited=%03h&quot;, visited);
+        if (cov.get_coverage() &lt; 99.99)
+            $fatal(1, &quot;FAIL coverage=%0.2f&quot;, cov.get_coverage());
+        $display(&quot;PASS CH12 cases=%0d coverage=%0.2f%%&quot;,
+                 checks, cov.get_coverage());
+        $finish;
+    end
+endmodule
+</code></pre></div><h3>핵심 코드 풀이</h3><table><thead><tr><th>코드</th><th>역할</th></tr></thead><tbody><tr><td>covergroup ... with function sample</td><td>필요한 시점에 명시적으로 샘플</td></tr><tr><td>cx_settings</td><td>세 커버포인트 교차</td></tr><tr><td>while (pending ... waited &lt; 24)</td><td>적용 제한 대기</td></tr><tr><td>sample_phase</td><td>공개 적용 시점부터 8개 기대 위상 산출</td></tr><tr><td>expected_level / expected_highs</td><td>순서 및 HIGH 개수 판정</td></tr><tr><td>cov.sample(active_...)</td><td>정상 검사를 마친 실제 활성 설정 기록</td></tr><tr><td>visited[bin_index]</td><td>교차 조합의 별도 방문 확인</td></tr><tr><td>get_coverage()</td><td>커버리지 엔진의 종합 비율 확인</td></tr></tbody></table><p>12개 사례 각각 8회 표본 비교를 수행하므로 정상 경로는 96개 출력 표본을 검증합니다. checks는 표본 수가 아닌 완료 사례 수입니다. 모든 시험을 통과한 후에만 최종 PASS를 출력합니다.</p>
+<div class="teach-note"><h3>전체 TB · 검사를 마친 적용값만 기록하기</h3><p>run_case는 요청→최대24클록 적용 대기→실제 Active 확인→8표본의 위상·상태 검사→HIGH 합계 검사→cov.sample→visited·checks 집계 순서입니다. 요청 입력을 쓰자마자 커버리지를 올리지 않습니다. 요청이 적용되지 않았다면 앞 검사에서 종료되어 방문 성과로 계산되지 않습니다.</p><p>checks는 완료 사례12, 출력 표본은12×8=96입니다. covered 값과 출력 정오를 구분하되, 이 TB는 둘을 모두 요구하도록 완료 경로를 연결합니다. 비활성화 조합에서도 극성에 상관없이0이라는 계약을 각 사례에서 확인합니다.</p><h4>tb/ch12/tb_pwm_coverage.sv · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-17</td><td><code class="teach-fragment">`timescale 1ns/1ps
+// 제12장: 원본 pwm_core의 설정 조합을 기능 커버리지로 측정한다.
+// 기능 커버리지는 &#x27;입력 조합을 실제로 적용했는가&#x27;를 기록한다.
+// PWM의 정확한 파형은 8클록 HIGH 개수 검사로 별도 판정한다.
+module tb_pwm_coverage;
+    logic clk = 0;
+    logic resetn = 0;
+    logic cfg_apply = 0;
+    logic [31:0] cfg_period = 32&#x27;d8;
+    logic [31:0] cfg_duty = 0;
+    logic cfg_enable = 0;
+    logic cfg_polarity = 0;
+    wire pwm_out, pending, active_enable, active_polarity;
+    wire [31:0] active_period, active_duty;
+    int checks = 0;
+    // (추가) 커버리지 엔진과 별개로 12개 교차 조합을 집계한다.
+    bit [11:0] visited = 12&#x27;b0;</code></td><td>주기8 입력·공개 출력·완료 사례 수와 독립12비트 방문 마스크를 준비합니다. 주석의 개수 검사 외에 아래 코드는 위상별 기대 레벨도 검사합니다.</td></tr><tr><td>19-27</td><td><code class="teach-fragment">    pwm_core #(.RESET_PERIOD(32&#x27;d8)) dut (
+        .clk(clk), .resetn(resetn), .cfg_apply(cfg_apply),
+        .cfg_period(cfg_period), .cfg_duty(cfg_duty),
+        .cfg_enable(cfg_enable), .cfg_polarity(cfg_polarity),
+        .pwm_out(pwm_out), .pending(pending),
+        .active_period(active_period), .active_duty(active_duty),
+        .active_enable(active_enable), .active_polarity(active_polarity)
+    );
+    always #5 clk = ~clk;</code></td><td>원본 DUT와13포트를 연결하고10ns 클록을 생성합니다.</td></tr><tr><td>29-33</td><td><code class="teach-fragment">    // 명시적 sample()을 호출하므로 리셋/설정 대기 구간은 기록하지 않는다.
+    covergroup pwm_cfg_cg with function sample(
+        int unsigned duty, bit en, bit pol
+    );
+        option.per_instance = 1;</code></td><td>명시적 sample 인자로 듀티·허용·극성을 받는 covergroup을 선언하고 인스턴스별 데이터 보존 옵션을 둡니다.</td></tr><tr><td>34-39</td><td><code class="teach-fragment">        cp_duty: coverpoint duty {
+            bins zero = {0};
+            bins middle = {[1:7]};
+            bins full = {8};
+            illegal_bins outside = default;
+        }</code></td><td>duty를 zero·middle·full 세 bin으로 분류하고 나머지 범위는 불법으로 정의합니다. middle은 일곱 값을 합친 단일 bin입니다.</td></tr><tr><td>40-47</td><td><code class="teach-fragment">        cp_enable: coverpoint en {
+            bins disabled = {0};
+            bins enabled = {1};
+        }
+        cp_polarity: coverpoint pol {
+            bins normal = {0};
+            bins inverted = {1};
+        }</code></td><td>enable과 polarity를 각각 두 bin으로 나눕니다.</td></tr><tr><td>48-50</td><td><code class="teach-fragment">        cx_settings: cross cp_duty, cp_enable, cp_polarity;
+    endgroup
+    pwm_cfg_cg cov = new();</code></td><td>세 coverpoint의 cross를 정의하고 cov라는 실제 커버그룹 인스턴스를 생성합니다.</td></tr><tr><td>52-60</td><td><code class="teach-fragment">    task automatic run_case(
+        input logic [31:0] duty,
+        input logic en, input logic pol
+    );
+        int waited;
+        int highs;
+        int expected_highs;
+        int sample_phase, bin_index;
+        logic expected_level;</code></td><td>듀티·허용·극성 입력과 지역 대기 수·HIGH 수·기대 수·위상·bin 인덱스·기대 레벨을 둡니다.</td></tr><tr><td>61-70</td><td><code class="teach-fragment">        // 음의 에지에서 입력을 바꿔 양의 에지 샘플과 충돌하지 않는다.
+        @(negedge clk);
+        cfg_duty = duty;
+        cfg_enable = en;
+        cfg_polarity = pol;
+        cfg_apply = 1;
+        @(negedge clk);
+        cfg_apply = 0;
+        if (pending !== 1&#x27;b1)
+            $fatal(1, &quot;FAIL pending did not assert&quot;);</code></td><td>하강 에지에 설정을 쓰고 apply를 한 클록 유지합니다. 요청 뒤 pending1이 아니면 실패합니다.</td></tr><tr><td>72-81</td><td><code class="teach-fragment">        // 실제 DUT는 shadow 값을 주기 경계에서 활성화한다.
+        waited = 0;
+        while (pending !== 1&#x27;b0 &amp;&amp; waited &lt; 24) begin
+            @(negedge clk);
+            waited++;
+        end
+        if (pending !== 1&#x27;b0 || active_period !== 32&#x27;d8 ||
+            active_duty !== duty || active_enable !== en ||
+            active_polarity !== pol)
+            $fatal(1, &quot;FAIL apply duty=%0d en=%b pol=%b&quot;, duty, en, pol);</code></td><td>pending0까지 최대24하강 에지 대기 후 실제 주기8·듀티·허용·극성도 모두 기대값과 맞는지 확인합니다.</td></tr><tr><td>83-89</td><td><code class="teach-fragment">        // 8개의 연속된 PWM 클록을 관찰하면 정확히 한 주기이다.
+        // enable=0이면 polarity와 무관하게 LOW가 유지된다.
+        highs = 0;
+        for (int i = 0; i &lt; 8; i++) begin
+            @(negedge clk);
+            if (pwm_out === 1&#x27;bx || pwm_out === 1&#x27;bz)
+                $fatal(1, &quot;FAIL unknown pwm_out&quot;);</code></td><td>HIGH 수를0에서 시작해 여덟 하강 에지 표본을 읽습니다. X/Z 출력은 즉시 실패입니다.</td></tr><tr><td>90-97</td><td><code class="teach-fragment">            // (추가) 적용 관찰 직후 다음 하강 에지는 phase 1,
+            // 마지막 표본은 다음 주기의 phase 0이다.
+            sample_phase = (i + 1) % 8;
+            expected_level = en &amp;&amp; (pol ? (sample_phase &gt;= int&#x27;(duty))
+                                        : (sample_phase &lt; int&#x27;(duty)));
+            if (pwm_out !== expected_level)
+                $fatal(1, &quot;FAIL phase duty=%0d phase=%0d actual=%b expected=%b&quot;,
+                       duty, sample_phase, pwm_out, expected_level);</code></td><td>적용 관찰 다음 위치가1이므로 (i+1)%8로 위상을 구합니다. 정상·반전 극성의 기대 레벨을 계산해 실제와 비교합니다.</td></tr><tr><td>98-103</td><td><code class="teach-fragment">            if (active_period !== 32&#x27;d8 || active_duty !== duty ||
+                active_enable !== en || active_polarity !== pol ||
+                pending !== 1&#x27;b0)
+                $fatal(1, &quot;FAIL active state changed during sampling&quot;);
+            if (pwm_out) highs++;
+        end</code></td><td>매 표본에서 Active 설정과 pending이 유지되는지 확인한 뒤 HIGH를 누적합니다.</td></tr><tr><td>104-107</td><td><code class="teach-fragment">        expected_highs = en ? (pol ? 8 - int&#x27;(duty) : int&#x27;(duty)) : 0;
+        if (highs != expected_highs)
+            $fatal(1, &quot;FAIL waveform duty=%0d en=%b pol=%b high=%0d expected=%0d&quot;,
+                   duty, en, pol, highs, expected_highs);</code></td><td>enable0이면0, enable1 정상극성이면 duty, 반전이면8-duty라는 독립 합계와 실제HIGH 수를 대조합니다.</td></tr><tr><td>109-111</td><td><code class="teach-fragment">        // 출력 검사가 끝난 실제 적용 조합만 커버리지에 포함한다.
+        // (변경) 확인한 DUT의 실제 활성 설정으로 샘플링한다.
+        cov.sample(active_duty, active_enable, active_polarity);</code></td><td>검사를 모두 마친 DUT의 실제 활성 설정을 커버리지에 기록합니다. 단순 요청값만 보고 방문 처리하지 않습니다.</td></tr><tr><td>112-119</td><td><code class="teach-fragment">        // (추가) zero/middle/full → 0/1/2, 각 구간에 4개 조합.
+        bin_index = ((duty == 0) ? 0 : (duty == 8) ? 2 : 1) * 4
+                    + int&#x27;(en) * 2 + int&#x27;(pol);
+        visited[bin_index] = 1&#x27;b1;
+        checks++;
+        $display(&quot;CHECK duty=%0d en=%b pol=%b highs=%0d&quot;,
+                 duty, en, pol, highs);
+    endtask</code></td><td>3분류×4조합 인덱스로 visited 비트를 세우고 완료 사례 수를 늘리며 CHECK를 출력합니다.</td></tr><tr><td>121-124</td><td><code class="teach-fragment">    initial begin
+        #10000;
+        $fatal(1, &quot;FAIL GLOBAL_TIMEOUT&quot;);
+    end</code></td><td>전체10,000ns 안전 기한을 둡니다.</td></tr><tr><td>126-132</td><td><code class="teach-fragment">`ifdef VCD
+    // (변경) VCD가 지원되는 실행 환경에서만 활성화한다.
+    initial begin
+        $dumpfile(&quot;ch12_pwm_coverage.vcd&quot;);
+        $dumpvars(0, tb_pwm_coverage);
+    end
+`endif</code></td><td>지원되는 환경에서만 선택적 VCD 기록을 실행합니다.</td></tr><tr><td>133-135</td><td><code class="teach-fragment">    initial begin
+        repeat (3) @(negedge clk);
+        resetn = 1;</code></td><td>세 하강 에지 뒤30ns에 리셋을 풉니다.</td></tr><tr><td>136-147</td><td><code class="teach-fragment">        // 3 듀티 구간 × 2 enable × 2 polarity = 12개 cross bin.
+        for (int d = 0; d &lt; 3; d++) begin
+            for (int e = 0; e &lt; 2; e++) begin
+                for (int p = 0; p &lt; 2; p++) begin
+                    case (d)
+                        0: run_case(32&#x27;d0, bit&#x27;(e), bit&#x27;(p));
+                        1: run_case(32&#x27;d4, bit&#x27;(e), bit&#x27;(p));
+                        2: run_case(32&#x27;d8, bit&#x27;(e), bit&#x27;(p));
+                    endcase
+                end
+            end
+        end</code></td><td>duty 대표0/4/8, enable0/1, polarity0/1의 중첩 반복으로12조합을 각각 실행합니다. int 반복값을1비트로 명시 변환합니다.</td></tr><tr><td>148-156</td><td><code class="teach-fragment">        if (checks != 12 || visited !== 12&#x27;hfff)
+            $fatal(1, &quot;FAIL missing test cases visited=%03h&quot;, visited);
+        if (cov.get_coverage() &lt; 99.99)
+            $fatal(1, &quot;FAIL coverage=%0.2f&quot;, cov.get_coverage());
+        $display(&quot;PASS CH12 cases=%0d coverage=%0.2f%%&quot;,
+                 checks, cov.get_coverage());
+        $finish;
+    end
+endmodule</code></td><td>12완료·visited fff와 엔진 비율을 확인한 뒤 PASS를 출력합니다. 99.99 미만이면 실패하며 현재 모든 bin을 방문한 정상값은100%입니다.</td></tr></tbody></table></details></div>
+</section>
+<section class="section" id="s06"><h2><span class="num">06</span>Ubuntu 실행 · Vivado XSIM과 커버리지 보고서</h2><p>AMD UG900의 SystemVerilog 지원표(2024.1)는 covergroup, coverpoint, cross, 사용자 sample 및 사전 정의 커버리지 메서드를 지원한다고 명시합니다. 설치 버전에 따라 실제 지원 여부를 확인합니다. Icarus에서 이 covergroup 실습 전체를 지원한다고 가정하지 않습니다.</p><div class="codeblock"><div class="codebar"><span>tb/ch12/run_ch12.sh · Bash</span></div><pre tabindex="0"><code>#!/usr/bin/env bash
+# 제12장: 독립 PWM 원본 + XSIM 기능 커버리지 시험.
+set -euo pipefail
+ROOT=&quot;$(cd &quot;$(dirname &quot;${BASH_SOURCE[0]}&quot;)/../..&quot; &amp;&amp; pwd)&quot;
+RTL=&quot;${1:-$ROOT/reference_rtl/pwm_core.v}&quot;
+if [[ ! -f &quot;$RTL&quot; ]]; then
+  echo &quot;FAIL: pwm_core.v 파일 없음&quot; &gt;&amp;2
+  exit 1
+fi
+RTL=&quot;$(realpath &quot;$RTL&quot;)&quot;
+for tool in xvlog xelab xsim; do
+  if ! command -v &quot;$tool&quot; &gt;/dev/null 2&gt;&amp;1; then
+    echo &quot;NOT_RUN: $tool 없음. Vivado 환경을 설정하세요.&quot; &gt;&amp;2
+    exit 2
+  fi
+done
+mkdir -p &quot;$ROOT/.build/ch12&quot;
+OUT=&quot;$(mktemp -d &quot;$ROOT/.build/ch12/run.XXXXXX&quot;)&quot;
+cd &quot;$OUT&quot;
+xvlog &quot;$RTL&quot; 2&gt;&amp;1 | tee rtl.log
+xvlog -sv &quot;$ROOT/tb/ch12/tb_pwm_coverage.sv&quot; 2&gt;&amp;1 | tee tb.log
+xelab -debug typical -cov_db_dir . -cov_db_name ch12_cov \
+  tb_pwm_coverage -s ch12_sim 2&gt;&amp;1 | tee elaborate.log
+xsim ch12_sim -runall -cov_db_dir . -cov_db_name ch12_cov \
+  2&gt;&amp;1 | tee output.log
+grep -Eq '^PASS CH12 cases=12 coverage=100\.00%[[:space:]]*$' output.log
+if command -v xcrg &gt;/dev/null 2&gt;&amp;1; then
+  xcrg -dir . -db_name ch12_cov -report_dir report -report_format html
+else
+  echo &quot;NOT_RUN: xcrg 보고서 생성 도구 없음&quot;
+fi
+echo &quot;실행 폴더: $OUT&quot;
+</code></pre></div><div class="codeblock"><div class="codebar"><span>Ubuntu · 실습 루트에서 실행</span></div><pre tabindex="0"><code># Vivado 설치 경로의 settings64.sh를 source한 뒤 실행
+command -v xvlog xelab xsim xcrg
+bash tb/ch12/run_ch12.sh</code></pre></div><table><thead><tr><th>명령</th><th>기능</th></tr></thead><tbody><tr><td>xvlog</td><td>원본 RTL·SV 테스트벤치 분석</td></tr><tr><td>xelab</td><td>스냅샷 생성 및 기능 커버리지 DB 지정</td></tr><tr><td>xsim</td><td>시뮬레이션 실행 및 결과 기록</td></tr><tr><td>xcrg</td><td>커버리지 DB를 HTML 보고서로 변환</td></tr></tbody></table><p>새 실행 폴더를 생성하므로 이전 결과와 혼동하지 않습니다. 출력된 폴더의 output.log 및 report/dashboard.html을 확인합니다. xcrg가 없는 경우 보고서 생성은 미실행입니다. GUI는 해당 실행 폴더에서 <code>xsim ch12_sim -gui</code>로 실행합니다.</p><p>공식 참고: <a href="https://docs.amd.com/r/2024.1-English/ug900-vivado-logic-simulation/Test-Bench-Feature">UG900 SystemVerilog 지원표</a> · <a href="https://docs.amd.com/r/2022.2-English/ug900-vivado-logic-simulation/Functional-Coverage-Report-Generator">UG900 기능 커버리지 보고서 생성</a>.</p>
+<div class="teach-note"><h3>실습 지도 · 실행 DB와 HTML 보고서</h3><p>커버리지 옵션은 실행 스냅샷과 시뮬레이션 DB 이름을 맞춰 줍니다. xcrg는 그 DB를 사람이 읽을 HTML로 변환하는 별도 단계입니다. 따라서 TB의 get_coverage 결과를 얻는 것과 보고서 파일을 생성하는 것은 다른 작업입니다. xcrg가 없으면 스크립트의 보고서 단계가 NOT_RUN이 됩니다.</p><p><strong>확인된 보고서 위치:</strong> 보존된 XSIM 2024.2 실행의 xcrg.log는 <code>report/functionalCoverageReport</code>를 생성 디렉터리로 기록합니다. 해당 실행 폴더에서 <code>report/functionalCoverageReport/dashboard.html</code>을 열어야 합니다. 다른 설치 버전에서는 xcrg 출력의 실제 HTML Report directory를 기준으로 찾습니다.</p><p>각 실행에 새 run 폴더를 만드는 것은 과거 DB·로그를 이번 실행으로 오인하지 않기 위해서입니다. 교수용 제작에서는 새 RTL_SIM과 새 커버리지 수집을 실행하지 않았으므로 <strong>NOT_RUN</strong>입니다. 원본의 기존 XSIM PASS·보고서 증거는 보존합니다.</p><h4>tb/ch12/run_ch12.sh · 실제 행별 풀이</h4><details><summary>전체 비공백 행의 코드·의도 펼치기</summary><table><thead><tr><th scope="col">행</th><th scope="col">실제 코드</th><th scope="col">이유와 동작</th></tr></thead><tbody><tr><td>1-5</td><td><code class="teach-fragment">#!/usr/bin/env bash
+# 제12장: 독립 PWM 원본 + XSIM 기능 커버리지 시험.
+set -euo pipefail
+ROOT=&quot;$(cd &quot;$(dirname &quot;${BASH_SOURCE[0]}&quot;)/../..&quot; &amp;&amp; pwd)&quot;
+RTL=&quot;${1:-$ROOT/reference_rtl/pwm_core.v}&quot;</code></td><td>Bash 오류 전달 옵션과 루트·원본RTL 인자를 설정합니다.</td></tr><tr><td>6-10</td><td><code class="teach-fragment">if [[ ! -f &quot;$RTL&quot; ]]; then
+  echo &quot;FAIL: pwm_core.v 파일 없음&quot; &gt;&amp;2
+  exit 1
+fi
+RTL=&quot;$(realpath &quot;$RTL&quot;)&quot;</code></td><td>RTL 존재를 확인하고 상대경로를 폴더 이동 전에 해석합니다.</td></tr><tr><td>11-16</td><td><code class="teach-fragment">for tool in xvlog xelab xsim; do
+  if ! command -v &quot;$tool&quot; &gt;/dev/null 2&gt;&amp;1; then
+    echo &quot;NOT_RUN: $tool 없음. Vivado 환경을 설정하세요.&quot; &gt;&amp;2
+    exit 2
+  fi
+done</code></td><td>XSIM 세 도구가 없으면 실행을 NOT_RUN 종료2로 분류합니다.</td></tr><tr><td>17-19</td><td><code class="teach-fragment">mkdir -p &quot;$ROOT/.build/ch12&quot;
+OUT=&quot;$(mktemp -d &quot;$ROOT/.build/ch12/run.XXXXXX&quot;)&quot;
+cd &quot;$OUT&quot;</code></td><td>이 장 빌드 폴더 아래 새 run.XXXXXX 디렉터리를 만들어 과거 실행과 분리합니다.</td></tr><tr><td>20-23</td><td><code class="teach-fragment">xvlog &quot;$RTL&quot; 2&gt;&amp;1 | tee rtl.log
+xvlog -sv &quot;$ROOT/tb/ch12/tb_pwm_coverage.sv&quot; 2&gt;&amp;1 | tee tb.log
+xelab -debug typical -cov_db_dir . -cov_db_name ch12_cov \
+  tb_pwm_coverage -s ch12_sim 2&gt;&amp;1 | tee elaborate.log</code></td><td>RTL·TB 분석 로그를 별도로 남기고 커버리지 DB 위치와 이름을 지정해 정교화합니다.</td></tr><tr><td>24-26</td><td><code class="teach-fragment">xsim ch12_sim -runall -cov_db_dir . -cov_db_name ch12_cov \
+  2&gt;&amp;1 | tee output.log
+grep -Eq &#x27;^PASS CH12 cases=12 coverage=100\.00%[[:space:]]*$&#x27; output.log</code></td><td>같은 DB 설정으로 실행하고 정확한12사례·100.00% 완료 행을 확인합니다.</td></tr><tr><td>27-32</td><td><code class="teach-fragment">if command -v xcrg &gt;/dev/null 2&gt;&amp;1; then
+  xcrg -dir . -db_name ch12_cov -report_dir report -report_format html
+else
+  echo &quot;NOT_RUN: xcrg 보고서 생성 도구 없음&quot;
+fi
+echo &quot;실행 폴더: $OUT&quot;</code></td><td>xcrg가 있으면 HTML 보고서를 만들고 없으면 보고서 단계만 NOT_RUN을 표시합니다. 실제 실행 폴더를 알려 로그·DB·보고서를 찾게 합니다.</td></tr></tbody></table></details></div>
+</section>
+<section class="section" id="s07"><h2><span class="num">07</span>예상 결과 · 검증 범위 · 장애 분석</h2><p>첫 요청은 40ns, 적용 상승 에지는 105ns, 적용 관찰은 110ns, 8개 표본은 120~190ns입니다. 동일 조건에서 각 사례는 160ns씩 이동하고 최종 사례는 1950ns에 종료될 것으로 계산됩니다. 아래는 실제 실행 로그가 아닌 예상값입니다.</p><div class="codeblock"><div class="codebar"><span>예상 콘솔 출력</span></div><pre tabindex="0"><code>CHECK duty=0 en=0 pol=0 highs=0
+CHECK duty=0 en=0 pol=1 highs=0
+CHECK duty=0 en=1 pol=0 highs=0
+CHECK duty=0 en=1 pol=1 highs=8
+CHECK duty=4 en=0 pol=0 highs=0
+CHECK duty=4 en=0 pol=1 highs=0
+CHECK duty=4 en=1 pol=0 highs=4
+CHECK duty=4 en=1 pol=1 highs=4
+CHECK duty=8 en=0 pol=0 highs=0
+CHECK duty=8 en=0 pol=1 highs=0
+CHECK duty=8 en=1 pol=0 highs=8
+CHECK duty=8 en=1 pol=1 highs=0
+PASS CH12 cases=12 coverage=100.00%</code></pre></div><table><thead><tr><th>증상</th><th>점검</th></tr></thead><tbody><tr><td>FAIL pending / FAIL apply</td><td>요청 펄스, 대기 기한, 활성 설정</td></tr><tr><td>FAIL phase</td><td>위상별 출력 순서, 정상·반전 극성</td></tr><tr><td>FAIL waveform</td><td>HIGH 개수의 합</td></tr><tr><td>FAIL missing test cases</td><td>12개 visited 비트 및 사례 수</td></tr><tr><td>FAIL coverage</td><td>covergroup·cross·sample 및 도구 옵션</td></tr><tr><td>covergroup 구문 오류</td><td>설치 버전의 기능 커버리지 지원</td></tr></tbody></table><p>100%는 정의한 bin과 cross의 충족을 의미할 뿐입니다. 코드 커버리지, 시간 속성 커버리지, 모든 듀티 값, 리셋 조합 및 전체 설계의 완전성을 보장하지 않습니다. 제4부 제13장부터는 UART 스트림 등 실제 인터페이스와 연산 IP 검증으로 확장합니다.</p>
+<div class="execution-evidence" data-evidence="v59"><h3>2026-11-26 실제 실행 결과</h3><p>Vivado XSIM 2024.2 · 종료 코드 0 · <strong>PASS</strong>. 정상 실행과 정의된 오류 검출 조건을 장별 실행기로 확인했습니다.</p><div class="codeblock"><div class="codebar"><span>저장소 루트 · Bash · 실행 재현 명령</span></div><pre tabindex="0"><code>bash scripts/run_chapter.sh 12</code></pre></div><div class="codeblock"><div class="codebar"><span>실제 로그 발췌 · 예상 출력과 구별</span></div><pre tabindex="0"><code>PASS CH12 cases=12 coverage=100.00%</code></pre></div><p><a href="https://github.com/Yuul-Jung/system_verilog_uvm_tb/blob/2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708/docs/evidence/v59/README.md#ch12">실행 명령·종료 코드·공개 로그 및 해시 확인</a>. 위의 예상 파형은 코드에서 계산한 도식이며, 실측 파형 이미지는 별도로 수록하지 않았습니다.</p></div>
+
+<div class="teach-note"><h3>결과 해석과 예상 문답</h3><p>첫 사례는120~190ns의8표본을 읽고 다음 사례는160ns 뒤입니다. 마지막 열두 번째의 종료는190+11×160=1,950ns입니다. 총96표본과12완료 사례가 계획과 맞고, visited가 전부1이며 커버리지 엔진의 값도100%여야 현재 최종 PASS에 도달합니다.</p><p><strong>100%면 회로 결함이 없나요?</strong> 정의한 bin의 방문을 모두 채웠다는 의미입니다. 다른 듀티 개별값, 주기 변경, 연속 요청, 모든 리셋 시점이나 짧은 글리치는 포함하지 않습니다.</p><p><strong>covered가 높으면 비교기는 없어도 되나요?</strong> 커버리지는 결과가 옳았는지 자체 판단하지 않습니다. 현재는 위상·상태·HIGH 비교 뒤에만 sample을 호출하는 구조가 그 관계를 연결합니다. 다음 부에서는 실제 UART·FIFO·AXI·연산기로 검증 계약을 확장합니다.</p></div>
+</section>
+<div class="chapter-links" id="chapter-links"></div></main></div><footer class="footer">RTL TESTBENCH · SYSTEMVERILOG · UVM · CH12 교수용 v01 · 원본 v03 · PASS</footer><script>window.COURSE={"title":"RTL · SystemVerilog · UVM 교수용 해설서","short_title":"SV UVM TEACH","home_label":"전체 교수용 해설서","chapters":[{"id":"ch01","number":1,"title":"테스트벤치의 첫 실행","file":"ch01_teacher_v02.html"},{"id":"ch02","number":2,"title":"Clock·Reset·이벤트","file":"ch02_teacher_v01.html"},{"id":"ch03","number":3,"title":"반복 자극과 작업 분리","file":"ch03_teacher_v01.html"},{"id":"ch04","number":4,"title":"PASS/FAIL 자동 판정","file":"ch04_teacher_v01.html"},{"id":"ch05","number":5,"title":"검증 자료형과 타입","file":"ch05_teacher_v01.html"},{"id":"ch06","number":6,"title":"배열·큐·패키지","file":"ch06_teacher_v01.html"},{"id":"ch07","number":7,"title":"인터페이스·타이밍 분리","file":"ch07_teacher_v01.html"},{"id":"ch08","number":8,"title":"객체와 제약 기반 입력","file":"ch08_teacher_v01.html"},{"id":"ch09","number":9,"title":"참조 모델·스코어보드","file":"ch09_teacher_v01.html"},{"id":"ch10","number":10,"title":"경계조건·오류 주입","file":"ch10_teacher_v01.html"},{"id":"ch11","number":11,"title":"시간적 속성 검사","file":"ch11_teacher_v01.html"},{"id":"ch12","number":12,"title":"기능 커버리지","file":"ch12_teacher_v01.html"}]};</script><script src="assets/site.js"></script></body></html>

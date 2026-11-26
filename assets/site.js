@@ -89,6 +89,12 @@
       "number": 11,
       "title": "시간적 속성 검사",
       "file": "ch11_teacher_v01.html"
+    },
+    {
+      "id": "ch12",
+      "number": 12,
+      "title": "기능 커버리지",
+      "file": "ch12_teacher_v01.html"
     }
   ]
 };

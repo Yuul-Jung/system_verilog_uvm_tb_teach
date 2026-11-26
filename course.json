@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v12",
+  "version": "v13",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -169,6 +169,21 @@
       "source_tb": "tb/ch11/tb_pwm_sva.sv",
       "rtl_simulation": "NOT_RUN",
       "original_execution": "PASS"
+    },
+    {
+      "id": "ch12",
+      "number": 12,
+      "title": "기능 커버리지",
+      "slug": "ch12_teacher",
+      "version": "v01",
+      "source_html": "ch12_functional_coverage_v03.html",
+      "source_version": "v03",
+      "source_blob": "9a6db6d63c48fc47fa0b8fec04e888ac47a73c7c",
+      "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
+      "source_course_version": "v60",
+      "source_tb": "tb/ch12/tb_pwm_coverage.sv",
+      "rtl_simulation": "NOT_RUN",
+      "original_execution": "PASS"
     }
   ],
   "planned_chapters": [
@@ -266,7 +281,7 @@
       "title": "기능 커버리지",
       "source_html": "ch12_functional_coverage_v03.html",
       "source_version": "v03",
-      "status": "planned"
+      "status": "published"
     },
     {
       "id": "ch13",
