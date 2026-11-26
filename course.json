@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v30",
+  "version": "v31",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -220,7 +220,7 @@
       "number": 15,
       "title": "AXI4-Lite 레지스터 검증",
       "slug": "ch15_teacher",
-      "version": "v01",
+      "version": "v02",
       "source_html": "ch15_axi4lite_register_verification_v03.html",
       "source_version": "v03",
       "source_blob": "11cd6f719a5a7538a6919b1f68d71961db9b741e",
