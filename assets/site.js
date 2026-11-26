@@ -53,6 +53,12 @@
       "number": 5,
       "title": "검증 자료형과 타입",
       "file": "ch05_teacher_v01.html"
+    },
+    {
+      "id": "ch06",
+      "number": 6,
+      "title": "배열·큐·패키지",
+      "file": "ch06_teacher_v01.html"
     }
   ]
 };

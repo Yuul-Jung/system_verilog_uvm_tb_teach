@@ -16,4 +16,5 @@
 - [제03장 · 반복 자극과 작업 분리](ch03_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch03_v01.md)
 - [제04장 · PASS/FAIL 자동 판정](ch04_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch04_v01.md)
 - [제05장 · 검증 자료형과 타입](ch05_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch05_v01.md)
+- [제06장 · 배열·큐·패키지](ch06_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch06_v01.md)
 <!-- /PUBLISHED -->
