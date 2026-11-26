@@ -52,8 +52,9 @@ def validate_page(page, original, chapter, source):
         blocks = lambda value: re.findall(rf'<{tag}\b[^>]*>.*?</{tag}>', value, re.S)
         before, after = blocks(original), blocks(page)
         if tag == 'pre':
-            before = [text(b) for b in before]
-            after = [text(b) for b in after]
+            decode = lambda b: html.unescape(re.sub(r'<[^>]+>', '', b))
+            before = [decode(b) for b in before]
+            after = [decode(b) for b in after]
         if before != after:
             errors.append(f'{tag}: original blocks changed')
     source_code = (source / chapter['source_tb']).read_text().strip()

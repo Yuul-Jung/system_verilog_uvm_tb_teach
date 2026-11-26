@@ -19,7 +19,7 @@
     wrapper.append(table);
   });
   // (변경) 과정 목차는 course.json을 우선 사용한다. 오프라인에서도 현재 발행본을 탐색할 수 있도록 스냅샷을 보존한다.
-  const fallback = window.COURSE || {
+  const fallback = {
   "title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "short_title": "SV UVM TEACH",
   "home_label": "전체 교수용 해설서",

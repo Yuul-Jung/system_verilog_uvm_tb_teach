@@ -9,3 +9,10 @@
 - [공통 제작 규칙](https://github.com/Yuul-Jung/rule_md)
 
 원본 학습안내서의 외부 검증 수정과 별개로 관리합니다. 각 해설서는 기준 원본의 Git Blob SHA와 버전을 기록하며, 원본 변경 시 대응 장만 재검토합니다. 미제작 장에는 링크를 생성하지 않습니다.
+
+<!-- PUBLISHED -->
+- [제01장 · 테스트벤치의 첫 실행](ch01_teacher_v02.html) · [검증 기록](docs/VALIDATION_ch01_v02.md)
+- [제02장 · Clock·Reset·이벤트](ch02_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch02_v01.md)
+- [제03장 · 반복 자극과 작업 분리](ch03_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch03_v01.md)
+- [제04장 · PASS/FAIL 자동 판정](ch04_teacher_v01.html) · [검증 기록](docs/VALIDATION_ch04_v01.md)
+<!-- /PUBLISHED -->

@@ -100,8 +100,8 @@ def main():
     (ROOT / f"{record['slug']}_{args.version}.html").write_text(page)
     (ROOT / 'course.json').write_text(json.dumps(course, ensure_ascii=False, indent=2) + '\n')
     script = ROOT / 'assets/site.js'
-    script.write_text(re.sub(r'const fallback = window.COURSE \|\| \{.*?\};',
-                            'const fallback = window.COURSE || ' + json.dumps(snapshot, ensure_ascii=False, indent=2) + ';', script.read_text(), count=1, flags=re.S))
+    script.write_text(re.sub(r'const fallback = (?:window.COURSE \|\| )?\{.*?\};',
+                            'const fallback = ' + json.dumps(snapshot, ensure_ascii=False, indent=2) + ';', script.read_text(), count=1, flags=re.S))
     index = (ROOT / 'index.html').read_text()
     for c in course['planned_chapters']:
         index = re.sub(rf'https://yuul-jung.github.io/system_verilog_uvm_tb/ch{c["number"]:02d}_[^"\s]+',
@@ -110,8 +110,13 @@ def main():
         index = re.sub(rf'(<tr><td>{c["number"]:02d}</td><td>.*?</td><td>).*?(</td>)',
                        rf'\g<1><a href="{c["slug"]}_{c["version"]}.html">해설서 보기</a>\2', index, count=1)
     index = re.sub(r'현재 발행 \d+/24장', f'현재 발행 {len(course["chapters"])}/24장', index)
+    index = re.sub(r'SV UVM TEACH · v\d+', f'SV UVM TEACH · {course["version"]}', index)
     index = re.sub(r'window.COURSE=\{.*?\};', 'window.COURSE=' + serialized + ';', index, flags=re.S)
     (ROOT / 'index.html').write_text(index)
+    readme_path = ROOT / 'README.md'
+    readme = re.sub(r'\n<!-- PUBLISHED -->.*?<!-- /PUBLISHED -->\n?', '\n', readme_path.read_text(), flags=re.S)
+    links = '\n'.join(f'- [제{c["number"]:02d}장 · {c["title"]}]({c["slug"]}_{c["version"]}.html) · [검증 기록](docs/VALIDATION_ch{c["number"]:02d}_{c["version"]}.md)' for c in course['chapters'])
+    readme_path.write_text(readme.rstrip() + '\n\n<!-- PUBLISHED -->\n' + links + '\n<!-- /PUBLISHED -->\n')
     print(f"CH{args.number:02d} {args.version}: {len(sections)} sections; source {commit[:7]} blob {blob}")
 
 
