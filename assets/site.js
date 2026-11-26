@@ -35,6 +35,12 @@
       "number": 2,
       "title": "Clock·Reset·이벤트",
       "file": "ch02_teacher_v01.html"
+    },
+    {
+      "id": "ch03",
+      "number": 3,
+      "title": "반복 자극과 작업 분리",
+      "file": "ch03_teacher_v01.html"
     }
   ]
 };

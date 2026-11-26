@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v03",
+  "version": "v04",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -34,6 +34,21 @@
       "source_tb": "tb/ch02/tb_pwm_clock_reset.sv",
       "rtl_simulation": "NOT_RUN",
       "original_execution": "EXECUTED_OBSERVATION"
+    },
+    {
+      "id": "ch03",
+      "number": 3,
+      "title": "반복 자극과 작업 분리",
+      "slug": "ch03_teacher",
+      "version": "v01",
+      "source_html": "ch03_reusable_stimulus_v04.html",
+      "source_version": "v04",
+      "source_blob": "4d8e82acddb9321d0caf45b2ca4b61bed095e196",
+      "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
+      "source_course_version": "v60",
+      "source_tb": "tb/ch03/tb_pwm_reusable_stimulus.sv",
+      "rtl_simulation": "NOT_RUN",
+      "original_execution": "EXECUTED_OBSERVATION"
     }
   ],
   "planned_chapters": [
@@ -59,7 +74,7 @@
       "title": "반복 자극과 작업 분리",
       "source_html": "ch03_reusable_stimulus_v04.html",
       "source_version": "v04",
-      "status": "planned"
+      "status": "published"
     },
     {
       "id": "ch04",
