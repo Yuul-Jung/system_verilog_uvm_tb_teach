@@ -3,12 +3,19 @@
 6부 24장의 검증 학습안내서와 1:1 대응하는 교수용 보충 교재입니다. 원본 자료의 절 순서·그림·전체 코드·실행 증거를 보존하며, 개념의 필요성·신호 흐름·줄별 코드 풀이·수업 중 질문과 답변을 보강합니다.
 
 - [전체 목차](index.html)
+- [공개 HTML 해설서](https://yuul-jung.github.io/system_verilog_uvm_tb_teach/)
 - [제01장 교수용 해설서 v02](ch01_teacher_v02.html) · [정합성·화면 검증](docs/VALIDATION_ch01_v02.md)
 - [원본 학습안내서](https://yuul-jung.github.io/system_verilog_uvm_tb/)
 - [교수용 확정 제작 규칙 23개 항목](TEACHING_RULES.md)
 - [공통 제작 규칙](https://github.com/Yuul-Jung/rule_md)
 
 원본 학습안내서의 외부 검증 수정과 별개로 관리합니다. 각 해설서는 기준 원본의 Git Blob SHA와 버전을 기록하며, 원본 변경 시 대응 장만 재검토합니다. 미제작 장에는 링크를 생성하지 않습니다.
+
+6부 24장 발행을 완료했습니다. 원본 기준은 과정 v60, `2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708`입니다. 각 절의 이론·수치·타이밍·실제 코드 행별 해설·판서·문답을 보강했습니다. 새 RTL 실행은 NOT_RUN이며 원본 실측과 구분합니다.
+
+종합 품질 검증: [제1부](docs/PART01_QUALITY_REVIEW.md) · [제2부](docs/PART02_QUALITY_REVIEW.md) · [제3부](docs/PART03_QUALITY_REVIEW.md) · [제4부](docs/PART04_QUALITY_REVIEW.md) · [제5부](docs/PART05_QUALITY_REVIEW.md) · [제6부](docs/PART06_QUALITY_REVIEW.md). 원본 설명에서 발견한 세 항목은 [별도 기록](docs/SOURCE_ISSUES.md)에 보존했습니다.
+
+Pages는 `main` 루트의 정적 HTML을 제공합니다. `.nojekyll`로 원본 SystemVerilog·Python·SVG를 템플릿 처리 없이 배포합니다. 공개 배포의 실제 커밋·HTTP·SHA256·화면은 `scripts/check_publication.py`로 확인합니다.
 
 <!-- PUBLISHED -->
 - [제01장 · 테스트벤치의 첫 실행](ch01_teacher_v02.html) · [검증 기록](docs/VALIDATION_ch01_v02.md)
