@@ -130,7 +130,7 @@
       "id": "ch18",
       "number": 18,
       "title": "Sequence에서 Driver까지",
-      "file": "ch18_teacher_v01.html"
+      "file": "ch18_teacher_v02.html"
     },
     {
       "id": "ch19",
