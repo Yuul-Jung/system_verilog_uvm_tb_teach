@@ -65,6 +65,12 @@
       "number": 7,
       "title": "인터페이스·타이밍 분리",
       "file": "ch07_teacher_v01.html"
+    },
+    {
+      "id": "ch08",
+      "number": 8,
+      "title": "객체와 제약 기반 입력",
+      "file": "ch08_teacher_v01.html"
     }
   ]
 };

@@ -1,7 +1,7 @@
 {
   "site_title": "RTL · SystemVerilog · UVM 교수용 해설서",
   "course_code": "SV UVM TEACH",
-  "version": "v08",
+  "version": "v09",
   "total_planned_chapters": 24,
   "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
   "chapters": [
@@ -109,6 +109,21 @@
       "source_tb": "tb/ch07/tb_uart_interface.sv",
       "rtl_simulation": "NOT_RUN",
       "original_execution": "PASS"
+    },
+    {
+      "id": "ch08",
+      "number": 8,
+      "title": "객체와 제약 기반 입력",
+      "slug": "ch08_teacher",
+      "version": "v01",
+      "source_html": "ch08_objects_constraints_v04.html",
+      "source_version": "v04",
+      "source_blob": "aa977f5463f130080ec41fad25e6af45ece7b9d9",
+      "source_commit": "2d9e981a6059b5b23c9d21d4d76ec5d5fc1c0708",
+      "source_course_version": "v60",
+      "source_tb": "tb/ch08/tb_uart_objects.sv",
+      "rtl_simulation": "NOT_RUN",
+      "original_execution": "PASS"
     }
   ],
   "planned_chapters": [
@@ -174,7 +189,7 @@
       "title": "객체와 제약 기반 입력",
       "source_html": "ch08_objects_constraints_v04.html",
       "source_version": "v04",
-      "status": "planned"
+      "status": "published"
     },
     {
       "id": "ch09",
